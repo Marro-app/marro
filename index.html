@@ -167,10 +167,10 @@ const BrandIcon = ({name, size=36}) => {
   const txt = b?.letter || (name||"?")[0].toUpperCase();
   const fontSize = txt.length > 2 ? size*0.28 : txt.length > 1 ? size*0.34 : size*0.44;
   const [imgErr, setImgErr] = useState(false);
-  const faviconUrl = domain && !imgErr ? `https://www.google.com/s2/favicons?domain=${domain}&sz=${size*2}` : null;
+  const faviconUrl = domain && !imgErr ? `https://www.google.com/s2/favicons?domain=${domain}&sz=128` : null;
   return faviconUrl ? (
-    <div style={{width:size,height:size,borderRadius:size*0.22,overflow:"hidden",flexShrink:0,background:C.bgDark}}>
-      <img src={faviconUrl} alt="" width={size} height={size} style={{objectFit:"cover"}} onError={()=>setImgErr(true)}/>
+    <div style={{width:size,height:size,borderRadius:size*0.22,overflow:"hidden",flexShrink:0,background:"#fff",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <img src={faviconUrl} alt="" width={size*0.7} height={size*0.7} style={{objectFit:"contain",imageRendering:"-webkit-optimize-contrast"}} onError={()=>setImgErr(true)}/>
     </div>
   ) : (
     <div style={{
@@ -232,6 +232,7 @@ const DEFAULT_STATE = {
   monthlyRollover: {},
   weeklyRollover: {},
   surplusBank: 0,
+  logo: null,  // null=WCM official, 'w'=monogram, or base64 data URL
   monthDisabled: {},  // {"0-Aug":["exams"], "0-Sep":["books"]} — yearId-month: disabled cat ids
   darkMode: false,
 };
@@ -394,9 +395,12 @@ const InfoTip = ({text}) => {
   </span>;
 };
 
-const WCMLogo = () => {
+const WCMLogo = ({logo, onClick}) => {
   const [err,setErr] = useState(false);
-  return <div style={{width:38,height:38,borderRadius:10,overflow:"hidden",flexShrink:0,background:"#b31b1b",display:"flex",alignItems:"center",justifyContent:"center",padding:4}}>
+  const base = {width:38,height:38,borderRadius:10,overflow:"hidden",flexShrink:0,background:"#b31b1b",display:"flex",alignItems:"center",justifyContent:"center",cursor:onClick?"pointer":"default"};
+  if(logo && logo.startsWith("data:")) return <div style={base} onClick={onClick}><img src={logo} alt="logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>;
+  if(logo==="w") return <div style={{...base,background:"linear-gradient(135deg,#b31b1b,#8b1515)"}} onClick={onClick}><span style={{color:"white",fontWeight:800,fontSize:18,fontFamily:"Georgia,serif"}}>W</span></div>;
+  return <div style={{...base,padding:4}} onClick={onClick}>
     {!err ? <img src="https://brand.weill.cornell.edu/profiles/wcmc/themes/wcm_brand_base/images/WCM_logo_white.png" alt="WCM" style={{width:"100%",height:"100%",objectFit:"contain"}} onError={()=>setErr(true)}/> : <span style={{color:"white",fontWeight:800,fontSize:16,fontFamily:"Georgia,serif"}}>W</span>}
   </div>;
 };
@@ -535,6 +539,11 @@ function App() {
   // Add category modal
   const [showAddCat, setShowAddCat] = useState(false);
   const [surplusSaved, setSurplusSaved] = useState(false);
+  const [showLogoPicker, setShowLogoPicker] = useState(false);
+  const [showAddYear, setShowAddYear] = useState(false);
+  const [nyStart, setNyStart] = useState("");
+  const [nyEnd, setNyEnd] = useState("");
+  useEffect(()=>{setSurplusSaved(false);},[ay,selMonth]);
   const [confirmRemove, setConfirmRemove] = useState(null);  // catId to confirm removal
   const [surplusAmt, setSurplusAmt] = useState("");
 
@@ -549,6 +558,7 @@ function App() {
         if(loaded.surplusBank===undefined) loaded.surplusBank=0;
         if(!loaded.monthDisabled) loaded.monthDisabled={};
         if(loaded.darkMode===undefined) loaded.darkMode=false;
+        if(loaded.logo===undefined) loaded.logo=null;
         loaded.years.forEach((y,i)=>{if(!y.startDate)Object.assign(y,YEAR_CONFIGS[i]);});
         setData(loaded);
       }
@@ -607,6 +617,13 @@ function App() {
   const disabledCats = data.monthDisabled?.[monthKey]||[];
   const toggleMonthCat = (catId) => {const d=JSON.parse(JSON.stringify(data));if(!d.monthDisabled)d.monthDisabled={};const mk=ay+"-"+MONTH_NAMES[selMonth];const cur=d.monthDisabled[mk]||[];d.monthDisabled[mk]=cur.includes(catId)?cur.filter(c=>c!==catId):[...cur,catId];upd(d);};
 
+  // Effective monthly value for a specific academic month index
+  const getMonthValIdx = (catId, mIdx) => {
+    const mk = MONTH_NAMES[mIdx];
+    const ov = yr.monthlyOverrides?.[mk];
+    if(ov && ov[catId] !== undefined) return ov[catId];
+    return catId==="subs" ? subsMo : (Number(yr.monthly[catId])||0);
+  };
   // Get effective monthly values (base + month overrides)
   const getMonthVal = (catId) => {
     const mk = MONTH_NAMES[selMonth];
@@ -758,6 +775,40 @@ function App() {
     d.years.forEach(y=>{delete y.monthly[cid];});
     upd(d);
   };
+  const addYear = (start,end) => {
+    const d=JSON.parse(JSON.stringify(data));
+    const newId=Math.max(...d.years.map(y=>y.id),-1)+1;
+    const yrNum=d.years.filter(y=>y.type!=="extended").length+1;
+    const last=d.years[d.years.length-1]||{};
+    const sy=start?new Date(start+"T12:00:00").getFullYear():2026+d.years.length;
+    const ey=end?new Date(end+"T12:00:00").getFullYear():sy+1;
+    d.years.push({
+      id:newId, label:`Year ${yrNum} — ${sy}-${String(ey).slice(2)}`, type:"standard",
+      tuitionFees:Number(last.tuitionFees)||76486, healthIns:Number(last.healthIns)||8100,
+      grant:Number(last.grant)||109848, otherIncome:0,
+      housing:Number(last.housing)||1370, housingNote:last.housingNote||"Lasdon Two-Share",
+      wcmLivingAllowance:Number(last.wcmLivingAllowance)||23584, notes:"",
+      startDate:start||`${sy}-08-01`, endDate:end||`${ey}-08-15`,
+      monthly:{...(last.monthly||{})}, monthlyOverrides:{},
+    });
+    upd(d);setShowAddYear(false);setNyStart("");setNyEnd("");
+  };
+  const removeYear = (yid) => {
+    const d=JSON.parse(JSON.stringify(data));
+    if(d.years.length<=1) return;
+    d.years=d.years.filter(y=>y.id!==yid);
+    // Re-number standard years
+    let n=1;
+    d.years.forEach(y=>{
+      if(y.type!=="extended"){
+        const sy=y.startDate?new Date(y.startDate+"T12:00:00").getFullYear():2025+n;
+        const ey=y.endDate?new Date(y.endDate+"T12:00:00").getFullYear():sy+1;
+        y.label=`Year ${n} — ${sy}-${String(ey).slice(2)}`; n++;
+      }
+    });
+    upd(d);
+    if(ay===yid) setAy(d.years[0].id);
+  };
 
   // Charts
   const pieData = cats.map((c,i)=>({name:c.label,value:c.id==="subs"?subsMo:Number(rawMonthly[c.id])||0,color:CHART_COLORS[i%CHART_COLORS.length]})).filter(d=>d.value>0);
@@ -782,8 +833,38 @@ function App() {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",maxWidth:940,margin:"0 auto",padding:"24px 20px",minHeight:"100vh",background:C.bg,color:C.text,transition:"background .3s, color .3s"}}>
+      <style>{`@keyframes wcmpulse{0%,100%{opacity:1}50%{opacity:0.3}}`}</style>
       {/* Modals */}
       {renewDlg && <RenewalDialog sub={renewDlg} onClose={()=>setRenewDlg(null)} onConfirm={handleRenewal}/>}
+      {showAddYear && <Modal title="Add academic year" onClose={()=>setShowAddYear(false)} width={360}>
+        <div style={{fontSize:12,color:C.textMid,marginBottom:14}}>The year number is assigned automatically. Enter the start and end dates for this academic year (end of summer break).</div>
+        <div style={{marginBottom:10}}>
+          <div style={{fontSize:11,fontWeight:600,color:C.textMid,marginBottom:4}}>Start date</div>
+          <input type="date" value={nyStart} onChange={e=>setNyStart(e.target.value)} style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text}}/>
+        </div>
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:11,fontWeight:600,color:C.textMid,marginBottom:4}}>End date</div>
+          <input type="date" value={nyEnd} onChange={e=>setNyEnd(e.target.value)} style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text}}/>
+        </div>
+        <button onClick={()=>addYear(nyStart,nyEnd)} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.red,color:"#fff",cursor:"pointer"}}>Add year</button>
+      </Modal>}
+      {showLogoPicker && <Modal title="App logo" onClose={()=>setShowLogoPicker(false)} width={360}>
+        <div style={{fontSize:12,color:C.textMid,marginBottom:14}}>Choose a logo or upload your own.</div>
+        <div style={{display:"flex",gap:10,marginBottom:16}}>
+          <button onClick={()=>{const d=JSON.parse(JSON.stringify(data));d.logo=null;upd(d);setShowLogoPicker(false);}} style={{flex:1,padding:"12px 8px",borderRadius:10,border:`2px solid ${!data.logo?C.red:C.border}`,background:C.bg,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+            <div style={{width:36,height:36,borderRadius:9,background:"#b31b1b",display:"flex",alignItems:"center",justifyContent:"center",padding:4}}><img src="https://brand.weill.cornell.edu/profiles/wcmc/themes/wcm_brand_base/images/WCM_logo_white.png" style={{width:"100%",objectFit:"contain"}} alt=""/></div>
+            <span style={{fontSize:11,color:C.text}}>WCM Official</span>
+          </button>
+          <button onClick={()=>{const d=JSON.parse(JSON.stringify(data));d.logo="w";upd(d);setShowLogoPicker(false);}} style={{flex:1,padding:"12px 8px",borderRadius:10,border:`2px solid ${data.logo==="w"?C.red:C.border}`,background:C.bg,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+            <div style={{width:36,height:36,borderRadius:9,background:"linear-gradient(135deg,#b31b1b,#8b1515)",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{color:"white",fontWeight:800,fontSize:18,fontFamily:"Georgia,serif"}}>W</span></div>
+            <span style={{fontSize:11,color:C.text}}>Monogram</span>
+          </button>
+        </div>
+        <label style={{display:"block",padding:"10px",borderRadius:10,border:`1px dashed ${C.border}`,textAlign:"center",cursor:"pointer",fontSize:12,color:C.gray}}>
+          Upload custom image
+          <input type="file" accept="image/*" style={{display:"none"}} onChange={(e)=>{const f=e.target.files[0];if(f){const r=new FileReader();r.onload=()=>{const d=JSON.parse(JSON.stringify(data));d.logo=r.result;upd(d);setShowLogoPicker(false);};r.readAsDataURL(f);}}}/>
+        </label>
+      </Modal>}
       {confirmRemove && <Modal title="Remove category" onClose={()=>setConfirmRemove(null)} width={340}>
         <div style={{fontSize:13,color:C.textMid,marginBottom:16}}>Remove <strong>{cats.find(c=>c.id===confirmRemove)?.label}</strong> from {MONTH_FULL[selMonth]}? You can add it back anytime.</div>
         <div style={{display:"flex",gap:8}}>
@@ -809,7 +890,7 @@ function App() {
       {/* ── Header ── */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,paddingBottom:16,borderBottom:`1px solid ${C.border}`}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <WCMLogo/>
+          <WCMLogo logo={data.logo} onClick={()=>setShowLogoPicker(true)}/>
           <div>
             <div style={{fontSize:17,fontWeight:700,color:C.text,letterSpacing:"-0.02em"}}>WCM Budget Planner</div>
             <div style={{fontSize:11,color:C.gray,marginTop:1}}>MD Class of 2030 · Extended Curriculum</div>
@@ -929,13 +1010,21 @@ function App() {
                   <span style={{fontWeight:r.bold?700:500,color:r.c}}>{r.v}</span>
                 </div>
               ))}
-              {moSurplus!==0 && (
-                <div style={{marginTop:10,padding:"10px 12px",background:moSurplus>=0?C.greenLight:C.redLight,borderRadius:8,fontSize:12,color:moSurplus>=0?C.green:C.red,fontWeight:500,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
-                  <span>{moSurplus>=0
-                    ? `${fmt(moSurplus)}/mo surplus. ${rolloverReco(moSurplus)||"Consider increasing savings."}`
-                    : `${fmt(Math.abs(moSurplus))}/mo over budget. Review discretionary spending.`}</span>
-                  {moSurplus>0 && !surplusSaved && <button onClick={()=>{depositToSurplus(moSurplus);setSurplusSaved(true);}} style={{padding:"4px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:C.green,color:"#fff",cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>Save to surplus</button>}
-                  {surplusSaved && <span style={{fontSize:11,fontWeight:600,color:C.green,whiteSpace:"nowrap"}}>✓ Saved</span>}
+              {moSurplus>0 && !surplusSaved && (
+                <div style={{marginTop:10,padding:"10px 12px",background:C.greenLight,borderRadius:8,fontSize:12,color:C.green,fontWeight:500,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+                  <span>{`${fmt(moSurplus)}/mo surplus. ${rolloverReco(moSurplus)||"Save it for future months."}`}</span>
+                  <button onClick={()=>{depositToSurplus(moSurplus);setSurplusSaved(true);}} style={{padding:"4px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:C.green,color:"#fff",cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>Save to surplus</button>
+                </div>
+              )}
+              {moSurplus<0 && surplusBankBal>0 && !surplusSaved && (
+                <div style={{marginTop:10,padding:"10px 12px",background:C.amberLight,borderRadius:8,fontSize:12,color:C.amber,fontWeight:500,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+                  <span>{`${fmt(Math.abs(moSurplus))}/mo over budget. Cover it from your surplus bank?`}</span>
+                  <button onClick={()=>{withdrawFromSurplus(Math.min(Math.abs(moSurplus),surplusBankBal));setSurplusSaved(true);}} style={{padding:"4px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:C.amber,color:"#fff",cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>Cover deficit</button>
+                </div>
+              )}
+              {moSurplus<0 && surplusBankBal<=0 && (
+                <div style={{marginTop:10,padding:"10px 12px",background:C.redLight,borderRadius:8,fontSize:12,color:C.red,fontWeight:500}}>
+                  {`${fmt(Math.abs(moSurplus))}/mo over budget and surplus bank is empty. Review discretionary spending.`}
                 </div>
               )}
             </Card>
@@ -975,7 +1064,6 @@ function App() {
               </div>
               <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:6}}>
                 <div style={{fontSize:26,fontWeight:700,color:C.teal}}>{fmt(surplusBankBal)}</div>
-                {moSurplus>0 && <Pill ok sm>+{fmt(moSurplus)}/mo</Pill>}
               </div>
               <div style={{fontSize:11,color:C.gray}}>Surplus auto-deposits when you save. If weekly spending exceeds budget, you'll be notified and funds are drawn automatically.</div>
               {surplusBankBal>0 && surplusBankBal>moSpendable*3 && <div style={{marginTop:8,padding:"6px 10px",background:C.greenLight,borderRadius:6,fontSize:11,color:C.green}}>You've built 3+ months of runway. Consider a high-yield savings account for long-term growth.</div>}
@@ -1067,11 +1155,17 @@ function App() {
             {/* Category breakdown */}
             <Card>
               <SectionTitle>Category breakdown</SectionTitle>
-              {cats.filter(c=>!c.autoCalc&&!c.locked).map((cat,i)=>{
-                const moB = Number(rawMonthly[cat.id])||0;
+              {(()=>{
+                const wkRef = viewWeek ? new Date(viewWeek+"T12:00:00") : new Date();
+                const wkMonthIdx = (wkRef.getMonth() - 7 + 12) % 12;
+                const wkDisabled = data.monthDisabled?.[ay+"-"+MONTH_NAMES[wkMonthIdx]]||[];
+                return cats.filter(c=>!c.autoCalc&&!c.locked&&!wkDisabled.includes(c.id));
+              })().map((cat,i)=>{
+                const wkRef = viewWeek ? new Date(viewWeek+"T12:00:00") : new Date();
+                const wkMonthIdx = (wkRef.getMonth() - 7 + 12) % 12;
+                const moB = Number(getMonthValIdx(cat.id, wkMonthIdx))||0;
                 const wkB = moB / 4.333;
                 const spent = viewEntries.filter(e=>e.catId===cat.id).reduce((a,e)=>a+Number(e.amount),0);
-                if(moB===0 && spent===0) return null;
                 const over = spent > wkB;
                 return (
                   <div key={cat.id} style={{padding:"8px 0",borderBottom:`1px solid ${C.border}`}}>
@@ -1198,8 +1292,16 @@ function App() {
                     <div>
                       <div style={{fontWeight:700,fontSize:14,color:C.text}}>{y.label}</div>
                       <div style={{fontSize:11,color:C.gray,marginTop:2}}>{y.housingNote}</div>
+                      <div style={{display:"flex",gap:4,marginTop:6,alignItems:"center"}}>
+                        <input type="date" value={y.startDate||""} onChange={e=>{const d=JSON.parse(JSON.stringify(data));d.years[i].startDate=e.target.value;upd(d);}} style={{fontSize:10,border:`1px solid ${C.border}`,borderRadius:5,padding:"2px 5px",background:C.bg,color:C.text}}/>
+                        <span style={{fontSize:10,color:C.gray}}>→</span>
+                        <input type="date" value={y.endDate||""} onChange={e=>{const d=JSON.parse(JSON.stringify(data));d.years[i].endDate=e.target.value;upd(d);}} style={{fontSize:10,border:`1px solid ${C.border}`,borderRadius:5,padding:"2px 5px",background:C.bg,color:C.text}}/>
+                      </div>
                     </div>
-                    <Pill ok={moS>=0} warn={moS<0}>{fmtS(moS)}/mo</Pill>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <Pill ok={moS>=0} warn={moS<0}>{fmtS(moS)}/mo</Pill>
+                      {data.years.length>1 && <button onClick={()=>{if(confirm("Remove "+y.label+"? This deletes its budget data."))removeYear(y.id);}} style={{width:22,height:22,borderRadius:6,border:`1px solid ${C.border}`,background:"transparent",color:C.gray,cursor:"pointer",fontSize:12,flexShrink:0}} title="Remove year">✕</button>}
+                    </div>
                   </div>
                   {y.type==="extended" && <Banner type="warn">Extended year: tuition waived, fees only</Banner>}
                   {[
@@ -1214,9 +1316,9 @@ function App() {
                         <span style={{fontSize:12,color:C.textMid}}>{label}</span>
                         {isHousing
                           ? <input type="number" value={y.monthly.housing||0} onChange={e=>{const d=JSON.parse(JSON.stringify(data));d.years[i].monthly.housing=Number(e.target.value)||0;upd(d);}}
-                              style={{width:90,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 7px",background:C.bg}}/>
+                              style={{width:90,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 7px",background:C.bg,color:C.text}}/>
                           : <input type="number" value={y[field]} onChange={e=>setYrF(i,field,e.target.value)}
-                              style={{width:90,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 7px",background:C.bg}}/>
+                              style={{width:90,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 7px",background:C.bg,color:C.text}}/>
                         }
                       </div>
                       <div style={{fontSize:10,color:C.gray,marginTop:1}}>{note}</div>
@@ -1230,6 +1332,8 @@ function App() {
               );
             })}
           </div>
+
+          <button onClick={()=>setShowAddYear(true)} style={{alignSelf:"flex-start",padding:"8px 16px",fontSize:13,fontWeight:600,border:`1px solid ${C.border}`,borderRadius:8,background:"transparent",color:C.textMid,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>+ Add year</button>
 
           {/* 5-year table */}
           <Card>
@@ -1250,12 +1354,12 @@ function App() {
                       const moD=(disb+oth)/12,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
                       cum+=moS*12;
                       return <tr key={y.id}>
-                        <td style={{padding:"8px",fontWeight:600,whiteSpace:"nowrap",fontSize:11}}>{y.label}</td>
+                        <td style={{padding:"8px",fontWeight:600,whiteSpace:"nowrap",fontSize:11,color:C.text}}>{y.label}</td>
                         <td style={{padding:"8px",color:C.red,fontWeight:600}}>{g>0?fmt(g):"TBD"}</td>
                         <td style={{padding:"8px",color:C.gray}}>{fmt(tf+hi)}</td>
                         <td style={{padding:"8px",color:C.teal,fontWeight:600}}>{fmt(disb)}</td>
-                        <td style={{padding:"8px",fontWeight:600}}>{fmt(moD)}</td>
-                        <td style={{padding:"8px"}}>{fmt(moSp)}</td>
+                        <td style={{padding:"8px",fontWeight:600,color:C.text}}>{fmt(moD)}</td>
+                        <td style={{padding:"8px",color:C.text}}>{fmt(moSp)}</td>
                         <td style={{padding:"8px",fontWeight:600,color:moS>=0?C.teal:C.red}}>{fmtS(moS)}</td>
                         <td style={{padding:"8px",fontWeight:700,color:cum>=0?C.teal:C.red}}>{fmtS(cum)}</td>
                       </tr>;
