@@ -15,19 +15,17 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; transition: background .3s; }
   #root { min-height: 100vh; }
-  #loading { display: flex; align-items: center; justify-content: center; height: 100vh; font-size: 14px; color: #64748b; font-family: system-ui; }
+  #loading { display: flex; align-items: center; justify-content: center; height: 100vh; font-size: 14px; color: #64748b; }
   input, select, textarea { color-scheme: light dark; }
 </style>
 </head>
 <body>
 <div id="root"><div id="loading">Loading WCM Budget Planner…</div></div>
-
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
 <script src="https://unpkg.com/recharts@2.5.0/umd/Recharts.js"></script>
-
 <script type="text/babel" data-presets="react">
 window.storage = {
   get: async (key) => { try { const v = localStorage.getItem(key); return v ? { key, value: v } : null; } catch { return null; } },
@@ -36,9 +34,7 @@ window.storage = {
   list: async (prefix) => { try { return { keys: Object.keys(localStorage).filter(k => !prefix || k.startsWith(prefix)) }; } catch { return { keys: [] }; } }
 };
 const { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } = Recharts;
-(function scheduleArchive() {
-  setInterval(() => { const now = new Date(); if (now.getDay()===0 && now.getHours()===23 && now.getMinutes()===59) window._triggerArchive && window._triggerArchive(); }, 60000);
-})();
+(function scheduleArchive() { setInterval(() => { const now = new Date(); if (now.getDay()===0 && now.getHours()===23 && now.getMinutes()===59) window._triggerArchive && window._triggerArchive(); }, 60000); })();
 
 const { useState, useEffect, useCallback } = React;
 // recharts loaded above
@@ -124,6 +120,33 @@ const BRANDS = {
   "twitch":       {bg:"#9146FF", fg:"#fff", letter:"T",  shape:""},
 };
 
+const BRAND_DOMAINS = {
+  spotify:"spotify.com",netflix:"netflix.com",hulu:"hulu.com",max:"max.com",
+  "disney+":"disneyplus.com","disney plus":"disneyplus.com","hbo max":"max.com",
+  youtube:"youtube.com","youtube premium":"youtube.com","amazon prime":"amazon.com",
+  amazon:"amazon.com","apple tv+":"tv.apple.com","apple tv":"tv.apple.com",
+  "apple music":"music.apple.com",icloud:"icloud.com","apple one":"apple.com",
+  "paramount+":"paramountplus.com","espn+":"espn.com",uworld:"uworld.com",
+  amboss:"amboss.com",anki:"apps.ankiweb.net",sketchy:"sketchy.com",
+  "boards & beyond":"boardsbeyond.com","first aid":"firstaidteam.com",
+  notion:"notion.so",dropbox:"dropbox.com","google one":"one.google.com",
+  google:"google.com","microsoft 365":"microsoft.com","office 365":"microsoft.com",
+  adobe:"adobe.com",chatgpt:"chatgpt.com",openai:"openai.com",claude:"claude.ai",
+  github:"github.com",figma:"figma.com",slack:"slack.com",zoom:"zoom.us",
+  duolingo:"duolingo.com",calm:"calm.com",headspace:"headspace.com",
+  strava:"strava.com",peloton:"onepeloton.com",nytimes:"nytimes.com",
+  "new york times":"nytimes.com",wsj:"wsj.com",twitter:"x.com",x:"x.com",
+  instagram:"instagram.com",reddit:"reddit.com",twitch:"twitch.tv",
+};
+
+function getBrandDomain(name) {
+  if(!name) return null;
+  const k = name.toLowerCase().trim();
+  if(BRAND_DOMAINS[k]) return BRAND_DOMAINS[k];
+  const match = Object.entries(BRAND_DOMAINS).find(([bk])=>k.includes(bk)||bk.includes(k));
+  return match?.[1]||null;
+}
+
 function getBrand(name) {
   if(!name) return null;
   const k = name.toLowerCase().trim().replace(/[^a-z0-9+ ]/g,"");
@@ -142,12 +165,19 @@ function getBrand(name) {
 }
 
 const BrandIcon = ({name, size=36}) => {
+  const domain = getBrandDomain(name);
   const b = getBrand(name);
   const bg = b?.bg || "#64748b";
   const fg = b?.fg || "#fff";
   const txt = b?.letter || (name||"?")[0].toUpperCase();
   const fontSize = txt.length > 2 ? size*0.28 : txt.length > 1 ? size*0.34 : size*0.44;
-  return (
+  const [imgErr, setImgErr] = useState(false);
+  const faviconUrl = domain && !imgErr ? `https://www.google.com/s2/favicons?domain=${domain}&sz=${size*2}` : null;
+  return faviconUrl ? (
+    <div style={{width:size,height:size,borderRadius:size*0.22,overflow:"hidden",flexShrink:0,background:C.bgDark}}>
+      <img src={faviconUrl} alt="" width={size} height={size} style={{objectFit:"cover"}} onError={()=>setImgErr(true)}/>
+    </div>
+  ) : (
     <div style={{
       width:size, height:size, borderRadius:size*0.22,
       background:bg, color:fg, display:"flex", alignItems:"center",
@@ -200,7 +230,7 @@ const MONTH_FULL = ["August","September","October","November","December","Januar
 
 const DEFAULT_STATE = {
   categories: DEFAULT_CATS,
-  years: YEAR_CONFIGS.map((cfg,i)=>({...cfg, monthly:{...DEFAULT_MONTHLY[i]}})),
+  years: YEAR_CONFIGS.map((cfg,i)=>({...cfg, monthly:{...DEFAULT_MONTHLY[i]}, monthlyOverrides:{}})),
   weeklyArchive: [],
   currentWeekEntries: [],
   subscriptions: [],
@@ -360,6 +390,14 @@ const Modal = ({title, onClose, children, width=440}) => (
     </div>
   </div>
 );
+
+const InfoTip = ({text}) => {
+  const [show,setShow] = useState(false);
+  return <span style={{position:"relative",display:"inline-flex"}} onMouseEnter={()=>setShow(true)} onMouseLeave={()=>setShow(false)} onClick={()=>setShow(!show)}>
+    <span style={{width:16,height:16,borderRadius:8,background:C.bgDark,color:C.gray,fontSize:9,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"help",border:`1px solid ${C.border}`}}>i</span>
+    {show && <div style={{position:"absolute",bottom:"calc(100% + 6px)",left:"50%",transform:"translateX(-50%)",background:C.text,color:C.bg,fontSize:11,padding:"6px 10px",borderRadius:6,whiteSpace:"normal",width:200,zIndex:999,lineHeight:1.5,boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>{text}</div>}
+  </span>;
+};
 
 const Divider = () => <div style={{height:1,background:C.border,margin:"10px 0"}}/>;
 
@@ -557,7 +595,15 @@ function App() {
   const annDisburse = Math.max(annGrant - annTuition - annHlth, 0);
   const annOther    = (Number(yr.otherIncome)||0)*12;
   const moSpendable = (annDisburse + annOther)/12;
-  const rawMonthly  = {...yr.monthly, subs:subsMo};
+  // Get effective monthly values (base + month overrides)
+  const getMonthVal = (catId) => {
+    const mk = MONTH_NAMES[selMonth];
+    const overrides = yr.monthlyOverrides?.[mk];
+    if(overrides && overrides[catId] !== undefined) return overrides[catId];
+    return catId==="subs" ? subsMo : (Number(yr.monthly[catId])||0);
+  };
+  const rawMonthly = {};
+  cats.forEach(c => { rawMonthly[c.id] = c.id==="subs" ? subsMo : getMonthVal(c.id); });
   const moSpend     = moTotal(rawMonthly);
   const moSurplus   = moSpendable - moSpend;
 
@@ -619,7 +665,14 @@ function App() {
   const renewalsSoon = subs.filter(s=>s.active!==false&&daysUntil(s.renewal)!==null&&daysUntil(s.renewal)>0&&daysUntil(s.renewal)<=14);
 
   // ── Mutations ─────────────────────────────────────────────────────────────
-  const setMo = (yi,cid,v) => {const d=JSON.parse(JSON.stringify(data));d.years[yi].monthly[cid]=Number(v)||0;upd(d);};
+  const setMo = (yi,cid,v) => {
+    const d=JSON.parse(JSON.stringify(data));
+    const mk=MONTH_NAMES[selMonth];
+    if(!d.years[yi].monthlyOverrides) d.years[yi].monthlyOverrides={};
+    if(!d.years[yi].monthlyOverrides[mk]) d.years[yi].monthlyOverrides[mk]={};
+    d.years[yi].monthlyOverrides[mk][cid]=Number(v)||0;
+    upd(d);
+  };
   const setYrF = (yi,f,v) => {const d=JSON.parse(JSON.stringify(data));d.years[yi][f]=v;upd(d);};
 
   const syncSubs = d => {
@@ -710,7 +763,7 @@ function App() {
     if(surplus<=0) return null;
     const recs = [];
     const yrData = data.years[ay];
-    if(!(yrData.monthly.savings||0)) recs.push(`Put ${fmt(surplus)} toward an emergency fund (goal: 3 months expenses = ${fmt(moSpend*3)})`);
+    if(!(yrData.monthly.savings||0)) recs.push(`Consider building an emergency fund (goal: ${fmt(moSpend*3)})`);
     if(!(yrData.monthly.exams||0)) recs.push(`Set aside ${fmt(surplus)} for USMLE Step exams (~$850 each)`);
     if(subsMo < 50) recs.push(`Consider adding a study resource (UWorld, Amboss) for ${fmt(surplus)}/mo`);
     recs.push(`Add it to savings — even ${fmt(surplus)}/mo compounds significantly over 5 years`);
@@ -728,7 +781,7 @@ function App() {
       {/* ── Header ── */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,paddingBottom:16,borderBottom:`1px solid ${C.border}`}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:38,height:38,borderRadius:10,background:C.red,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:16,letterSpacing:"-0.02em"}}>W</div>
+          <img src="https://brand.weill.cornell.edu/sites/default/files/wcm_social_og.jpg" alt="WCM" style={{width:38,height:38,borderRadius:10,objectFit:"cover"}} onError={(e)=>{e.target.style.display="none";e.target.parentNode.insertAdjacentHTML("afterbegin","<div style='width:38px;height:38px;border-radius:10px;background:#b31b1b;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:16px'>W</div>");}}/>
           <div>
             <div style={{fontSize:17,fontWeight:700,color:C.text,letterSpacing:"-0.02em"}}>WCM Budget Planner</div>
             <div style={{fontSize:11,color:C.gray,marginTop:1}}>MD Class of 2030 · Extended Curriculum</div>
@@ -794,12 +847,12 @@ function App() {
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:C.bg,borderRadius:8,marginBottom:10,border:`1px solid ${C.border}`}}>
               <div style={{flex:1}}>
                 <div style={{fontSize:12,fontWeight:600,color:C.text}}>Housing — {yr.housingNote}</div>
-                <div style={{fontSize:11,color:C.gray,marginTop:1}}>Fixed by housing contract · edit in Aid Detail</div>
+                <div style={{fontSize:11,color:C.gray,marginTop:1,display:"flex",alignItems:"center",gap:4}}>Fixed by housing contract <InfoTip text="Housing is set by your WCM housing assignment. Edit the rate in the Aid & Detail tab."/></div>
               </div>
               <div style={{fontWeight:700,fontSize:14,color:C.text}}>{fmt(yr.monthly.housing||0)}<span style={{fontSize:11,fontWeight:400,color:C.gray}}>/mo</span></div>
             </div>
 
-            {cats.filter(c=>!c.locked).map((cat,i)=>{
+            {cats.filter(c=>!c.locked && !disabledCats.includes(c.id)).map((cat,i)=>{
               const isAuto = cat.autoCalc===true;
               const isDisabled = disabledCats.includes(cat.id);
               const amt = isDisabled ? 0 : (cat.id==="subs" ? subsMo : (Number(yr.monthly[cat.id])||0));
@@ -814,11 +867,14 @@ function App() {
                         style={{width:80,textAlign:"right",fontSize:13,border:`1px solid ${C.border}`,borderRadius:7,padding:"4px 8px",background:C.bg,color:C.text,fontWeight:600}}/>
                   }
                   <span style={{fontSize:10,color:C.gray,width:28,textAlign:"right"}}>{pct}%</span>
-                  <button onClick={()=>toggleMonthCat(cat.id)} style={{width:20,height:20,borderRadius:4,border:`1px solid ${isDisabled?C.redMid:C.greenMid}`,background:isDisabled?C.redLight:C.greenLight,cursor:"pointer",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",color:isDisabled?C.red:C.green,flexShrink:0}} title={isDisabled?"Enable for "+MONTH_NAMES[selMonth]:"Disable for "+MONTH_NAMES[selMonth]}>{isDisabled?"−":"✓"}</button>
+                  {!isAuto && <button onClick={()=>{if(confirm("Remove "+cat.label+" from "+MONTH_FULL[selMonth]+"?"))toggleMonthCat(cat.id)}} style={{width:20,height:20,borderRadius:4,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center",color:C.gray,flexShrink:0,opacity:0.5}} title={"Remove for "+MONTH_NAMES[selMonth]}>✕</button>}
                 </div>
               );
             })}
 
+            {disabledCats.length>0 && <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8,marginBottom:8}}>
+              {disabledCats.map(cid=>{const c=cats.find(x=>x.id===cid);return c?<button key={cid} onClick={()=>toggleMonthCat(cid)} style={{fontSize:11,padding:"3px 10px",borderRadius:6,border:`1px dashed ${C.border}`,background:"transparent",color:C.gray,cursor:"pointer"}}>+ {c.label}</button>:null;})}
+            </div>}
             <Divider/>
             <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:700}}>
               <span>Total</span>
@@ -830,7 +886,7 @@ function App() {
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
             <Card>
               <SectionTitle>Cash flow — {yr.label}</SectionTitle>
-              <div style={{fontSize:11,color:C.gray,marginBottom:10}}>To edit grant & aid figures, go to <strong>Aid & Detail</strong>.</div>
+              
               {[
                 {l:"Grant disbursed to you",    v:fmt(annDisburse)+"/yr",    c:C.teal},
                 {l:"Other income",              v:fmt(annOther)+"/yr",       c:C.text},
@@ -881,24 +937,23 @@ function App() {
             </Card>
 
             <Card accent={C.teal}>
-              <SectionTitle>Surplus bank</SectionTitle>
-              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
-                <div style={{fontSize:24,fontWeight:700,color:C.teal}}>{fmt(surplusBankBal)}</div>
-                <Pill ok={surplusBankBal>0} neutral={surplusBankBal===0} sm>saved</Pill>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <SectionTitle>Surplus bank</SectionTitle>
+                <button onClick={()=>setShowSurplus(!showSurplus)} style={{fontSize:11,padding:"3px 10px",border:`1px solid ${C.border}`,borderRadius:6,background:"transparent",color:C.gray,cursor:"pointer"}}>{showSurplus?"Collapse":"Details"}</button>
               </div>
-              <div style={{fontSize:11,color:C.gray,marginBottom:12}}>Monthly surplus goes here instead of auto-spending. Withdraw when you need it.</div>
-              {!showSurplus ? (
-                <div style={{display:"flex",gap:8}}>
-                  <button onClick={()=>{setSurplusAmt(String(Math.max(moSurplus,0)));setShowSurplus("deposit");}} style={{flex:1,padding:"7px",fontSize:12,fontWeight:600,border:`1px solid ${C.tealMid}`,borderRadius:7,background:C.tealLight,color:C.teal,cursor:"pointer"}}>+ Deposit</button>
-                  <button onClick={()=>{setSurplusAmt("");setShowSurplus("withdraw");}} disabled={surplusBankBal<=0} style={{flex:1,padding:"7px",fontSize:12,fontWeight:600,border:`1px solid ${surplusBankBal>0?C.amberMid:C.border}`,borderRadius:7,background:surplusBankBal>0?C.amberLight:C.bgDark,color:surplusBankBal>0?C.amber:C.gray,cursor:surplusBankBal>0?"pointer":"not-allowed"}}>− Withdraw</button>
-                </div>
-              ) : (
+              <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:6}}>
+                <div style={{fontSize:26,fontWeight:700,color:C.teal}}>{fmt(surplusBankBal)}</div>
+                {moSurplus>0 && <span style={{fontSize:11,color:C.green}}>+{fmt(moSurplus)}/mo auto-deposited</span>}
+              </div>
+              <div style={{fontSize:11,color:C.gray,marginBottom:4}}>Surplus auto-deposits monthly. When weekly spending exceeds your budget, funds are drawn automatically.</div>
+              {showSurplus && <div style={{marginTop:12,padding:"10px 12px",background:C.bgDark,borderRadius:8}}>
+                <div style={{fontSize:11,fontWeight:600,color:C.textMid,marginBottom:8}}>Manual adjustment</div>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
                   <input type="number" placeholder="Amount" value={surplusAmt} onChange={e=>setSurplusAmt(e.target.value)} style={{flex:1,fontSize:12,border:`1px solid ${C.border}`,borderRadius:7,padding:"6px 10px",background:C.bg,color:C.text}}/>
-                  <button onClick={()=>showSurplus==="deposit"?depositToSurplus(surplusAmt):withdrawFromSurplus(surplusAmt)} style={{padding:"6px 14px",fontSize:12,fontWeight:600,border:"none",borderRadius:7,background:showSurplus==="deposit"?C.teal:C.amber,color:"#fff",cursor:"pointer"}}>{showSurplus==="deposit"?"Deposit":"Withdraw"}</button>
-                  <button onClick={()=>setShowSurplus(false)} style={{padding:"6px 10px",fontSize:12,border:`1px solid ${C.border}`,borderRadius:7,background:"transparent",color:C.gray,cursor:"pointer"}}>✕</button>
+                  <button onClick={()=>{depositToSurplus(surplusAmt)}} style={{padding:"6px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:C.teal,color:"#fff",cursor:"pointer"}}>Deposit</button>
+                  <button onClick={()=>{withdrawFromSurplus(surplusAmt)}} disabled={surplusBankBal<=0} style={{padding:"6px 12px",fontSize:11,fontWeight:600,border:"none",borderRadius:6,background:surplusBankBal>0?C.amber:C.bgDark,color:surplusBankBal>0?"#fff":C.gray,cursor:surplusBankBal>0?"pointer":"not-allowed"}}>Withdraw</button>
                 </div>
-              )}
+              </div>}
             </Card>
 
             <Card>
@@ -1032,7 +1087,7 @@ function App() {
           </Card>
 
           <div style={{fontSize:11,color:C.gray,padding:"6px 12px",background:C.bg,borderRadius:8,border:`1px solid ${C.border}`}}>
-            Entries archive automatically each Sunday at midnight. Past-dated entries route to the correct week automatically. Unspent weekly balance rolls into the following week.
+            Entries auto-archive each Sunday. Past-dated entries are filed to the correct week. Unspent balance rolls forward.
           </div>
         </div>
       )}
@@ -1375,8 +1430,6 @@ function App() {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(App));
 </script>
-<script>
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
 </body>
 </html>
