@@ -529,6 +529,10 @@ function App() {
 
   // Surplus bank dialog
   const [showSurplus, setShowSurplus] = useState(false);
+
+  // Add category modal
+  const [showAddCat, setShowAddCat] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(null);  // catId to confirm removal
   const [surplusAmt, setSurplusAmt] = useState("");
 
   // Load
@@ -776,12 +780,34 @@ function App() {
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",maxWidth:940,margin:"0 auto",padding:"24px 20px",minHeight:"100vh",background:C.bg,color:C.text,transition:"background .3s, color .3s"}}>
       {/* Modals */}
       {renewDlg && <RenewalDialog sub={renewDlg} onClose={()=>setRenewDlg(null)} onConfirm={handleRenewal}/>}
+      {confirmRemove && <Modal title="Remove category" onClose={()=>setConfirmRemove(null)} width={340}>
+        <div style={{fontSize:13,color:C.textMid,marginBottom:16}}>Remove <strong>{cats.find(c=>c.id===confirmRemove)?.label}</strong> from {MONTH_FULL[selMonth]}? You can add it back anytime.</div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>{toggleMonthCat(confirmRemove);setConfirmRemove(null);}} style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.red,color:"#fff",cursor:"pointer"}}>Remove</button>
+          <button onClick={()=>setConfirmRemove(null)} style={{flex:1,padding:"10px",fontSize:13,fontWeight:500,border:`1px solid ${C.border}`,borderRadius:8,background:"transparent",color:C.gray,cursor:"pointer"}}>Cancel</button>
+        </div>
+      </Modal>}
+      {showAddCat && <Modal title={"Add category — "+MONTH_FULL[selMonth]} onClose={()=>setShowAddCat(false)} width={380}>
+        {disabledCats.length>0 && <>
+          <div style={{fontSize:12,fontWeight:600,color:C.textMid,marginBottom:8}}>Removed from this month</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:16}}>
+            {disabledCats.map(cid=>{const c=cats.find(x=>x.id===cid);return c?<button key={cid} onClick={()=>{toggleMonthCat(cid);setShowAddCat(false);}} style={{padding:"10px 14px",fontSize:13,fontWeight:500,border:`1px solid ${C.border}`,borderRadius:8,background:C.bg,color:C.text,cursor:"pointer",textAlign:"left"}}>{c.label}</button>:null;})}
+          </div>
+        </>}
+        <div style={{fontSize:12,fontWeight:600,color:C.textMid,marginBottom:8}}>Create new category</div>
+        <div style={{display:"flex",gap:8}}>
+          <input placeholder="Category name" value={newCatName} onChange={e=>setNewCatName(e.target.value)} style={{flex:1,fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",background:C.bg,color:C.text}}/>
+          <button onClick={()=>{if(newCatName.trim()){addCat();setShowAddCat(false);}}} style={{padding:"8px 16px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.red,color:"#fff",cursor:"pointer"}}>Add</button>
+        </div>
+      </Modal>}
       {showWeekPicker && <WeekSelectorModal archives={archives} currentWeekStart={currentWeekStart} currentWeekEnd={currentWeekEnd} selected={viewWeek} onSelect={setViewWeek} onClose={()=>setShowWeekPicker(false)}/>}
 
       {/* ── Header ── */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,paddingBottom:16,borderBottom:`1px solid ${C.border}`}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <img src="https://brand.weill.cornell.edu/sites/default/files/wcm_social_og.jpg" alt="WCM" style={{width:38,height:38,borderRadius:10,objectFit:"cover"}} onError={(e)=>{e.target.style.display="none";e.target.parentNode.insertAdjacentHTML("afterbegin","<div style='width:38px;height:38px;border-radius:10px;background:#b31b1b;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:16px'>W</div>");}}/>
+          <div style={{width:38,height:38,borderRadius:10,background:"linear-gradient(135deg,#b31b1b 0%,#8b1515 100%)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,position:"relative",overflow:"hidden"}}>
+              <svg width="28" height="28" viewBox="0 0 100 100" fill="none"><path d="M50 8L12 30V70L50 92L88 70V30L50 8Z" fill="none" stroke="white" strokeWidth="4"/><path d="M50 18L20 35V65L50 82L80 65V35L50 18Z" fill="rgba(255,255,255,0.1)"/><text x="50" y="58" textAnchor="middle" fill="white" fontFamily="Georgia,serif" fontSize="30" fontWeight="700">W</text></svg>
+            </div>
           <div>
             <div style={{fontSize:17,fontWeight:700,color:C.text,letterSpacing:"-0.02em"}}>WCM Budget Planner</div>
             <div style={{fontSize:11,color:C.gray,marginTop:1}}>MD Class of 2030 · Extended Curriculum</div>
@@ -828,7 +854,7 @@ function App() {
           ["charts","Charts"],
           ["aid","Aid & Detail",0],
           ["subscriptions","Subscriptions",renewalsDue.length],
-          ["customize","Customize"],
+          ["customize","Categories"],
         ].map(([id,lbl,badge])=><TabBtn key={id} label={lbl} active={tab===id} onClick={()=>setTab(id)} badge={badge||0}/>)}
       </div>
 
@@ -855,7 +881,7 @@ function App() {
             {cats.filter(c=>!c.locked && !disabledCats.includes(c.id)).map((cat,i)=>{
               const isAuto = cat.autoCalc===true;
               const isDisabled = disabledCats.includes(cat.id);
-              const amt = isDisabled ? 0 : (cat.id==="subs" ? subsMo : (Number(yr.monthly[cat.id])||0));
+              const amt = isDisabled ? 0 : getMonthVal(cat.id);
               const pct = moSpend>0?Math.round(amt/moSpend*100):0;
               return (
                 <div key={cat.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`}}>
@@ -863,21 +889,21 @@ function App() {
                   <span style={{flex:1,fontSize:13,color:C.text}}>{cat.label}</span>
                   {isAuto
                     ? <span style={{fontSize:13,fontWeight:600,color:C.blue,minWidth:72,textAlign:"right"}}>{fmt(amt)}<span style={{fontSize:10,color:C.gray,fontWeight:400}}> auto</span></span>
-                    : <input type="number" value={yr.monthly[cat.id]??0} onChange={e=>setMo(ay,cat.id,e.target.value)}
+                    : <input type="number" value={getMonthVal(cat.id)} onChange={e=>setMo(ay,cat.id,e.target.value)}
                         style={{width:80,textAlign:"right",fontSize:13,border:`1px solid ${C.border}`,borderRadius:7,padding:"4px 8px",background:C.bg,color:C.text,fontWeight:600}}/>
                   }
                   <span style={{fontSize:10,color:C.gray,width:28,textAlign:"right"}}>{pct}%</span>
-                  {!isAuto && <button onClick={()=>{if(confirm("Remove "+cat.label+" from "+MONTH_FULL[selMonth]+"?"))toggleMonthCat(cat.id)}} style={{width:20,height:20,borderRadius:4,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center",color:C.gray,flexShrink:0,opacity:0.5}} title={"Remove for "+MONTH_NAMES[selMonth]}>✕</button>}
+                  {!isAuto && <button onClick={()=>setConfirmRemove(cat.id)} style={{width:20,height:20,borderRadius:4,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center",color:C.gray,flexShrink:0,opacity:0.5}} title={"Remove for "+MONTH_NAMES[selMonth]}>✕</button>}
                 </div>
               );
             })}
 
-            {disabledCats.length>0 && <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8,marginBottom:8}}>
-              {disabledCats.map(cid=>{const c=cats.find(x=>x.id===cid);return c?<button key={cid} onClick={()=>toggleMonthCat(cid)} style={{fontSize:11,padding:"3px 10px",borderRadius:6,border:`1px dashed ${C.border}`,background:"transparent",color:C.gray,cursor:"pointer"}}>+ {c.label}</button>:null;})}
-            </div>}
             <Divider/>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:700}}>
-              <span>Total</span>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:13,fontWeight:700}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span>Total</span>
+                <button onClick={()=>setShowAddCat(true)} style={{width:22,height:22,borderRadius:6,border:`1.5px solid ${C.border}`,background:"transparent",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",color:C.gray}} title="Add a category for this month">+</button>
+              </div>
               <span style={{color:moSpend>moSpendable?C.red:C.text}}>{fmt(moSpend)}/mo</span>
             </div>
             {subsMo>0 && <div style={{fontSize:11,color:C.blue,marginTop:6}}>{subs.filter(s=>s.active!==false).length} active subscription{subs.length!==1?"s":""} totalling {fmt(subsMo)}/mo — auto-calculated</div>}
@@ -1425,7 +1451,6 @@ function App() {
     </div>
   );
 }
-
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(App));
