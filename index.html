@@ -531,7 +531,7 @@ function App() {
   const [newCatName, setNewCatName] = useState("");
 
   // Month selector (0=Aug, 11=Jul for academic year)
-  const [selMonth, setSelMonth] = useState(0);
+  const [selMonth, setSelMonth] = useState((new Date().getMonth() - 7 + 12) % 12);
 
   // Surplus bank dialog
   const [showSurplus, setShowSurplus] = useState(false);
@@ -541,6 +541,10 @@ function App() {
   const [surplusSaved, setSurplusSaved] = useState(false);
   const [showLogoPicker, setShowLogoPicker] = useState(false);
   const [showAddYear, setShowAddYear] = useState(false);
+  const [confirmYearRemove, setConfirmYearRemove] = useState(null);
+  const [dragCat, setDragCat] = useState(null);
+  const [dragOverCat, setDragOverCat] = useState(null);
+  const [weeklyNotice, setWeeklyNotice] = useState(null);
   const [nyStart, setNyStart] = useState("");
   const [nyEnd, setNyEnd] = useState("");
   useEffect(()=>{setSurplusSaved(false);},[ay,selMonth]);
@@ -732,10 +736,32 @@ function App() {
     if(!wCat||!wAmt) return;
     const entryWeek = getMonday(wDate);
     const thisWeek  = getMonday(new Date());
-    const entry = {id:"e_"+Date.now(),catId:wCat,amount:parseFloat(wAmt)||0,note:wNote,date:wDate};
+    const amtNum = parseFloat(wAmt)||0;
+    const entry = {id:"e_"+Date.now(),catId:wCat,amount:amtNum,note:wNote,date:wDate};
     let d = JSON.parse(JSON.stringify(data));
     if(!d.currentWeekEntries) d.currentWeekEntries=[];
     if(!d.weeklyArchive) d.weeklyArchive=[];
+
+    // Detect if this category is unbudgeted for the entry's month
+    const eMonthIdx = (new Date(wDate+"T12:00:00").getMonth() - 7 + 12) % 12;
+    const mk = ay+"-"+MONTH_NAMES[eMonthIdx];
+    const catObj = cats.find(c=>c.id===wCat);
+    let autoAdded = false;
+    // Re-enable if removed for that month
+    if(d.monthDisabled?.[mk]?.includes(wCat)){
+      d.monthDisabled[mk] = d.monthDisabled[mk].filter(c=>c!==wCat);
+      autoAdded = true;
+    }
+    // If category has no monthly budget, seed it from this expense (~monthly estimate)
+    const baseVal = (d.years[ay].monthlyOverrides?.[MONTH_NAMES[eMonthIdx]]?.[wCat]);
+    const effVal = baseVal!==undefined ? baseVal : (Number(d.years[ay].monthly[wCat])||0);
+    if(effVal===0 && wCat!=="subs"){
+      if(!d.years[ay].monthlyOverrides) d.years[ay].monthlyOverrides={};
+      if(!d.years[ay].monthlyOverrides[MONTH_NAMES[eMonthIdx]]) d.years[ay].monthlyOverrides[MONTH_NAMES[eMonthIdx]]={};
+      d.years[ay].monthlyOverrides[MONTH_NAMES[eMonthIdx]][wCat] = Math.round(amtNum*4.333);
+      autoAdded = true;
+    }
+
     if(entryWeek < thisWeek) {
       const ex = d.weeklyArchive.find(a=>a.weekStart===entryWeek);
       if(ex){ex.entries.push(entry);ex.total=ex.entries.reduce((a,e)=>a+Number(e.amount),0);}
@@ -746,6 +772,16 @@ function App() {
       setViewWeek(null);
     }
     upd(d);setWAmt("");setWNote("");
+
+    // Recompute month budget vs spendable to warn / offer surplus
+    const newMoSpend = moTotal({...d.years[ay].monthly, ...(d.years[ay].monthlyOverrides?.[MONTH_NAMES[eMonthIdx]]||{}), subs:subsMo});
+    const deficit = newMoSpend - moSpendable;
+    if(autoAdded && deficit>0){
+      if((d.surplusBank||0) >= deficit) setWeeklyNotice({type:"offer", cat:catObj?.label, month:MONTH_FULL[eMonthIdx], deficit, monthIdx:eMonthIdx});
+      else setWeeklyNotice({type:"warn", cat:catObj?.label, month:MONTH_FULL[eMonthIdx], deficit, bank:d.surplusBank||0});
+    } else if(autoAdded){
+      setWeeklyNotice({type:"info", cat:catObj?.label, month:MONTH_FULL[eMonthIdx]});
+    }
   };
 
   const delEntry = (eid, isArchived) => {
@@ -768,6 +804,17 @@ function App() {
     d.categories.push({id,label:newCatName.trim()});
     d.years.forEach(y=>{y.monthly[id]=0;});
     upd(d);setNewCatName("");
+  };
+  const reorderCats = (fromId, toId) => {
+    if(fromId===toId) return;
+    const d=JSON.parse(JSON.stringify(data));
+    const arr=d.categories;
+    const fromIdx=arr.findIndex(c=>c.id===fromId);
+    const toIdx=arr.findIndex(c=>c.id===toId);
+    if(fromIdx<0||toIdx<0) return;
+    const [moved]=arr.splice(fromIdx,1);
+    arr.splice(toIdx,0,moved);
+    upd(d);
   };
   const delCat = cid => {
     const d=JSON.parse(JSON.stringify(data));
@@ -825,7 +872,7 @@ function App() {
     if(!(yrData.monthly.savings||0)) recs.push(`Consider building an emergency fund (goal: ${fmt(moSpend*3)})`);
     if(!(yrData.monthly.exams||0)) recs.push(`Set aside ${fmt(surplus)} for USMLE Step exams (~$850 each)`);
     if(subsMo < 50) recs.push(`Consider adding a study resource (UWorld, Amboss) for ${fmt(surplus)}/mo`);
-    recs.push(`Add it to savings — even ${fmt(surplus)}/mo compounds significantly over 5 years`);
+    recs.push(`Add it to savings — even ${fmt(surplus)}/mo compounds significantly over your training`);
     return recs[0];
   };
 
@@ -836,6 +883,20 @@ function App() {
       <style>{`@keyframes wcmpulse{0%,100%{opacity:1}50%{opacity:0.3}}`}</style>
       {/* Modals */}
       {renewDlg && <RenewalDialog sub={renewDlg} onClose={()=>setRenewDlg(null)} onConfirm={handleRenewal}/>}
+      {weeklyNotice && weeklyNotice.type==="warn" && <Modal title="Over budget" onClose={()=>setWeeklyNotice(null)} width={360}>
+        <div style={{fontSize:13,color:C.textMid,marginBottom:8,lineHeight:1.6}}>
+          <strong>{weeklyNotice.cat}</strong> was added to {weeklyNotice.month}, pushing that month <strong style={{color:C.red}}>{fmt(weeklyNotice.deficit)}</strong> over your spendable income.
+        </div>
+        <div style={{fontSize:12,color:C.gray,marginBottom:16}}>Your surplus bank ({fmt(weeklyNotice.bank)}) can't fully cover this. Consider reducing another category this month or adjusting the amount.</div>
+        <button onClick={()=>setWeeklyNotice(null)} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.red,color:"#fff",cursor:"pointer"}}>Got it</button>
+      </Modal>}
+      {confirmYearRemove!==null && <Modal title="Remove year" onClose={()=>setConfirmYearRemove(null)} width={350}>
+        <div style={{fontSize:13,color:C.textMid,marginBottom:16}}>Remove <strong>{data.years.find(y=>y.id===confirmYearRemove)?.label}</strong>? This permanently deletes its budget data and cannot be undone.</div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>{removeYear(confirmYearRemove);setConfirmYearRemove(null);}} style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.red,color:"#fff",cursor:"pointer"}}>Remove</button>
+          <button onClick={()=>setConfirmYearRemove(null)} style={{flex:1,padding:"10px",fontSize:13,fontWeight:500,border:`1px solid ${C.border}`,borderRadius:8,background:"transparent",color:C.gray,cursor:"pointer"}}>Cancel</button>
+        </div>
+      </Modal>}
       {showAddYear && <Modal title="Add academic year" onClose={()=>setShowAddYear(false)} width={360}>
         <div style={{fontSize:12,color:C.textMid,marginBottom:14}}>The year number is assigned automatically. Enter the start and end dates for this academic year (end of summer break).</div>
         <div style={{marginBottom:10}}>
@@ -955,7 +1016,7 @@ function App() {
             {/* Housing — read-only */}
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:C.bg,borderRadius:8,marginBottom:10,border:`1px solid ${C.border}`}}>
               <div style={{flex:1}}>
-                <div style={{fontSize:12,fontWeight:600,color:C.text}}>Housing — {yr.housingNote}</div>
+                <div style={{fontSize:12,fontWeight:600,color:C.text}}>Housing</div>
                 <div style={{fontSize:11,color:C.gray,marginTop:1,display:"flex",alignItems:"center",gap:4}}>Fixed by housing contract <InfoTip text="Housing is set by your WCM housing assignment. Edit the rate in the Aid & Detail tab."/></div>
               </div>
               <div style={{fontWeight:700,fontSize:14,color:C.text}}>{fmt(yr.monthly.housing||0)}<span style={{fontSize:11,fontWeight:400,color:C.gray}}>/mo</span></div>
@@ -967,7 +1028,13 @@ function App() {
               const amt = isDisabled ? 0 : getMonthVal(cat.id);
               const pct = moSpend>0?Math.round(amt/moSpend*100):0;
               return (
-                <div key={cat.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`}}>
+                <div key={cat.id} draggable={!isAuto}
+                  onDragStart={()=>setDragCat(cat.id)}
+                  onDragEnd={()=>{setDragCat(null);setDragOverCat(null);}}
+                  onDragOver={e=>{e.preventDefault();if(dragCat&&dragCat!==cat.id)setDragOverCat(cat.id);}}
+                  onDrop={e=>{e.preventDefault();if(dragCat)reorderCats(dragCat,cat.id);setDragCat(null);setDragOverCat(null);}}
+                  style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`,opacity:dragCat===cat.id?0.4:1,borderTop:dragOverCat===cat.id?`2px solid ${C.red}`:"2px solid transparent",cursor:isAuto?"default":"grab",background:dragOverCat===cat.id?C.bgDark:"transparent"}}>
+                  {!isAuto && <span style={{color:C.gray,fontSize:12,cursor:"grab",userSelect:"none"}} title="Drag to reorder">⠿</span>}
                   <div style={{width:6,height:6,borderRadius:99,background:CHART_COLORS[i%CHART_COLORS.length],flexShrink:0}}/>
                   <span style={{flex:1,fontSize:13,color:C.text}}>{cat.label}</span>
                   {isAuto
@@ -996,7 +1063,10 @@ function App() {
 
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
             <Card>
-              <SectionTitle>Cash flow — {yr.label}</SectionTitle>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
+                <SectionTitle>Cash flow — {yr.label}</SectionTitle>
+                <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,color:C.gray}}><span style={{width:7,height:7,borderRadius:99,background:C.green,animation:"wcmpulse 2s infinite"}}/>Live</span>
+              </div>
               
               {[
                 {l:"Grant disbursed to you",    v:fmt(annDisburse)+"/yr",    c:C.teal},
@@ -1089,6 +1159,20 @@ function App() {
       {/* ══════════════ WEEKLY ══════════════ */}
       {tab==="weekly" && (
         <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          {weeklyNotice && weeklyNotice.type==="info" && (
+            <Banner type="info" onClose={()=>setWeeklyNotice(null)}>
+              <strong>{weeklyNotice.cat}</strong> was automatically added to your {weeklyNotice.month} budget. Adjust its amount in the Budget tab anytime.
+            </Banner>
+          )}
+          {weeklyNotice && weeklyNotice.type==="offer" && (
+            <div style={{padding:"12px 14px",background:C.amberLight,borderRadius:10,fontSize:13,color:C.amber,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+              <span><strong>{weeklyNotice.cat}</strong> added to {weeklyNotice.month}, putting it {fmt(weeklyNotice.deficit)} over budget. Cover from your surplus bank?</span>
+              <div style={{display:"flex",gap:6,flexShrink:0}}>
+                <button onClick={()=>{withdrawFromSurplus(weeklyNotice.deficit);setWeeklyNotice(null);}} style={{padding:"5px 12px",fontSize:12,fontWeight:600,border:"none",borderRadius:6,background:C.amber,color:"#fff",cursor:"pointer",whiteSpace:"nowrap"}}>Cover {fmt(weeklyNotice.deficit)}</button>
+                <button onClick={()=>setWeeklyNotice(null)} style={{padding:"5px 10px",fontSize:12,border:`1px solid ${C.amberMid}`,borderRadius:6,background:"transparent",color:C.amber,cursor:"pointer"}}>Dismiss</button>
+              </div>
+            </div>
+          )}
           {/* Week bar */}
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             <div style={{flex:1,fontSize:14,fontWeight:600,color:C.text}}>
@@ -1291,7 +1375,6 @@ function App() {
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
                     <div>
                       <div style={{fontWeight:700,fontSize:14,color:C.text}}>{y.label}</div>
-                      <div style={{fontSize:11,color:C.gray,marginTop:2}}>{y.housingNote}</div>
                       <div style={{display:"flex",gap:4,marginTop:6,alignItems:"center"}}>
                         <input type="date" value={y.startDate||""} onChange={e=>{const d=JSON.parse(JSON.stringify(data));d.years[i].startDate=e.target.value;upd(d);}} style={{fontSize:10,border:`1px solid ${C.border}`,borderRadius:5,padding:"2px 5px",background:C.bg,color:C.text}}/>
                         <span style={{fontSize:10,color:C.gray}}>→</span>
@@ -1300,7 +1383,7 @@ function App() {
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <Pill ok={moS>=0} warn={moS<0}>{fmtS(moS)}/mo</Pill>
-                      {data.years.length>1 && <button onClick={()=>{if(confirm("Remove "+y.label+"? This deletes its budget data."))removeYear(y.id);}} style={{width:22,height:22,borderRadius:6,border:`1px solid ${C.border}`,background:"transparent",color:C.gray,cursor:"pointer",fontSize:12,flexShrink:0}} title="Remove year">✕</button>}
+                      {data.years.length>1 && <button onClick={()=>setConfirmYearRemove(y.id)} style={{width:22,height:22,borderRadius:6,border:`1px solid ${C.border}`,background:"transparent",color:C.gray,cursor:"pointer",fontSize:12,flexShrink:0}} title="Remove year">✕</button>}
                     </div>
                   </div>
                   {y.type==="extended" && <Banner type="warn">Extended year: tuition waived, fees only</Banner>}
@@ -1308,7 +1391,7 @@ function App() {
                     {label:"WCM Grant (annual)",       field:"grant",       note:"includes health insurance"},
                     {label:"Tuition & fees",            field:"tuitionFees", note:"paid directly to school"},
                     {label:"Health insurance",          field:"healthIns",   note:"school-covered, deducted from grant"},
-                    {label:"Housing (monthly)",         field:null,          value:y.monthly.housing||0, note:y.housingNote, isHousing:true},
+                    {label:"Housing (monthly)",         field:null,          value:y.monthly.housing||0, note:"per month", isHousing:true},
                     {label:"Other income (monthly)",    field:"otherIncome", note:"tutoring, work, etc."},
                   ].map(({label,field,note,value,isHousing})=>(
                     <div key={label} style={{padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
@@ -1337,7 +1420,7 @@ function App() {
 
           {/* 5-year table */}
           <Card>
-            <SectionTitle>5-year overview</SectionTitle>
+            <SectionTitle>{data.years.length}-year overview</SectionTitle>
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead><tr>
@@ -1369,7 +1452,7 @@ function App() {
               </table>
             </div>
             <div style={{marginTop:10,padding:"8px 12px",background:totDisburse-totSpend>=0?C.tealLight:C.redLight,borderRadius:8,fontSize:12,color:totDisburse-totSpend>=0?C.teal:C.red,fontWeight:600}}>
-              5-year net: {fmtS(totDisburse-totSpend)}
+              {data.years.length}-year net: {fmtS(totDisburse-totSpend)}
             </div>
           </Card>
 
