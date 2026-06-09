@@ -399,6 +399,13 @@ const InfoTip = ({text}) => {
   </span>;
 };
 
+const WCMLogo = () => {
+  const [err,setErr] = useState(false);
+  return <div style={{width:38,height:38,borderRadius:10,overflow:"hidden",flexShrink:0,background:"#b31b1b",display:"flex",alignItems:"center",justifyContent:"center",padding:4}}>
+    {!err ? <img src="https://brand.weill.cornell.edu/profiles/wcmc/themes/wcm_brand_base/images/WCM_logo_white.png" alt="WCM" style={{width:"100%",height:"100%",objectFit:"contain"}} onError={()=>setErr(true)}/> : <span style={{color:"white",fontWeight:800,fontSize:16,fontFamily:"Georgia,serif"}}>W</span>}
+  </div>;
+};
+
 const Divider = () => <div style={{height:1,background:C.border,margin:"10px 0"}}/>;
 
 const MetricTile = ({label, value, sub, color, onClick}) => (
@@ -806,9 +813,7 @@ function App() {
       {/* ── Header ── */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,paddingBottom:16,borderBottom:`1px solid ${C.border}`}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:38,height:38,borderRadius:10,overflow:"hidden",flexShrink:0,background:"#b31b1b",display:"flex",alignItems:"center",justifyContent:"center",padding:4}}>
-              <img src="https://brand.weill.cornell.edu/profiles/wcmc/themes/wcm_brand_base/images/WCM_logo_white.png" alt="WCM" style={{width:"100%",height:"100%",objectFit:"contain"}} onError={(e)=>{e.target.style.display="none";e.target.parentNode.innerHTML="<div style=\'display:flex;align-items:center;justify-content:center;width:100%;height:100%;color:white;font-weight:800;font-size:16px;font-family:Georgia,serif\'>W</div>";}}/>
-            </div>
+          <WCMLogo/>
           <div>
             <div style={{fontSize:17,fontWeight:700,color:C.text,letterSpacing:"-0.02em"}}>WCM Budget Planner</div>
             <div style={{fontSize:11,color:C.gray,marginTop:1}}>MD Class of 2030 · Extended Curriculum</div>
