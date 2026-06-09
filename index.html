@@ -27,14 +27,9 @@
 <script src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
 <script src="https://unpkg.com/recharts@2.5.0/umd/Recharts.js"></script>
 <script type="text/babel" data-presets="react">
-window.storage = {
-  get: async (key) => { try { const v = localStorage.getItem(key); return v ? { key, value: v } : null; } catch { return null; } },
-  set: async (key, value) => { try { localStorage.setItem(key, value); return { key, value }; } catch { return null; } },
-  delete: async (key) => { try { localStorage.removeItem(key); return { key, deleted: true }; } catch { return null; } },
-  list: async (prefix) => { try { return { keys: Object.keys(localStorage).filter(k => !prefix || k.startsWith(prefix)) }; } catch { return { keys: [] }; } }
-};
-const { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } = Recharts;
-(function scheduleArchive() { setInterval(() => { const now = new Date(); if (now.getDay()===0 && now.getHours()===23 && now.getMinutes()===59) window._triggerArchive && window._triggerArchive(); }, 60000); })();
+window.storage={get:async(key)=>{try{const v=localStorage.getItem(key);return v?{key,value:v}:null}catch{return null}},set:async(key,value)=>{try{localStorage.setItem(key,value);return{key,value}}catch{return null}},delete:async(key)=>{try{localStorage.removeItem(key);return{key,deleted:true}}catch{return null}},list:async(prefix)=>{try{return{keys:Object.keys(localStorage).filter(k=>!prefix||k.startsWith(prefix))}}catch{return{keys:[]}}}};
+const{PieChart,Pie,Cell,BarChart,Bar,XAxis,YAxis,Tooltip,ResponsiveContainer,LineChart,Line}=Recharts;
+(function(){setInterval(()=>{const now=new Date();if(now.getDay()===0&&now.getHours()===23&&now.getMinutes()===59)window._triggerArchive&&window._triggerArchive()},60000)})();
 
 const { useState, useEffect, useCallback } = React;
 // recharts loaded above
@@ -607,6 +602,11 @@ function App() {
   const annDisburse = Math.max(annGrant - annTuition - annHlth, 0);
   const annOther    = (Number(yr.otherIncome)||0)*12;
   const moSpendable = (annDisburse + annOther)/12;
+  // Month-disabled categories
+  const monthKey = ay+"-"+MONTH_NAMES[selMonth];
+  const disabledCats = data.monthDisabled?.[monthKey]||[];
+  const toggleMonthCat = (catId) => {const d=JSON.parse(JSON.stringify(data));if(!d.monthDisabled)d.monthDisabled={};const mk=ay+"-"+MONTH_NAMES[selMonth];const cur=d.monthDisabled[mk]||[];d.monthDisabled[mk]=cur.includes(catId)?cur.filter(c=>c!==catId):[...cur,catId];upd(d);};
+
   // Get effective monthly values (base + month overrides)
   const getMonthVal = (catId) => {
     const mk = MONTH_NAMES[selMonth];
@@ -627,10 +627,6 @@ function App() {
   const depositToSurplus = (amt) => {const d=JSON.parse(JSON.stringify(data));d.surplusBank=(d.surplusBank||0)+Number(amt);upd(d);setSurplusAmt("");setShowSurplus(false);};
   const withdrawFromSurplus = (amt) => {const d=JSON.parse(JSON.stringify(data));d.surplusBank=Math.max(0,(d.surplusBank||0)-Number(amt));upd(d);setSurplusAmt("");setShowSurplus(false);};
 
-  // Month-disabled categories
-  const monthKey = ay+"-"+MONTH_NAMES[selMonth];
-  const disabledCats = data.monthDisabled?.[monthKey]||[];
-  const toggleMonthCat = (catId) => {const d=JSON.parse(JSON.stringify(data));if(!d.monthDisabled)d.monthDisabled={};const mk=ay+"-"+MONTH_NAMES[selMonth];const cur=d.monthDisabled[mk]||[];d.monthDisabled[mk]=cur.includes(catId)?cur.filter(c=>c!==catId):[...cur,catId];upd(d);};
 
   // 5-yr
   const totDisburse = data.years.reduce((a,y)=>a+Math.max((Number(y.grant)||0)-(Number(y.tuitionFees)||0)-(Number(y.healthIns)||0),0)+(Number(y.otherIncome)||0)*12,0);
@@ -1463,9 +1459,9 @@ function App() {
   );
 }
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
+const root=ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(App));
 </script>
-<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});</script>
 </body>
 </html>
