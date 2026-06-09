@@ -1,0 +1,1318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>WCM Budget Planner</title>
+<meta name="description" content="Personal finance tracker for Weill Cornell Medicine MD Class of 2030"/>
+<link rel="manifest" href="manifest.json"/>
+<meta name="theme-color" content="#b31b1b"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+<meta name="apple-mobile-web-app-title" content="WCM Budget"/>
+<link rel="apple-touch-icon" href="icon.svg"/>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; }
+  #root { min-height: 100vh; }
+  #loading { display: flex; align-items: center; justify-content: center; height: 100vh; font-size: 14px; color: #64748b; font-family: system-ui; }
+</style>
+</head>
+<body>
+<div id="root"><div id="loading">Loading WCM Budget Planner…</div></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+
+<script type="text/babel" data-presets="react">
+// ── Storage polyfill (localStorage-backed, mirrors artifact storage API) ──────
+window.storage = {
+  get: async (key) => {
+    try { const v = localStorage.getItem(key); return v ? { key, value: v } : null; } catch { return null; }
+  },
+  set: async (key, value) => {
+    try { localStorage.setItem(key, value); return { key, value }; } catch { return null; }
+  },
+  delete: async (key) => {
+    try { localStorage.removeItem(key); return { key, deleted: true }; } catch { return null; }
+  },
+  list: async (prefix) => {
+    try {
+      const keys = Object.keys(localStorage).filter(k => !prefix || k.startsWith(prefix));
+      return { keys };
+    } catch { return { keys: [] }; }
+  }
+};
+
+// ── Make recharts available as named imports ───────────────────────────────────
+const { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } = Recharts;
+
+// ── Sunday archiving: runs every minute, triggers at Sun 23:59 local ──────────
+(function scheduleArchive() {
+  setInterval(() => {
+    const now = new Date();
+    if (now.getDay() === 0 && now.getHours() === 23 && now.getMinutes() === 59) {
+      window._triggerArchive && window._triggerArchive();
+    }
+  }, 60000);
+})();
+
+const { useState, useEffect, useCallback } = React;
+// recharts loaded above
+
+// ── Design tokens ─────────────────────────────────────────────────────────────
+const C = {
+  red:"#b31b1b", redLight:"#fef2f2", redMid:"#fecaca",
+  teal:"#0f766e", tealLight:"#f0fdfa", tealMid:"#99f6e4",
+  amber:"#b45309", amberLight:"#fffbeb", amberMid:"#fcd34d",
+  green:"#15803d", greenLight:"#f0fdf4", greenMid:"#86efac",
+  blue:"#1d4ed8", blueLight:"#eff6ff", blueMid:"#bfdbfe",
+  border:"#e2e8f0", borderDark:"#cbd5e1",
+  bg:"#f8fafc", bgDark:"#f1f5f9",
+  white:"#ffffff", text:"#0f172a", textMid:"#475569", gray:"#64748b",
+  purple:"#6d28d9", purpleLight:"#f5f3ff",
+};
+const CHART_COLORS = ["#0f766e","#1d4ed8","#b45309","#6d28d9","#b91c1c","#be185d","#15803d","#c2410c","#475569","#0369a1"];
+
+// ── SVG brand icons (inline, no external deps) ────────────────────────────────
+// Each returns an SVG path + color so BrandIcon renders a clean colored tile
+const BRANDS = {
+  spotify:        {bg:"#1DB954", fg:"#fff", letter:"S",  shape:"music"},
+  "apple music":  {bg:"#FA243C", fg:"#fff", letter:"♪",  shape:"music"},
+  netflix:        {bg:"#E50914", fg:"#fff", letter:"N",  shape:""},
+  hulu:           {bg:"#1CE783", fg:"#000", letter:"h",  shape:""},
+  "disney+":      {bg:"#0c2340", fg:"#fff", letter:"D",  shape:""},
+  "disney plus":  {bg:"#0c2340", fg:"#fff", letter:"D",  shape:""},
+  max:            {bg:"#002BE7", fg:"#fff", letter:"M",  shape:""},
+  "hbo max":      {bg:"#002BE7", fg:"#fff", letter:"M",  shape:""},
+  "youtube":      {bg:"#FF0000", fg:"#fff", letter:"▶",  shape:""},
+  "youtube premium":{bg:"#FF0000",fg:"#fff",letter:"▶",  shape:""},
+  "amazon prime": {bg:"#00A8E0", fg:"#fff", letter:"a",  shape:""},
+  "amazon":       {bg:"#FF9900", fg:"#fff", letter:"a",  shape:""},
+  "apple tv+":    {bg:"#1c1c1e", fg:"#fff", letter:"tv", shape:""},
+  "apple tv":     {bg:"#1c1c1e", fg:"#fff", letter:"tv", shape:""},
+  "icloud":       {bg:"#3395FF", fg:"#fff", letter:"☁",  shape:""},
+  "apple one":    {bg:"#1c1c1e", fg:"#fff", letter:"A",  shape:""},
+  "paramount+":   {bg:"#0064FF", fg:"#fff", letter:"P",  shape:""},
+  "espn+":        {bg:"#CC0000", fg:"#fff", letter:"E",  shape:""},
+  "uworld":       {bg:"#003366", fg:"#fff", letter:"UW", shape:""},
+  "amboss":       {bg:"#D0021B", fg:"#fff", letter:"A",  shape:""},
+  "anki":         {bg:"#1F8EFA", fg:"#fff", letter:"A",  shape:""},
+  "sketchy":      {bg:"#E8763A", fg:"#fff", letter:"Sk", shape:""},
+  "boards & beyond":{bg:"#002D72",fg:"#fff",letter:"B&B",shape:""},
+  "first aid":    {bg:"#C41230", fg:"#fff", letter:"FA", shape:""},
+  "notion":       {bg:"#1a1a1a", fg:"#fff", letter:"N",  shape:""},
+  "dropbox":      {bg:"#0061FF", fg:"#fff", letter:"⬡",  shape:""},
+  "google one":   {bg:"#4285F4", fg:"#fff", letter:"G",  shape:""},
+  "google":       {bg:"#4285F4", fg:"#fff", letter:"G",  shape:""},
+  "microsoft 365":{bg:"#D83B01", fg:"#fff", letter:"M",  shape:""},
+  "office 365":   {bg:"#D83B01", fg:"#fff", letter:"O",  shape:""},
+  "adobe":        {bg:"#FF0000", fg:"#fff", letter:"Ai", shape:""},
+  "chatgpt":      {bg:"#10A37F", fg:"#fff", letter:"G",  shape:""},
+  "openai":       {bg:"#10A37F", fg:"#fff", letter:"⊕",  shape:""},
+  "claude":       {bg:"#C67B5A", fg:"#fff", letter:"C",  shape:""},
+  "github":       {bg:"#24292e", fg:"#fff", letter:"GH", shape:""},
+  "figma":        {bg:"#F24E1E", fg:"#fff", letter:"F",  shape:""},
+  "slack":        {bg:"#4A154B", fg:"#fff", letter:"S",  shape:""},
+  "zoom":         {bg:"#2D8CFF", fg:"#fff", letter:"Z",  shape:""},
+  "duolingo":     {bg:"#58CC02", fg:"#fff", letter:"D",  shape:""},
+  "calm":         {bg:"#00B4D8", fg:"#fff", letter:"C",  shape:""},
+  "headspace":    {bg:"#F47D31", fg:"#fff", letter:"H",  shape:""},
+  "strava":       {bg:"#FC4C02", fg:"#fff", letter:"S",  shape:""},
+  "peloton":      {bg:"#111111", fg:"#fff", letter:"P",  shape:""},
+  "nytimes":      {bg:"#121212", fg:"#fff", letter:"NY", shape:""},
+  "new york times":{bg:"#121212",fg:"#fff", letter:"NY", shape:""},
+  "wsj":          {bg:"#004685", fg:"#fff", letter:"W",  shape:""},
+  "twitter":      {bg:"#000000", fg:"#fff", letter:"X",  shape:""},
+  "x":            {bg:"#000000", fg:"#fff", letter:"X",  shape:""},
+  "instagram":    {bg:"#E1306C", fg:"#fff", letter:"ig", shape:""},
+  "reddit":       {bg:"#FF4500", fg:"#fff", letter:"R",  shape:""},
+  "twitch":       {bg:"#9146FF", fg:"#fff", letter:"T",  shape:""},
+};
+
+function getBrand(name) {
+  if(!name) return null;
+  const k = name.toLowerCase().trim();
+  return BRANDS[k] || Object.entries(BRANDS).find(([bk])=>k.includes(bk))?.[1] || null;
+}
+
+const BrandIcon = ({name, size=36}) => {
+  const b = getBrand(name);
+  const bg = b?.bg || "#64748b";
+  const fg = b?.fg || "#fff";
+  const txt = b?.letter || (name||"?")[0].toUpperCase();
+  const fontSize = txt.length > 2 ? size*0.28 : txt.length > 1 ? size*0.34 : size*0.44;
+  return (
+    <div style={{
+      width:size, height:size, borderRadius:size*0.22,
+      background:bg, color:fg, display:"flex", alignItems:"center",
+      justifyContent:"center", fontWeight:700, fontSize,
+      flexShrink:0, fontFamily:"system-ui,sans-serif", letterSpacing:"-0.03em",
+      userSelect:"none",
+    }}>{txt}</div>
+  );
+};
+
+// ── Category icons (clean Tabler-style text icons) ────────────────────────────
+const CAT_ICONS = {
+  housing:"⌂", food:"◈", transport:"◎", personal:"◇",
+  books:"▣", exams:"▤", savings:"◉", social:"◌", subs:"▦",
+};
+
+// ── Year configs ──────────────────────────────────────────────────────────────
+// NOTE: Grant already includes health insurance ($8,100) — WCM covers it
+// So grant displayed = base grant + healthIns; school deducts tuitionFees + healthIns
+const YEAR_CONFIGS = [
+  { id:0, label:"Year 1 — 2026-27", type:"standard",  tuitionFees:76648, healthIns:8100, grant:109848, otherIncome:0, housing:996,  housingNote:"Olin Hall",      wcmLivingAllowance:21440, notes:"" },
+  { id:1, label:"Year 2 — 2027-28", type:"standard",  tuitionFees:76648, healthIns:8100, grant:109848, otherIncome:0, housing:1370, housingNote:"Lasdon Two-Share",wcmLivingAllowance:25728, notes:"" },
+  { id:2, label:"Year 3 — 2028-29", type:"standard",  tuitionFees:76486, healthIns:8100, grant:109848, otherIncome:0, housing:1370, housingNote:"Lasdon Two-Share",wcmLivingAllowance:23584, notes:"" },
+  { id:3, label:"Year 4 — 2029-30", type:"standard",  tuitionFees:76486, healthIns:8100, grant:109848, otherIncome:0, housing:1370, housingNote:"Lasdon Two-Share",wcmLivingAllowance:23584, notes:"" },
+  { id:4, label:"Extended — 2030-31",type:"extended", tuitionFees:5232,  healthIns:8100, grant:0,      otherIncome:0, housing:1370, housingNote:"Lasdon Two-Share",wcmLivingAllowance:25728, notes:"" },
+];
+
+const DEFAULT_CATS = [
+  {id:"housing",  label:"Housing",        locked:true},
+  {id:"food",     label:"Food & groceries"},
+  {id:"transport",label:"Transportation"},
+  {id:"personal", label:"Personal"},
+  {id:"books",    label:"Books & supplies"},
+  {id:"exams",    label:"USMLE / Exams"},
+  {id:"savings",  label:"Savings"},
+  {id:"social",   label:"Social & leisure"},
+  {id:"subs",     label:"Subscriptions",  autoCalc:true},
+];
+
+const DEFAULT_MONTHLY = [
+  {housing:996, food:380,transport:110,personal:150,books:80, exams:0,  savings:150,social:80,subs:0},
+  {housing:1370,food:380,transport:110,personal:150,books:60, exams:50, savings:100,social:80,subs:0},
+  {housing:1370,food:380,transport:132,personal:150,books:40, exams:150,savings:0,  social:80,subs:0},
+  {housing:1370,food:380,transport:121,personal:150,books:30, exams:100,savings:0,  social:80,subs:0},
+  {housing:1370,food:380,transport:132,personal:150,books:50, exams:50, savings:0,  social:80,subs:0},
+];
+
+const DEFAULT_STATE = {
+  categories: DEFAULT_CATS,
+  years: YEAR_CONFIGS.map((cfg,i)=>({...cfg, monthly:{...DEFAULT_MONTHLY[i]}})),
+  weeklyArchive: [],
+  currentWeekEntries: [],
+  subscriptions: [],
+  monthlyRollover: {},   // {YYYY-MM: amount}
+  weeklyRollover: {},    // {weekStart: amount}
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const fmt  = n => "$"+Math.abs(Math.round(n)).toLocaleString();
+const fmtS = n => (n>=0?"+":"-")+fmt(n);
+const fmtD = n => "$"+Math.abs(Number(n)||0).toFixed(2);
+const moTotal = m => Object.values(m).reduce((a,b)=>a+(Number(b)||0),0);
+
+const todayStr = () => {
+  const d = new Date();
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+};
+
+const getMonday = date => {
+  const d = new Date(typeof date === "string" ? date+"T12:00:00" : date);
+  const day = d.getDay();
+  const diff = (day === 0 ? -6 : 1 - day);
+  d.setDate(d.getDate() + diff);
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+};
+
+const getSunday = mondayStr => {
+  const d = new Date(mondayStr+"T12:00:00");
+  d.setDate(d.getDate()+6);
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+};
+
+const fmtWeekLabel = wk => {
+  const sun = getSunday(wk);
+  const m1 = new Date(wk+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"});
+  const m2 = new Date(sun+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"});
+  return `${m1} – ${m2}`;
+};
+
+const daysUntil = dateStr => {
+  if(!dateStr) return null;
+  const now = new Date(); now.setHours(0,0,0,0);
+  const t = new Date(dateStr+"T12:00:00");
+  return Math.round((t-now)/86400000);
+};
+
+const subMonthlyTotal = (subs=[]) => subs.filter(s=>s.active!==false).reduce((a,s)=>{
+  if(s.cycle==="monthly")   return a+Number(s.amount);
+  if(s.cycle==="annual")    return a+Number(s.amount)/12;
+  if(s.cycle==="quarterly") return a+Number(s.amount)/3;
+  return a;
+},0);
+
+const currentYearIdx = (years) => {
+  const now = new Date();
+  const yr = now.getFullYear();
+  const mo = now.getMonth(); // 0-indexed
+  // Academic year starts ~August. Map calendar year to academic year index.
+  // Yr1 = 2026-27, starts Aug 2026
+  const starts = [2026, 2027, 2028, 2029, 2030];
+  for(let i=0;i<starts.length;i++){
+    const start = starts[i];
+    if((yr===start && mo>=7)||(yr===start+1 && mo<7)) return i;
+  }
+  return 0;
+};
+
+const getYearMonthStr = (date) => {
+  const d = new Date(date+"T12:00:00");
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+};
+
+// ── UI Atoms ──────────────────────────────────────────────────────────────────
+const Pill = ({ok, warn, neutral, children, sm}) => {
+  const bg = neutral ? C.bgDark : ok ? C.greenLight : warn ? C.amberLight : C.redLight;
+  const color = neutral ? C.gray : ok ? C.green : warn ? C.amber : C.red;
+  return (
+    <span style={{
+      fontSize: sm?10:11, padding: sm?"1px 7px":"2px 9px",
+      borderRadius:999, background:bg, color, fontWeight:600,
+      display:"inline-block", whiteSpace:"nowrap",
+    }}>{children}</span>
+  );
+};
+
+const Card = ({children, style={}, accent}) => (
+  <div style={{
+    background:C.white, border:`1px solid ${C.border}`,
+    borderRadius:12, padding:"18px 20px",
+    borderTop: accent ? `3px solid ${accent}` : undefined,
+    ...style,
+  }}>{children}</div>
+);
+
+const SectionTitle = ({children, sub}) => (
+  <div style={{marginBottom:14}}>
+    <div style={{fontSize:13, fontWeight:600, color:C.text, letterSpacing:"-0.01em"}}>{children}</div>
+    {sub && <div style={{fontSize:11, color:C.gray, marginTop:2}}>{sub}</div>}
+  </div>
+);
+
+const TabBtn = ({label, active, onClick, badge}) => (
+  <button onClick={onClick} style={{
+    padding:"9px 16px", border:"none",
+    borderBottom: active ? `2px solid ${C.red}` : "2px solid transparent",
+    background:"transparent", cursor:"pointer", fontSize:13,
+    fontWeight: active?600:400, color: active?C.red:C.gray,
+    whiteSpace:"nowrap", position:"relative", transition:"color .15s",
+  }}>
+    {label}
+    {badge>0 && <span style={{position:"absolute",top:5,right:5,minWidth:16,height:16,borderRadius:8,background:C.red,color:"#fff",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 3px"}}>{badge}</span>}
+  </button>
+);
+
+const YrBtn = ({yr, active, onClick}) => (
+  <button onClick={onClick} style={{
+    padding:"5px 14px", borderRadius:8,
+    border: active ? `1.5px solid ${C.red}` : `1.5px solid ${C.border}`,
+    background: active ? C.redLight : "transparent",
+    color: active ? C.red : C.gray,
+    fontWeight: active?600:400, fontSize:12, cursor:"pointer",
+    transition:"all .15s",
+  }}>
+    {yr.label.split("—")[0].trim()}
+    {yr.type==="extended" ? " ★" : ""}
+  </button>
+);
+
+const Banner = ({children, type="info", onClose}) => {
+  const styles = {
+    info:    {bg:"#eff6ff", color:"#1e40af", border:"#bfdbfe"},
+    warn:    {bg:C.amberLight, color:C.amber, border:C.amberMid},
+    success: {bg:C.greenLight, color:C.green, border:C.greenMid},
+    error:   {bg:C.redLight, color:C.red, border:C.redMid},
+  };
+  const s = styles[type]||styles.info;
+  return (
+    <div style={{background:s.bg, border:`1px solid ${s.border}`, borderRadius:10, padding:"10px 14px", marginBottom:10, fontSize:12, color:s.color, display:"flex", gap:10, alignItems:"flex-start"}}>
+      <div style={{flex:1, lineHeight:1.6}}>{children}</div>
+      {onClose && <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:s.color,lineHeight:1,padding:0,flexShrink:0,opacity:0.7}}>×</button>}
+    </div>
+  );
+};
+
+const Modal = ({title, onClose, children, width=440}) => (
+  <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(2px)"}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:C.white,borderRadius:16,padding:"24px",maxWidth:width,width:"calc(100% - 32px)",boxShadow:"0 20px 60px rgba(0,0,0,0.2)",maxHeight:"90vh",overflowY:"auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <div style={{fontWeight:700,fontSize:16,color:C.text}}>{title}</div>
+        <button onClick={onClose} style={{background:C.bgDark,border:"none",cursor:"pointer",width:28,height:28,borderRadius:7,fontSize:16,color:C.gray,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+      </div>
+      {children}
+    </div>
+  </div>
+);
+
+const Divider = () => <div style={{height:1,background:C.border,margin:"10px 0"}}/>;
+
+const MetricTile = ({label, value, sub, color, onClick}) => (
+  <div onClick={onClick} style={{background:C.bg,borderRadius:10,padding:"14px 16px",flex:1,minWidth:130,cursor:onClick?"pointer":"default",transition:"background .15s"}}>
+    <div style={{fontSize:10,color:C.gray,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}}>{label}</div>
+    <div style={{fontSize:21,fontWeight:700,color:color||C.text,letterSpacing:"-0.02em"}}>{value}</div>
+    {sub && <div style={{fontSize:11,color:C.gray,marginTop:3}}>{sub}</div>}
+  </div>
+);
+
+const ProgressBar = ({value, max, color, height=6}) => {
+  const pct = max>0 ? Math.min(Math.round(value/max*100),100) : 0;
+  return (
+    <div style={{height,background:C.border,borderRadius:height,overflow:"hidden"}}>
+      <div style={{width:pct+"%",height:"100%",background:color,borderRadius:height,transition:"width .4s"}}/>
+    </div>
+  );
+};
+
+// ── Renewal Dialog ─────────────────────────────────────────────────────────────
+function RenewalDialog({sub, onClose, onConfirm}) {
+  const [renewed, setRenewed] = useState(null);
+  const [samePrice, setSamePrice] = useState(true);
+  const [newAmt, setNewAmt] = useState(String(sub.amount));
+  const [newDate, setNewDate] = useState("");
+  return (
+    <Modal title="Handle renewal" onClose={onClose}>
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:C.bg,borderRadius:10,marginBottom:20}}>
+        <BrandIcon name={sub.name} size={40}/>
+        <div>
+          <div style={{fontWeight:600,fontSize:14}}>{sub.name}</div>
+          <div style={{fontSize:12,color:C.gray}}>{fmtD(sub.amount)}/{sub.cycle} · was due {sub.renewal}</div>
+        </div>
+      </div>
+      <div style={{fontSize:13,fontWeight:600,color:C.text,marginBottom:10}}>Did you renew?</div>
+      <div style={{display:"flex",gap:8,marginBottom:20}}>
+        {[{v:true,label:"Yes, keeping it"},{v:false,label:"No, cancelled"}].map(o=>(
+          <button key={String(o.v)} onClick={()=>setRenewed(o.v)} style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:`2px solid ${renewed===o.v?(o.v?C.teal:C.red):C.border}`,borderRadius:10,background:renewed===o.v?(o.v?C.tealLight:C.redLight):"transparent",color:renewed===o.v?(o.v?C.teal:C.red):C.gray,cursor:"pointer",transition:"all .15s"}}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+      {renewed===true && <>
+        <div style={{fontSize:13,fontWeight:600,marginBottom:10}}>Same price?</div>
+        <div style={{display:"flex",gap:8,marginBottom:14}}>
+          {[{v:true,label:"Same price"},{v:false,label:"Price changed"}].map(o=>(
+            <button key={String(o.v)} onClick={()=>setSamePrice(o.v)} style={{flex:1,padding:"8px",fontSize:12,fontWeight:600,border:`1.5px solid ${samePrice===o.v?C.blue:C.border}`,borderRadius:8,background:samePrice===o.v?C.blueLight:"transparent",color:samePrice===o.v?C.blue:C.gray,cursor:"pointer",transition:"all .15s"}}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+        {!samePrice && <div style={{marginBottom:12}}>
+          <div style={{fontSize:11,color:C.gray,marginBottom:4}}>New amount ($)</div>
+          <input type="number" value={newAmt} onChange={e=>setNewAmt(e.target.value)} style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,boxSizing:"border-box"}}/>
+        </div>}
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:11,color:C.gray,marginBottom:4}}>Next renewal date</div>
+          <input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)} style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,boxSizing:"border-box"}}/>
+        </div>
+      </>}
+      {renewed===false && <Banner type="warn" style={{marginBottom:16}}>This subscription will be removed and your budget updated automatically.</Banner>}
+      {renewed !== null && (
+        <button onClick={()=>onConfirm(sub,renewed,samePrice?sub.amount:newAmt,newDate)} style={{width:"100%",padding:"11px",fontSize:14,fontWeight:700,border:"none",borderRadius:10,background:renewed?C.teal:C.red,color:"#fff",cursor:"pointer"}}>
+          {renewed ? "Save subscription" : "Remove subscription"}
+        </button>
+      )}
+    </Modal>
+  );
+}
+
+// ── Week selector modal ────────────────────────────────────────────────────────
+function WeekSelectorModal({archives, currentWeekStart, currentWeekEnd, selected, onSelect, onClose}) {
+  const allWeeks = [
+    {weekStart:currentWeekStart, weekEnd:currentWeekEnd, isCurrent:true},
+    ...archives.map(a=>({...a, isCurrent:false})),
+  ];
+  return (
+    <Modal title="Select a week" onClose={onClose} width={380}>
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {allWeeks.map(w=>(
+          <button key={w.weekStart} onClick={()=>{onSelect(w.isCurrent?null:w.weekStart);onClose();}} style={{
+            padding:"10px 14px",borderRadius:10,border:`1.5px solid ${(!selected&&w.isCurrent)||(selected===w.weekStart)?C.red:C.border}`,
+            background:(!selected&&w.isCurrent)||(selected===w.weekStart)?C.redLight:"transparent",
+            color:(!selected&&w.isCurrent)||(selected===w.weekStart)?C.red:C.text,
+            cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center",
+            fontWeight:(!selected&&w.isCurrent)||(selected===w.weekStart)?600:400,fontSize:13,
+          }}>
+            <span>{fmtWeekLabel(w.weekStart)}</span>
+            {w.isCurrent && <Pill ok neutral sm>Current</Pill>}
+            {!w.isCurrent && w.total!=null && <span style={{fontSize:12,color:C.gray}}>{fmt(w.total)}</span>}
+          </button>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────────
+function App() {
+  const [tab, setTab]           = useState("budget");
+  const [ay,  setAy]            = useState(0);
+  const [data, setData]         = useState(null);
+  const [ready, setReady]       = useState(false);
+  const [flash, setFlash]       = useState(false);
+  const [dismissed, setDismissed] = useState({});
+
+  // Subscription form
+  const [subName, setSubName]   = useState("");
+  const [subAmt, setSubAmt]     = useState("");
+  const [subCycle, setSubCycle] = useState("monthly");
+  const [subRenew, setSubRenew] = useState("");
+  const [subEdit, setSubEdit]   = useState(null);
+  const [renewDlg, setRenewDlg] = useState(null);
+
+  // Weekly
+  const [wCat, setWCat]     = useState("");
+  const [wAmt, setWAmt]     = useState("");
+  const [wNote, setWNote]   = useState("");
+  const [wDate, setWDate]   = useState(todayStr());
+  const [viewWeek, setViewWeek]     = useState(null);
+  const [showWeekPicker, setShowWeekPicker] = useState(false);
+
+  // Cat form
+  const [newCatName, setNewCatName] = useState("");
+
+  // Load
+  useEffect(()=>{
+    (async()=>{
+      try{const r=await window.storage.get("wcm_v7");setData(r?.value?JSON.parse(r.value):JSON.parse(JSON.stringify(DEFAULT_STATE)));}
+      catch{setData(JSON.parse(JSON.stringify(DEFAULT_STATE)));}
+      setReady(true);
+    })();
+  },[]);
+
+  const save = useCallback(async d => {
+    try{await window.storage.set("wcm_v7",JSON.stringify(d));setFlash(true);setTimeout(()=>setFlash(false),1400);}catch{}
+  },[]);
+
+  const upd = d => { setData(d); save(d); };
+  const dismiss = k => setDismissed(p=>({...p,[k]:true}));
+
+  // Archive stale entries on load
+  useEffect(()=>{
+    if(!data) return;
+    const monday = getMonday(new Date());
+    const d = JSON.parse(JSON.stringify(data));
+    const entries = d.currentWeekEntries||[];
+    const stale = entries.filter(e=>getMonday(e.date)<monday);
+    if(stale.length===0) return;
+    if(!d.weeklyArchive) d.weeklyArchive=[];
+    const byWeek={};
+    stale.forEach(e=>{const wk=getMonday(e.date);(byWeek[wk]=byWeek[wk]||[]).push(e);});
+    Object.entries(byWeek).forEach(([wk,ents])=>{
+      const ex=d.weeklyArchive.find(a=>a.weekStart===wk);
+      if(ex){ex.entries.push(...ents);ex.total=ex.entries.reduce((a,e)=>a+Number(e.amount),0);}
+      else d.weeklyArchive.push({weekStart:wk,weekEnd:getSunday(wk),entries:ents,total:ents.reduce((a,e)=>a+Number(e.amount),0)});
+    });
+    d.currentWeekEntries=entries.filter(e=>getMonday(e.date)>=monday);
+    upd(d);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[ready]);
+
+  if(!ready) return <div style={{padding:40,color:C.gray,fontSize:14,fontFamily:"system-ui"}}>Loading…</div>;
+
+  const yr   = data.years[ay];
+  const cats = data.categories;
+  const subs = data.subscriptions||[];
+  const subsMo = Math.round(subMonthlyTotal(subs));
+
+  // ── Financials ────────────────────────────────────────────────────────────
+  const annGrant    = Number(yr.grant)||0;
+  const annTuition  = Number(yr.tuitionFees)||0;
+  const annHlth     = Number(yr.healthIns)||0;
+  const annDisburse = Math.max(annGrant - annTuition - annHlth, 0);
+  const annOther    = (Number(yr.otherIncome)||0)*12;
+  const moSpendable = (annDisburse + annOther)/12;
+  const rawMonthly  = {...yr.monthly, subs:subsMo};
+  const moSpend     = moTotal(rawMonthly);
+  const moSurplus   = moSpendable - moSpend;
+
+  // Current year net (this academic year only)
+  const curYrNet = moSurplus * 12;
+
+  // 5-yr
+  const totDisburse = data.years.reduce((a,y)=>a+Math.max((Number(y.grant)||0)-(Number(y.tuitionFees)||0)-(Number(y.healthIns)||0),0)+(Number(y.otherIncome)||0)*12,0);
+  const totSpend    = data.years.reduce((a,y)=>a+moTotal({...y.monthly,subs:subsMo})*12,0);
+
+  // ── Weekly ────────────────────────────────────────────────────────────────
+  const currentWeekStart = getMonday(new Date());
+  const currentWeekEnd   = getSunday(currentWeekStart);
+  const currentEntries   = data.currentWeekEntries||[];
+  const weeklyBudget     = moSpendable/4.333;
+  const archives         = [...(data.weeklyArchive||[])].sort((a,b)=>b.weekStart.localeCompare(a.weekStart));
+
+  // Weekly rollover: check last week surplus
+  const lastArchive      = archives[0];
+  const lastWeekSurplus  = lastArchive ? Math.max(weeklyBudget - lastArchive.total, 0) : 0;
+  const thisWeekBudget   = weeklyBudget + lastWeekSurplus;
+
+  const viewEntries = viewWeek ? (archives.find(a=>a.weekStart===viewWeek)?.entries||[]) : currentEntries;
+  const viewTotal   = viewWeek ? (archives.find(a=>a.weekStart===viewWeek)?.total||0) : currentEntries.reduce((a,e)=>a+Number(e.amount),0);
+  const viewBudget  = viewWeek
+    ? (() => {
+        const idx = archives.findIndex(a=>a.weekStart===viewWeek);
+        const prevArchive = archives[idx+1];
+        const prevSurplus = prevArchive ? Math.max(weeklyBudget - prevArchive.total, 0) : 0;
+        return weeklyBudget + prevSurplus;
+      })()
+    : thisWeekBudget;
+
+  // Monthly rollover
+  const today = todayStr();
+  const currentMonth = getYearMonthStr(today);
+  const lastMonthKey = (() => {
+    const [y,m] = currentMonth.split("-").map(Number);
+    const lm = m===1?12:m-1;
+    const ly = m===1?y-1:y;
+    return `${ly}-${String(lm).padStart(2,"0")}`;
+  })();
+  const monthRollovers = data.monthlyRollover||{};
+  const lastMonthRollover = monthRollovers[lastMonthKey]||0;
+  const moSpendableWithRollover = moSpendable + lastMonthRollover/30; // spread over 30 days
+
+  // Renewal check
+  const renewalsDue = subs.filter(s=>s.active!==false&&!s.renewalPrompted&&daysUntil(s.renewal)!==null&&daysUntil(s.renewal)<=0);
+  const renewalsSoon = subs.filter(s=>s.active!==false&&daysUntil(s.renewal)!==null&&daysUntil(s.renewal)>0&&daysUntil(s.renewal)<=14);
+
+  // ── Mutations ─────────────────────────────────────────────────────────────
+  const setMo = (yi,cid,v) => {const d=JSON.parse(JSON.stringify(data));d.years[yi].monthly[cid]=Number(v)||0;upd(d);};
+  const setYrF = (yi,f,v) => {const d=JSON.parse(JSON.stringify(data));d.years[yi][f]=v;upd(d);};
+
+  const syncSubs = d => {
+    const mo = Math.round(subMonthlyTotal(d.subscriptions));
+    d.years.forEach(y=>{y.monthly.subs=mo;}); return d;
+  };
+
+  const saveSub = () => {
+    if(!subName.trim()||!subAmt) return;
+    let d = JSON.parse(JSON.stringify(data));
+    if(subEdit){
+      d.subscriptions=d.subscriptions.map(s=>s.id===subEdit?{...s,name:subName,amount:parseFloat(subAmt)||0,cycle:subCycle,renewal:subRenew,renewalPrompted:false}:s);
+      setSubEdit(null);
+    } else {
+      d.subscriptions.push({id:"s_"+Date.now(),name:subName.trim(),amount:parseFloat(subAmt)||0,cycle:subCycle,renewal:subRenew,active:true,renewalPrompted:false});
+    }
+    d=syncSubs(d); upd(d);
+    setSubName("");setSubAmt("");setSubCycle("monthly");setSubRenew("");
+  };
+
+  const delSub = sid => { let d=JSON.parse(JSON.stringify(data));d.subscriptions=d.subscriptions.filter(s=>s.id!==sid);d=syncSubs(d);upd(d); };
+  const editSub = s => { setSubEdit(s.id);setSubName(s.name);setSubAmt(String(s.amount));setSubCycle(s.cycle);setSubRenew(s.renewal||""); };
+
+  const handleRenewal = (sub,renewed,newAmt,newDate) => {
+    let d=JSON.parse(JSON.stringify(data));
+    if(!renewed) d.subscriptions=d.subscriptions.filter(s=>s.id!==sub.id);
+    else d.subscriptions=d.subscriptions.map(s=>s.id===sub.id?{...s,amount:parseFloat(newAmt)||s.amount,renewal:newDate||"",renewalPrompted:true,active:true}:s);
+    d=syncSubs(d);upd(d);setRenewDlg(null);
+  };
+
+  const addEntry = () => {
+    if(!wCat||!wAmt) return;
+    const entryWeek = getMonday(wDate);
+    const thisWeek  = getMonday(new Date());
+    const entry = {id:"e_"+Date.now(),catId:wCat,amount:parseFloat(wAmt)||0,note:wNote,date:wDate};
+    let d = JSON.parse(JSON.stringify(data));
+    if(!d.currentWeekEntries) d.currentWeekEntries=[];
+    if(!d.weeklyArchive) d.weeklyArchive=[];
+    if(entryWeek < thisWeek) {
+      const ex = d.weeklyArchive.find(a=>a.weekStart===entryWeek);
+      if(ex){ex.entries.push(entry);ex.total=ex.entries.reduce((a,e)=>a+Number(e.amount),0);}
+      else d.weeklyArchive.push({weekStart:entryWeek,weekEnd:getSunday(entryWeek),entries:[entry],total:entry.amount});
+      setViewWeek(entryWeek);
+    } else {
+      d.currentWeekEntries.push(entry);
+      setViewWeek(null);
+    }
+    upd(d);setWAmt("");setWNote("");
+  };
+
+  const delEntry = (eid, isArchived) => {
+    let d = JSON.parse(JSON.stringify(data));
+    if(isArchived){
+      d.weeklyArchive=d.weeklyArchive.map(a=>{
+        const ents=a.entries.filter(e=>e.id!==eid);
+        return {...a,entries:ents,total:ents.reduce((s,e)=>s+Number(e.amount),0)};
+      });
+    } else {
+      d.currentWeekEntries=d.currentWeekEntries.filter(e=>e.id!==eid);
+    }
+    upd(d);
+  };
+
+  const addCat = () => {
+    if(!newCatName.trim()) return;
+    const id="cat_"+Date.now();
+    const d=JSON.parse(JSON.stringify(data));
+    d.categories.push({id,label:newCatName.trim()});
+    d.years.forEach(y=>{y.monthly[id]=0;});
+    upd(d);setNewCatName("");
+  };
+  const delCat = cid => {
+    const d=JSON.parse(JSON.stringify(data));
+    d.categories=d.categories.filter(c=>c.id!==cid);
+    d.years.forEach(y=>{delete y.monthly[cid];});
+    upd(d);
+  };
+
+  // Charts
+  const pieData = cats.map((c,i)=>({name:c.label,value:c.id==="subs"?subsMo:Number(rawMonthly[c.id])||0,color:CHART_COLORS[i%CHART_COLORS.length]})).filter(d=>d.value>0);
+  const barData = data.years.map(y=>{
+    const sp=Math.round((Math.max((Number(y.grant)||0)-(Number(y.tuitionFees)||0)-(Number(y.healthIns)||0),0)+(Number(y.otherIncome)||0)*12)/12);
+    return {name:y.label.split("—")[0].trim().replace("Year ","Y").replace("Extended","Ext"),Spendable:sp,Spend:Math.round(moTotal({...y.monthly,subs:subsMo}))};
+  });
+
+  // Rollover recommendation
+  const rolloverReco = (surplus) => {
+    if(surplus<=0) return null;
+    const recs = [];
+    const yrData = data.years[ay];
+    if(!(yrData.monthly.savings||0)) recs.push(`Put ${fmt(surplus)} toward an emergency fund (goal: 3 months expenses = ${fmt(moSpend*3)})`);
+    if(!(yrData.monthly.exams||0)) recs.push(`Set aside ${fmt(surplus)} for USMLE Step exams (~$850 each)`);
+    if(subsMo < 50) recs.push(`Consider adding a study resource (UWorld, Amboss) for ${fmt(surplus)}/mo`);
+    recs.push(`Add it to savings — even ${fmt(surplus)}/mo compounds significantly over 5 years`);
+    return recs[0];
+  };
+
+  const isPastWeekDate = wDate && getMonday(wDate) < getMonday(new Date());
+
+  return (
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",maxWidth:940,margin:"0 auto",padding:"24px 20px",minHeight:"100vh"}}>
+      {/* Modals */}
+      {renewDlg && <RenewalDialog sub={renewDlg} onClose={()=>setRenewDlg(null)} onConfirm={handleRenewal}/>}
+      {showWeekPicker && <WeekSelectorModal archives={archives} currentWeekStart={currentWeekStart} currentWeekEnd={currentWeekEnd} selected={viewWeek} onSelect={setViewWeek} onClose={()=>setShowWeekPicker(false)}/>}
+
+      {/* ── Header ── */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,paddingBottom:16,borderBottom:`1px solid ${C.border}`}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:38,height:38,borderRadius:10,background:C.red,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:16,letterSpacing:"-0.02em"}}>W</div>
+          <div>
+            <div style={{fontSize:17,fontWeight:700,color:C.text,letterSpacing:"-0.02em"}}>WCM Budget Planner</div>
+            <div style={{fontSize:11,color:C.gray,marginTop:1}}>MD Class of 2030 · Extended Curriculum</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:10,alignItems:"center"}}>
+          {flash && <span style={{fontSize:12,color:C.teal,fontWeight:600}}>Saved</span>}
+          <button onClick={()=>upd(JSON.parse(JSON.stringify(DEFAULT_STATE)))} style={{fontSize:11,padding:"5px 12px",border:`1px solid ${C.border}`,borderRadius:7,background:"transparent",color:C.gray,cursor:"pointer",fontWeight:500}}>Reset defaults</button>
+        </div>
+      </div>
+
+      {/* ── Renewal alerts ── */}
+      {renewalsDue.map(s=>(
+        <Banner key={s.id} type="warn" onClose={()=>{let d=JSON.parse(JSON.stringify(data));d.subscriptions=d.subscriptions.map(x=>x.id===s.id?{...x,renewalPrompted:true}:x);upd(d);}}>
+          <strong>{s.name}</strong> renewal date has passed.{" "}
+          <button onClick={()=>setRenewDlg(s)} style={{background:C.amber,color:"#fff",border:"none",borderRadius:5,padding:"2px 10px",cursor:"pointer",fontSize:11,fontWeight:600,marginLeft:6}}>Handle renewal</button>
+        </Banner>
+      ))}
+      {renewalsSoon.filter(s=>!dismissed["rsu_"+s.id]).map(s=>(
+        <Banner key={s.id} type="info" onClose={()=>dismiss("rsu_"+s.id)}>
+          <strong>{s.name}</strong> renews in {daysUntil(s.renewal)} days on {s.renewal} — {fmtD(s.amount)}/{s.cycle}
+        </Banner>
+      ))}
+
+      {/* ── Year selector ── */}
+      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+        {data.years.map(y=><YrBtn key={y.id} yr={y} active={ay===y.id} onClick={()=>setAy(y.id)}/>)}
+      </div>
+
+      {/* ── Top metrics ── */}
+      <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
+        <MetricTile label="Monthly spendable"  value={fmt(moSpendable)} sub="after school costs" color={C.teal}/>
+        <MetricTile label="Monthly budget"     value={fmt(moSpend)}     sub={`${fmt(moSpend-subsMo)} direct + ${fmt(subsMo)} subs`}/>
+        <MetricTile label="Monthly surplus"    value={fmtS(moSurplus)}  sub={moSurplus>=0?"on track":"over budget"} color={moSurplus>=0?C.green:C.red}/>
+        <MetricTile label="This year net"      value={fmtS(curYrNet)}   sub={yr.label.split("—")[0].trim()} color={curYrNet>=0?C.green:C.red}/>
+      </div>
+
+      {/* ── Tabs ── */}
+      <div style={{display:"flex",borderBottom:`1px solid ${C.border}`,marginBottom:20,overflowX:"auto"}}>
+        {[
+          ["budget","Budget"],
+          ["weekly","Weekly"],
+          ["charts","Charts"],
+          ["aid","Aid & Detail",0],
+          ["subscriptions","Subscriptions",renewalsDue.length],
+          ["customize","Customize"],
+        ].map(([id,lbl,badge])=><TabBtn key={id} label={lbl} active={tab===id} onClick={()=>setTab(id)} badge={badge||0}/>)}
+      </div>
+
+      {/* ══════════════ BUDGET ══════════════ */}
+      {tab==="budget" && (
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+          <Card>
+            <SectionTitle>{yr.label} — Monthly budget</SectionTitle>
+
+            {/* Housing — read-only */}
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:C.bg,borderRadius:8,marginBottom:10,border:`1px solid ${C.border}`}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,fontWeight:600,color:C.text}}>Housing — {yr.housingNote}</div>
+                <div style={{fontSize:11,color:C.gray,marginTop:1}}>Fixed by housing contract · edit in Aid Detail</div>
+              </div>
+              <div style={{fontWeight:700,fontSize:14,color:C.text}}>{fmt(yr.monthly.housing||0)}<span style={{fontSize:11,fontWeight:400,color:C.gray}}>/mo</span></div>
+            </div>
+
+            {cats.filter(c=>!c.locked).map((cat,i)=>{
+              const isAuto = cat.autoCalc===true;
+              const amt = cat.id==="subs" ? subsMo : (Number(yr.monthly[cat.id])||0);
+              const pct = moSpend>0?Math.round(amt/moSpend*100):0;
+              return (
+                <div key={cat.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`}}>
+                  <div style={{width:6,height:6,borderRadius:99,background:CHART_COLORS[i%CHART_COLORS.length],flexShrink:0}}/>
+                  <span style={{flex:1,fontSize:13,color:C.text}}>{cat.label}</span>
+                  {isAuto
+                    ? <span style={{fontSize:13,fontWeight:600,color:C.blue,minWidth:72,textAlign:"right"}}>{fmt(amt)}<span style={{fontSize:10,color:C.gray,fontWeight:400}}> auto</span></span>
+                    : <input type="number" value={yr.monthly[cat.id]??0} onChange={e=>setMo(ay,cat.id,e.target.value)}
+                        style={{width:80,textAlign:"right",fontSize:13,border:`1px solid ${C.border}`,borderRadius:7,padding:"4px 8px",background:C.bg,color:C.text,fontWeight:600}}/>
+                  }
+                  <span style={{fontSize:10,color:C.gray,width:28,textAlign:"right"}}>{pct}%</span>
+                </div>
+              );
+            })}
+
+            <Divider/>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:700}}>
+              <span>Total</span>
+              <span style={{color:moSpend>moSpendable?C.red:C.text}}>{fmt(moSpend)}/mo</span>
+            </div>
+            {subsMo>0 && <div style={{fontSize:11,color:C.blue,marginTop:6}}>{subs.filter(s=>s.active!==false).length} active subscription{subs.length!==1?"s":""} totalling {fmt(subsMo)}/mo — auto-calculated</div>}
+          </Card>
+
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <Card>
+              <SectionTitle>Cash flow — {yr.label}</SectionTitle>
+              <div style={{fontSize:11,color:C.gray,marginBottom:10}}>To edit grant & aid figures, go to <strong>Aid & Detail</strong>.</div>
+              {[
+                {l:"Grant disbursed to you",    v:fmt(annDisburse)+"/yr",    c:C.teal},
+                {l:"Other income",              v:fmt(annOther)+"/yr",       c:C.text},
+                {l:"Monthly spendable",         v:fmt(moSpendable)+"/mo",    c:C.teal,bold:true},
+                {l:"Monthly budget",            v:fmt(moSpend)+"/mo",        c:C.text},
+                {l:"Monthly surplus",           v:fmtS(moSurplus)+"/mo",     c:moSurplus>=0?C.green:C.red,bold:true},
+              ].map(r=>(
+                <div key={r.l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+                  <span style={{color:C.gray}}>{r.l}</span>
+                  <span style={{fontWeight:r.bold?700:500,color:r.c}}>{r.v}</span>
+                </div>
+              ))}
+              {moSurplus!==0 && (
+                <div style={{marginTop:10,padding:"8px 12px",background:moSurplus>=0?C.greenLight:C.redLight,borderRadius:8,fontSize:12,color:moSurplus>=0?C.green:C.red,fontWeight:500}}>
+                  {moSurplus>=0
+                    ? `${fmt(moSurplus)}/mo surplus. ${rolloverReco(moSurplus)||"Consider increasing savings."}`
+                    : `${fmt(Math.abs(moSurplus))}/mo over budget. Review discretionary spending.`}
+                </div>
+              )}
+            </Card>
+
+            {lastMonthRollover>0 && (
+              <Card>
+                <SectionTitle>Last month rollover</SectionTitle>
+                <div style={{fontSize:13,color:C.text,marginBottom:8}}>You had <strong style={{color:C.green}}>{fmt(lastMonthRollover)}</strong> left over last month.</div>
+                <div style={{fontSize:12,color:C.gray,lineHeight:1.6}}>
+                  Recommendation: {rolloverReco(lastMonthRollover)||"Move to savings."}
+                </div>
+              </Card>
+            )}
+
+            <Card>
+              <SectionTitle>Health checks</SectionTitle>
+              {[
+                ["Housing ratio",    moSpendable>0?Math.round((yr.monthly.housing||0)/moSpendable*100)+"%":"—", (yr.monthly.housing||0)/moSpendable<0.6,(yr.monthly.housing||0)/moSpendable<0.75,"Target <60% of spendable"],
+                ["Monthly balance",  moSurplus>=0?"Positive":"Negative", moSurplus>=0, false, ""],
+                ["Savings",          (yr.monthly.savings||0)>0?fmt(yr.monthly.savings||0)+"/mo":"None", (yr.monthly.savings||0)>0, false, "Even $50/mo adds up"],
+                ["Exam fund",        (yr.monthly.exams||0)>0?fmt(yr.monthly.exams||0)+"/mo":"$0/mo", ay<=1||(yr.monthly.exams||0)>0, ay>1, "Steps cost ~$850 each"],
+              ].map(([label,val,ok,warn,tip])=>(
+                <div key={label} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+                  <span style={{color:C.gray}}>{label}</span>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <Pill ok={ok} warn={!ok&&warn}>{val}</Pill>
+                    {tip && <span style={{fontSize:10,color:C.gray}}>{tip}</span>}
+                  </div>
+                </div>
+              ))}
+            </Card>
+
+            <Card>
+              <SectionTitle>Notes</SectionTitle>
+              <textarea value={yr.notes||""} onChange={e=>setYrF(ay,"notes",e.target.value)} placeholder="Reminders, upcoming costs..."
+                style={{width:"100%",fontSize:12,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",resize:"vertical",minHeight:64,fontFamily:"inherit",color:C.text,background:C.bg,boxSizing:"border-box"}}/>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════ WEEKLY ══════════════ */}
+      {tab==="weekly" && (
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          {/* Week bar */}
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{flex:1,fontSize:14,fontWeight:600,color:C.text}}>
+              {viewWeek ? fmtWeekLabel(viewWeek) : `This week — ${fmtWeekLabel(currentWeekStart)}`}
+            </div>
+            <button onClick={()=>setShowWeekPicker(true)} style={{padding:"6px 14px",borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",fontSize:12,color:C.gray,fontWeight:500,display:"flex",alignItems:"center",gap:6}}>
+              Browse weeks {archives.length>0&&`(${archives.length} archived)`}
+            </button>
+            {viewWeek && <button onClick={()=>setViewWeek(null)} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${C.redMid}`,background:C.redLight,cursor:"pointer",fontSize:12,color:C.red,fontWeight:600}}>← Current week</button>}
+          </div>
+
+          {/* Week metrics */}
+          {lastWeekSurplus>0 && !viewWeek && !dismissed["wkrollover"] && (
+            <Banner type="success" onClose={()=>dismiss("wkrollover")}>
+              <strong>{fmt(lastWeekSurplus)}</strong> rolled over from last week. Your budget this week is <strong>{fmt(thisWeekBudget)}</strong>.{" "}
+              <span style={{color:C.gray}}>Tip: {rolloverReco(lastWeekSurplus)||"Consider adding to savings."}</span>
+            </Banner>
+          )}
+
+          <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+            {[
+              {label:"Weekly budget",    val:fmt(viewBudget),             sub:lastWeekSurplus>0&&!viewWeek?`base ${fmt(weeklyBudget)} + ${fmt(lastWeekSurplus)} rollover`:"spendable ÷ 4.33", color:C.teal},
+              {label:"Spent",            val:fmt(viewTotal),              sub:viewWeek?"archived":"this week",      color:viewTotal>viewBudget?C.red:C.text},
+              {label:"Remaining",        val:fmtS(viewBudget-viewTotal),  sub:"this week",                          color:viewBudget-viewTotal>=0?C.green:C.red},
+              {label:"Entries",          val:String(viewEntries.length),  sub:"logged",                             color:C.gray},
+            ].map(m=><MetricTile key={m.label} label={m.label} value={m.val} sub={m.sub} color={m.color}/>)}
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+            {/* Log entry */}
+            <Card>
+              <SectionTitle>Log expense</SectionTitle>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <div>
+                  <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Date</div>
+                  <input type="date" value={wDate} onChange={e=>setWDate(e.target.value)}
+                    style={{width:"100%",fontSize:13,border:`1px solid ${isPastWeekDate?C.amber:C.border}`,borderRadius:8,padding:"7px 10px",background:C.bg,boxSizing:"border-box"}}/>
+                  {isPastWeekDate && <div style={{fontSize:11,color:C.amber,marginTop:4,fontWeight:500}}>Will be archived to week of {getMonday(wDate)}</div>}
+                </div>
+                <div>
+                  <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Category</div>
+                  <select value={wCat} onChange={e=>setWCat(e.target.value)}
+                    style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px",background:C.bg,boxSizing:"border-box"}}>
+                    <option value="">Select category…</option>
+                    {cats.filter(c=>!c.autoCalc&&!c.locked).map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Amount</div>
+                  <input type="number" placeholder="0.00" value={wAmt} onChange={e=>setWAmt(e.target.value)}
+                    style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px",background:C.bg,boxSizing:"border-box"}}/>
+                </div>
+                <div>
+                  <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Note (optional)</div>
+                  <input type="text" placeholder="e.g. Trader Joe's" value={wNote} onChange={e=>setWNote(e.target.value)}
+                    style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px",background:C.bg,boxSizing:"border-box"}}/>
+                </div>
+                <button onClick={addEntry} disabled={!wCat||!wAmt} style={{padding:"9px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:(!wCat||!wAmt)?C.bgDark:C.red,color:(!wCat||!wAmt)?C.gray:"#fff",cursor:(!wCat||!wAmt)?"not-allowed":"pointer",marginTop:2,transition:"all .15s"}}>
+                  Add entry
+                </button>
+              </div>
+            </Card>
+
+            {/* Category breakdown */}
+            <Card>
+              <SectionTitle>Category breakdown</SectionTitle>
+              {cats.filter(c=>!c.autoCalc&&!c.locked).map((cat,i)=>{
+                const moB = Number(rawMonthly[cat.id])||0;
+                const wkB = moB / 4.333;
+                const spent = viewEntries.filter(e=>e.catId===cat.id).reduce((a,e)=>a+Number(e.amount),0);
+                if(moB===0 && spent===0) return null;
+                const over = spent > wkB;
+                return (
+                  <div key={cat.id} style={{padding:"8px 0",borderBottom:`1px solid ${C.border}`}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
+                      <span style={{fontSize:12,color:C.text,fontWeight:500}}>{cat.label}</span>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontSize:12,fontWeight:600,color:over?C.red:C.text}}>{fmtD(spent)}</span>
+                        <span style={{fontSize:11,color:C.gray}}>/ {fmtD(wkB)}</span>
+                        {spent>0 && <Pill ok={!over} warn={over} sm>{over?`+${fmtD(spent-wkB)} over`:`${fmtD(wkB-spent)} left`}</Pill>}
+                      </div>
+                    </div>
+                    <ProgressBar value={spent} max={wkB} color={over?C.red:CHART_COLORS[i%CHART_COLORS.length]}/>
+                  </div>
+                );
+              })}
+            </Card>
+          </div>
+
+          {/* Entries list */}
+          <Card>
+            <SectionTitle>{viewWeek ? `Archived — ${fmtWeekLabel(viewWeek)}` : "This week's entries"}</SectionTitle>
+            {viewEntries.length===0
+              ? <div style={{textAlign:"center",padding:"24px 0",color:C.gray,fontSize:13}}>No entries {viewWeek?"for this week":"yet — log your first expense above"}.</div>
+              : [...viewEntries].sort((a,b)=>b.date.localeCompare(a.date)).map(e=>{
+                  const cat=cats.find(c=>c.id===e.catId)||{label:"Other"};
+                  return (
+                    <div key={e.id} style={{display:"flex",alignItems:"center",gap:12,padding:"9px 0",borderBottom:`1px solid ${C.border}`}}>
+                      <div style={{width:8,height:8,borderRadius:99,background:CHART_COLORS[cats.findIndex(c=>c.id===e.catId)%CHART_COLORS.length]||C.gray,flexShrink:0}}/>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:13,fontWeight:500,color:C.text}}>{cat.label}</div>
+                        <div style={{fontSize:11,color:C.gray,marginTop:1}}>{e.date}{e.note?" · "+e.note:""}</div>
+                      </div>
+                      <span style={{fontWeight:700,fontSize:13,color:C.red}}>{fmtD(e.amount)}</span>
+                      <button onClick={()=>delEntry(e.id,!!viewWeek)} style={{width:26,height:26,borderRadius:6,background:C.bg,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:C.gray,fontSize:14,fontWeight:700}}>×</button>
+                    </div>
+                  );
+                })
+            }
+            {viewEntries.length>0 && (
+              <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",fontSize:14,fontWeight:700}}>
+                <span>Week total</span>
+                <span style={{color:viewTotal>viewBudget?C.red:C.teal}}>{fmt(viewTotal)}</span>
+              </div>
+            )}
+            {viewWeek && <div style={{fontSize:11,color:C.gray,marginTop:8,fontStyle:"italic"}}>Archived week — entries can still be added or deleted.</div>}
+          </Card>
+
+          <div style={{fontSize:11,color:C.gray,padding:"6px 12px",background:C.bg,borderRadius:8,border:`1px solid ${C.border}`}}>
+            Entries archive automatically each Sunday at midnight. Past-dated entries route to the correct week automatically. Unspent weekly balance rolls into the following week.
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════ CHARTS ══════════════ */}
+      {tab==="charts" && (
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+            <Card>
+              <SectionTitle>{yr.label} — spending distribution</SectionTitle>
+              <ResponsiveContainer width="100%" height={210}>
+                <PieChart><Pie data={pieData} dataKey="value" cx="50%" cy="50%" innerRadius={54} outerRadius={88} paddingAngle={2}>
+                  {pieData.map((e,i)=><Cell key={i} fill={e.color}/>)}
+                </Pie><Tooltip formatter={v=>fmt(v)+"/mo"}/></PieChart>
+              </ResponsiveContainer>
+            </Card>
+            <Card>
+              <SectionTitle>Category breakdown</SectionTitle>
+              {cats.map((cat,i)=>{
+                const amt=cat.id==="subs"?subsMo:(Number(rawMonthly[cat.id])||0);
+                const pct=moSpend>0?Math.round(amt/moSpend*100):0;
+                return <div key={cat.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <div style={{width:10,height:10,borderRadius:3,background:CHART_COLORS[i%CHART_COLORS.length],flexShrink:0}}/>
+                    <span style={{color:C.text}}>{cat.label}</span>
+                  </div>
+                  <div style={{display:"flex",gap:10}}>
+                    <span style={{fontWeight:600}}>{fmt(amt)}/mo</span>
+                    <span style={{color:C.gray,minWidth:28,textAlign:"right"}}>{pct}%</span>
+                  </div>
+                </div>;
+              })}
+            </Card>
+          </div>
+          <Card>
+            <SectionTitle>Monthly spendable vs budget — all years</SectionTitle>
+            <div style={{display:"flex",gap:20,marginBottom:12}}>
+              {[["Spendable",C.teal],["Budget",C.red]].map(([l,c])=>(
+                <div key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:C.gray}}>
+                  <div style={{width:10,height:10,borderRadius:3,background:c}}/>{l}
+                </div>
+              ))}
+            </div>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={barData} barGap={4}>
+                <XAxis dataKey="name" tick={{fontSize:12}} axisLine={false} tickLine={false}/>
+                <YAxis tick={{fontSize:11}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false}/>
+                <Tooltip formatter={v=>fmt(v)+"/mo"}/>
+                <Bar dataKey="Spendable" fill={C.teal} radius={[4,4,0,0]}/>
+                <Bar dataKey="Spend" fill={C.red} radius={[4,4,0,0]}/>
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+        </div>
+      )}
+
+      {/* ══════════════ AID & DETAIL ══════════════ */}
+      {tab==="aid" && (
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          {!dismissed["aidnote"] && (
+            <Banner type="info" onClose={()=>dismiss("aidnote")}>
+              <strong>How your grant works:</strong> WCM Grant (including health insurance) − tuition & fees − health insurance = disbursed to you for living costs.
+            </Banner>
+          )}
+
+          {/* Per-year cards */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
+            {data.years.map((y,i)=>{
+              const g=Number(y.grant)||0,tf=Number(y.tuitionFees)||0,hi=Number(y.healthIns)||0;
+              const disb=Math.max(g-tf-hi,0),oth=(Number(y.otherIncome)||0)*12;
+              const moD=(disb+oth)/12,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
+              return (
+                <Card key={y.id} accent={y.type==="extended"?C.amber:C.red}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+                    <div>
+                      <div style={{fontWeight:700,fontSize:14,color:C.text}}>{y.label}</div>
+                      <div style={{fontSize:11,color:C.gray,marginTop:2}}>{y.housingNote}</div>
+                    </div>
+                    <Pill ok={moS>=0} warn={moS<0}>{fmtS(moS)}/mo</Pill>
+                  </div>
+                  {y.type==="extended" && <Banner type="warn">Extended year: tuition waived, fees only</Banner>}
+                  {[
+                    {label:"WCM Grant (annual)",       field:"grant",       note:"includes health insurance"},
+                    {label:"Tuition & fees",            field:"tuitionFees", note:"paid directly to school"},
+                    {label:"Health insurance",          field:"healthIns",   note:"school-covered, deducted from grant"},
+                    {label:"Housing (monthly)",         field:null,          value:y.monthly.housing||0, note:y.housingNote, isHousing:true},
+                    {label:"Other income (monthly)",    field:"otherIncome", note:"tutoring, work, etc."},
+                  ].map(({label,field,note,value,isHousing})=>(
+                    <div key={label} style={{padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                        <span style={{fontSize:12,color:C.textMid}}>{label}</span>
+                        {isHousing
+                          ? <input type="number" value={y.monthly.housing||0} onChange={e=>{const d=JSON.parse(JSON.stringify(data));d.years[i].monthly.housing=Number(e.target.value)||0;upd(d);}}
+                              style={{width:90,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 7px",background:C.bg}}/>
+                          : <input type="number" value={y[field]} onChange={e=>setYrF(i,field,e.target.value)}
+                              style={{width:90,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 7px",background:C.bg}}/>
+                        }
+                      </div>
+                      <div style={{fontSize:10,color:C.gray,marginTop:1}}>{note}</div>
+                    </div>
+                  ))}
+                  <div style={{marginTop:12,padding:"10px 12px",background:C.tealLight,borderRadius:8,fontSize:12}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{color:C.textMid}}>Disbursed/yr</span><strong style={{color:C.teal}}>{fmt(disb)}</strong></div>
+                    <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid}}>Monthly spendable</span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* 5-year table */}
+          <Card>
+            <SectionTitle>5-year overview</SectionTitle>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr>
+                  {["Year","Grant","School costs","Disbursed/yr","Spendable/mo","Budget/mo","Surplus/mo","Cumulative"].map(h=>
+                    <th key={h} style={{textAlign:"left",fontSize:10,color:C.gray,padding:"6px 8px",borderBottom:`1px solid ${C.border}`,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
+                  )}
+                </tr></thead>
+                <tbody>
+                  {(()=>{
+                    let cum=0;
+                    return data.years.map(y=>{
+                      const g=Number(y.grant)||0,tf=Number(y.tuitionFees)||0,hi=Number(y.healthIns)||0;
+                      const disb=Math.max(g-tf-hi,0),oth=(Number(y.otherIncome)||0)*12;
+                      const moD=(disb+oth)/12,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
+                      cum+=moS*12;
+                      return <tr key={y.id}>
+                        <td style={{padding:"8px",fontWeight:600,whiteSpace:"nowrap",fontSize:11}}>{y.label}</td>
+                        <td style={{padding:"8px",color:C.red,fontWeight:600}}>{g>0?fmt(g):"TBD"}</td>
+                        <td style={{padding:"8px",color:C.gray}}>{fmt(tf+hi)}</td>
+                        <td style={{padding:"8px",color:C.teal,fontWeight:600}}>{fmt(disb)}</td>
+                        <td style={{padding:"8px",fontWeight:600}}>{fmt(moD)}</td>
+                        <td style={{padding:"8px"}}>{fmt(moSp)}</td>
+                        <td style={{padding:"8px",fontWeight:600,color:moS>=0?C.teal:C.red}}>{fmtS(moS)}</td>
+                        <td style={{padding:"8px",fontWeight:700,color:cum>=0?C.teal:C.red}}>{fmtS(cum)}</td>
+                      </tr>;
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+            <div style={{marginTop:10,padding:"8px 12px",background:totDisburse-totSpend>=0?C.tealLight:C.redLight,borderRadius:8,fontSize:12,color:totDisburse-totSpend>=0?C.teal:C.red,fontWeight:600}}>
+              5-year net: {fmtS(totDisburse-totSpend)}
+            </div>
+          </Card>
+
+          {/* Official COA */}
+          <Card>
+            <SectionTitle sub="Source: studentservices.weill.cornell.edu">Official WCM COA 2025-26</SectionTitle>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr>
+                  {["Component","Year 1","Year 2","Year 3","Year 4","Extended"].map(h=><th key={h} style={{textAlign:"left",fontSize:10,color:C.gray,padding:"5px 8px",borderBottom:`1px solid ${C.border}`,fontWeight:600}}>{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {[
+                    ["Tuition & fees","$76,486","$76,648","$76,648","$76,486","$5,232"],
+                    ["Housing & food","$17,376","$21,440","$25,728","$23,584","$25,728"],
+                    ["Personal","$5,360","$5,360","$6,432","$5,896","$6,432"],
+                    ["Transportation","$1,320","$1,320","$1,584","$1,452","$1,584"],
+                    ["Health insurance","$8,100","$8,100","$8,100","$8,100","$8,100"],
+                    ["Total","$108,642","$112,868","$118,492","$115,518","$47,076"],
+                  ].map(([l,...vals],i)=>(
+                    <tr key={l} style={{background:i===5?C.bg:"transparent"}}>
+                      <td style={{padding:"7px 8px",fontWeight:i===5?700:400,color:i===5?C.text:C.textMid}}>{l}</td>
+                      {vals.map((v,j)=><td key={j} style={{padding:"7px 8px",fontWeight:i===5?700:400,color:i===5?C.red:C.text}}>{v}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{fontSize:11,color:C.gray,marginTop:8}}>Extended: tuition waived. Note: table shows 2025-26 figures; your plan starts 2026-27.</div>
+          </Card>
+        </div>
+      )}
+
+      {/* ══════════════ SUBSCRIPTIONS ══════════════ */}
+      {tab==="subscriptions" && (
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+            {/* Form */}
+            <Card>
+              <SectionTitle>{subEdit?"Edit subscription":"Add subscription"}</SectionTitle>
+              {subName && (
+                <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:C.bg,borderRadius:8,marginBottom:14,border:`1px solid ${C.border}`}}>
+                  <BrandIcon name={subName} size={32}/>
+                  <span style={{fontSize:12,color:C.textMid,fontStyle:"italic"}}>Preview</span>
+                </div>
+              )}
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <div>
+                  <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Service name</div>
+                  <input placeholder="e.g. Spotify, UWorld, Netflix" value={subName} onChange={e=>setSubName(e.target.value)}
+                    style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,boxSizing:"border-box"}}/>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  <div>
+                    <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Amount ($)</div>
+                    <input type="number" placeholder="9.99" value={subAmt} onChange={e=>setSubAmt(e.target.value)}
+                      style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,boxSizing:"border-box"}}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Billing cycle</div>
+                    <select value={subCycle} onChange={e=>setSubCycle(e.target.value)}
+                      style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,boxSizing:"border-box"}}>
+                      <option value="monthly">Monthly</option>
+                      <option value="annual">Annual</option>
+                      <option value="quarterly">Quarterly</option>
+                      <option value="one-time">One-time</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Next renewal date</div>
+                  <input type="date" value={subRenew} onChange={e=>setSubRenew(e.target.value)}
+                    style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,boxSizing:"border-box"}}/>
+                </div>
+                <div style={{display:"flex",gap:8,marginTop:2}}>
+                  <button onClick={saveSub} style={{flex:1,padding:"9px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.red,color:"#fff",cursor:"pointer"}}>
+                    {subEdit?"Save changes":"Add subscription"}
+                  </button>
+                  {subEdit && <button onClick={()=>{setSubEdit(null);setSubName("");setSubAmt("");setSubCycle("monthly");setSubRenew("");}} style={{padding:"9px 14px",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,background:"transparent",cursor:"pointer",color:C.gray}}>Cancel</button>}
+                </div>
+              </div>
+            </Card>
+
+            {/* Summary */}
+            <Card>
+              <SectionTitle>Summary</SectionTitle>
+              {subs.length===0
+                ? <div style={{textAlign:"center",padding:"24px 0",color:C.gray,fontSize:13}}>No subscriptions yet.</div>
+                : (() => {
+                    const mo = subMonthlyTotal(subs);
+                    const upcoming = subs.filter(s=>{const d=daysUntil(s.renewal);return d!==null&&d>=0&&d<=30;});
+                    return <>
+                      <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+                        {[{l:"Monthly",v:fmtD(mo)},{l:"Annual",v:fmt(mo*12)},{l:"Active",v:String(subs.filter(s=>s.active!==false).length)}].map(m=>(
+                          <div key={m.l} style={{background:C.bg,borderRadius:8,padding:"10px 14px",flex:1}}>
+                            <div style={{fontSize:10,color:C.gray,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:3}}>{m.l}</div>
+                            <div style={{fontSize:18,fontWeight:700,color:C.red}}>{m.v}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{fontSize:12,color:C.textMid,marginBottom:8}}>This {fmtD(mo)}/mo is auto-reflected in your budget.</div>
+                      {upcoming.length>0 && <>
+                        <Divider/>
+                        <div style={{fontSize:12,fontWeight:600,color:C.text,marginBottom:8}}>Upcoming renewals</div>
+                        {upcoming.map(s=>{
+                          const d=daysUntil(s.renewal);
+                          return <div key={s.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+                            <div style={{display:"flex",alignItems:"center",gap:8}}><BrandIcon name={s.name} size={20}/><span>{s.name}</span></div>
+                            <Pill ok={d>7} warn={d<=7} sm>{d===0?"Today":d+"d"}</Pill>
+                          </div>;
+                        })}
+                      </>}
+                    </>;
+                  })()
+              }
+            </Card>
+          </div>
+
+          {/* Full list */}
+          <Card>
+            <SectionTitle>{subs.length} subscription{subs.length!==1?"s":""}</SectionTitle>
+            {subs.length===0
+              ? <div style={{textAlign:"center",padding:"20px 0",color:C.gray,fontSize:13}}>Add your first subscription above.</div>
+              : subs.map(s=>{
+                  const d=daysUntil(s.renewal);
+                  const due=d!==null&&d<=0;
+                  const soon=d!==null&&d>0&&d<=7;
+                  const mo=s.cycle==="monthly"?s.amount:s.cycle==="annual"?s.amount/12:s.cycle==="quarterly"?s.amount/3:null;
+                  return (
+                    <div key={s.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:`1px solid ${C.border}`}}>
+                      <BrandIcon name={s.name} size={38}/>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontWeight:600,fontSize:13,color:C.text}}>{s.name}</div>
+                        <div style={{fontSize:11,color:C.gray,marginTop:2}}>
+                          {fmtD(s.amount)}/{s.cycle}
+                          {mo?` · ${fmtD(mo)}/mo`:""}{s.renewal?` · Renews ${s.renewal}`:""}
+                        </div>
+                      </div>
+                      {due && <Pill warn sm>Overdue</Pill>}
+                      {soon && <Pill warn sm>{d}d</Pill>}
+                      {due && <button onClick={()=>setRenewDlg(s)} style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:"none",background:C.amber,color:"#fff",cursor:"pointer",fontWeight:600}}>Handle</button>}
+                      <button onClick={()=>editSub(s)} style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",color:C.gray}}>Edit</button>
+                      <button onClick={()=>delSub(s.id)} style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:`1px solid ${C.redMid}`,background:C.redLight,cursor:"pointer",color:C.red,fontWeight:600}}>Delete</button>
+                    </div>
+                  );
+                })
+            }
+          </Card>
+        </div>
+      )}
+
+      {/* ══════════════ CUSTOMIZE ══════════════ */}
+      {tab==="customize" && (
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>
+          <Card>
+            <SectionTitle>Spending categories</SectionTitle>
+            {cats.map(cat=>(
+              <div key={cat.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${C.border}`}}>
+                <div style={{width:8,height:8,borderRadius:99,background:CHART_COLORS[cats.findIndex(c=>c.id===cat.id)%CHART_COLORS.length],flexShrink:0}}/>
+                <span style={{flex:1,fontSize:13,color:C.text}}>{cat.label}</span>
+                {cat.locked && <span style={{fontSize:11,color:C.gray,background:C.bg,padding:"2px 8px",borderRadius:5}}>Fixed</span>}
+                {cat.autoCalc && <span style={{fontSize:11,color:C.blue,background:C.blueLight,padding:"2px 8px",borderRadius:5}}>Auto</span>}
+                {!cat.locked && !cat.autoCalc && <button onClick={()=>delCat(cat.id)} style={{fontSize:11,padding:"3px 10px",borderRadius:6,border:`1px solid ${C.redMid}`,background:C.redLight,color:C.red,cursor:"pointer",fontWeight:500}}>Remove</button>}
+              </div>
+            ))}
+            <div style={{marginTop:14,display:"flex",gap:8,alignItems:"center"}}>
+              <input placeholder="New category name" value={newCatName} onChange={e=>setNewCatName(e.target.value)}
+                style={{flex:1,fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg}}/>
+              <button onClick={addCat} style={{padding:"8px 18px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.red,color:"#fff",cursor:"pointer"}}>Add</button>
+            </div>
+          </Card>
+
+          <Card>
+            <SectionTitle>Key notes</SectionTitle>
+            {[
+              {title:"Monthly spendable", body:"Year 1: ~$1,935/mo after tuition and health insurance. Covers rent ($996), food, transport, and everything else. NYC is expensive — plan carefully."},
+              {title:"Health insurance",  body:"Covered by your WCM grant. It's deducted from the grant before disbursement, not from your living budget."},
+              {title:"Extended year",     body:"Tuition waived, fees only (~$5,232). Your grant for that year is TBD — contact finaid@med.cornell.edu early."},
+              {title:"USMLE exams",       body:"Steps 1 and 2 cost ~$670–950 each and aren't auto-covered. Use the exam fund budget line and start saving Year 1."},
+              {title:"Weekly rollover",   body:"Unspent weekly balance rolls into the next week automatically. Unspent monthly balance rolls into the following month with a spending recommendation."},
+            ].map((n,i)=>(
+              <div key={i} style={{padding:"10px 0",borderBottom:`1px solid ${C.border}`}}>
+                <div style={{fontWeight:600,fontSize:12,color:C.text,marginBottom:3}}>{n.title}</div>
+                <div style={{fontSize:12,color:C.gray,lineHeight:1.6}}>{n.body}</div>
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ── Mount ─────────────────────────────────────────────────────────────────────
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+</script>
+
+<script>
+// ── PWA Service Worker ─────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>
