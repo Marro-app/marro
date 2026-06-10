@@ -2156,9 +2156,9 @@ function App() {
                     <LineChart data={(()=>{
                       if(filteredTrend.length>1) return filteredTrend;
                       const idx=MONTH_NAMES.indexOf(filteredTrend[0].name);
-                      const blank=(mi)=>({name:MONTH_NAMES[mi],...Object.fromEntries(activeCats.map(c=>[c.label,0]))});
+                      const blank=(mi)=>({name:MONTH_NAMES[(mi+12)%12],...Object.fromEntries(activeCats.map(c=>[c.label,0]))});
                       return [
-                        ...(idx>0?[blank(idx-1)]:[]),
+                        blank(idx-1),
                         filteredTrend[0],
                         ...(idx<11?[blank(idx+1)]:[]),
                       ];
