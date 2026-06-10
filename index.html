@@ -1099,6 +1099,39 @@ function App() {
                 else if(inCustom>=0) d.savingsGoals[inCustom].saved=Math.max(0,(d.savingsGoals[inCustom].saved||0)+amt);
                 if(!d.savingsLog) d.savingsLog=[];
                 d.savingsLog.push({id:"sl_"+Date.now(),goalId:savingsDepositGoal,amount:amt,date:savingsDepositDate,note:savingsDepositNote});
+
+                // Wire deposit into budget + weekly if not already budgeted that month
+                const catId = inStep>=0 ? "exams" : "savings";
+                const depDate = new Date(savingsDepositDate+"T12:00:00");
+                const depAcadMonth = (depDate.getMonth()-7+12)%12;
+                const depMonthName = MONTH_NAMES[depAcadMonth];
+                const depAy = ay; // use current academic year
+                if(!d.years[depAy].monthlyOverrides) d.years[depAy].monthlyOverrides={};
+                if(!d.years[depAy].monthlyOverrides[depMonthName]) d.years[depAy].monthlyOverrides[depMonthName]={};
+                const existingBudget = d.years[depAy].monthlyOverrides[depMonthName][catId] !== undefined
+                  ? d.years[depAy].monthlyOverrides[depMonthName][catId]
+                  : (Number(d.years[depAy].monthly[catId])||0);
+                if(!existingBudget) {
+                  // No budget set for this month — add deposit amount as budget
+                  d.years[depAy].monthlyOverrides[depMonthName][catId] = amt;
+                  // Also add a weekly entry so it appears in Budget + Weekly tabs
+                  const entry={id:"e_"+Date.now(),catId,amount:amt,note:(savingsDepositNote||"Savings deposit"),date:savingsDepositDate};
+                  if(!d.currentWeekEntries) d.currentWeekEntries=[];
+                  if(!d.weeklyArchive) d.weeklyArchive=[];
+                  const entryWeek=getMonday(savingsDepositDate);
+                  const thisWeek=getMonday(new Date());
+                  if(entryWeek<thisWeek){
+                    const ex=d.weeklyArchive.find(a=>a.weekStart===entryWeek);
+                    if(ex){ex.entries.push(entry);ex.total=ex.entries.reduce((a,e)=>a+Number(e.amount),0);}
+                    else d.weeklyArchive.push({weekStart:entryWeek,weekEnd:getSunday(entryWeek),entries:[entry],total:entry.amount});
+                  } else {
+                    d.currentWeekEntries.push(entry);
+                  }
+                  // Remove from disabled cats for that month if present
+                  const mk=depAy+"-"+depMonthName;
+                  if(d.monthDisabled?.[mk]) d.monthDisabled[mk]=d.monthDisabled[mk].filter(c=>c!==catId);
+                }
+
                 upd(d);
                 setSavingsDepositGoal(null);setSavingsDepositAmt("");setSavingsDepositNote("");setSavingsDepositDate(todayStr());
               }} style={{padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.teal,color:C.bg,cursor:"pointer",marginTop:4}}>
@@ -1632,7 +1665,7 @@ function App() {
             {(()=>{
               const examBudget=yr.monthly.exams||0;
               if(examBudget<=0) return null;
-              const unfunded=(data.stepGoals||[]).filter(g=>(g.saved||0)<g.targetAmount);
+              const unfunded=(data.stepGoals||[]).filter(g=>(g.saved||0)<g.targetAmount && !(g.monthlyContribution));
               if(unfunded.length===0) return null;
               const suggested=Math.round(examBudget/unfunded.length);
               return (
