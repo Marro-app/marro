@@ -29,6 +29,35 @@
 <script type="text/babel" data-presets="react">
 window.storage={get:async(key)=>{try{const v=localStorage.getItem(key);return v?{key,value:v}:null}catch{return null}},set:async(key,value)=>{try{localStorage.setItem(key,value);return{key,value}}catch{return null}},delete:async(key)=>{try{localStorage.removeItem(key);return{key,deleted:true}}catch{return null}},list:async(prefix)=>{try{return{keys:Object.keys(localStorage).filter(k=>!prefix||k.startsWith(prefix))}}catch{return{keys:[]}}}};
 const{PieChart,Pie,Cell,BarChart,Bar,XAxis,YAxis,Tooltip,ResponsiveContainer,LineChart,Line,AreaChart,Area,Legend,ReferenceLine,ComposedChart}=Recharts;
+
+// ── GitHub Gist sync (via /api/sync serverless proxy — token never in browser) ─
+const GIST_ID_KEY = "wcm_gist_id";
+
+const gistFetch = async () => {
+  const id = localStorage.getItem(GIST_ID_KEY);
+  if(!id) return null;
+  try {
+    const r = await fetch(`/api/sync?id=${id}`);
+    if(!r.ok) return null;
+    const j = await r.json();
+    return j.content || null;
+  } catch { return null; }
+};
+
+const gistWrite = async (content) => {
+  const id = localStorage.getItem(GIST_ID_KEY) || null;
+  try {
+    const r = await fetch("/api/sync", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({id, content})
+    });
+    if(!r.ok) return false;
+    const j = await r.json();
+    if(j.id) localStorage.setItem(GIST_ID_KEY, j.id);
+    return true;
+  } catch { return false; }
+};
 (function(){setInterval(()=>{const now=new Date();if(now.getDay()===0&&now.getHours()===23&&now.getMinutes()===59)window._triggerArchive&&window._triggerArchive()},60000)})();
 
 const { useState, useEffect, useCallback } = React;
@@ -518,6 +547,8 @@ function App() {
   const [ready, setReady]       = useState(false);
   const [flash, setFlash]       = useState(false);
   const [dismissed, setDismissed] = useState({});
+  const [syncStatus, setSyncStatus] = useState(null); // null|"syncing"|"synced"|"offline"
+  const gistTimerRef = React.useRef(null);
 
   // Subscription form
   const [subName, setSubName]   = useState("");
@@ -570,9 +601,23 @@ function App() {
   useEffect(()=>{
     (async()=>{
       try{
-        let r=await window.storage.get("wcm_v8");
-        if(!r?.value){r=await window.storage.get("wcm_v7");}
-        const loaded=r?.value?JSON.parse(r.value):JSON.parse(JSON.stringify(DEFAULT_STATE));
+        let raw = null;
+        // Try Gist first (primary source of truth across devices)
+        setSyncStatus("syncing");
+        const gistContent = await gistFetch();
+        if(gistContent){
+          raw = gistContent;
+          // Keep localStorage in sync as offline cache
+          await window.storage.set("wcm_v8", raw);
+          setSyncStatus("synced");
+        } else {
+          // Fall back to localStorage
+          let r = await window.storage.get("wcm_v8");
+          if(!r?.value) r = await window.storage.get("wcm_v7");
+          raw = r?.value || null;
+          setSyncStatus(raw ? "offline" : null);
+        }
+        const loaded = raw ? JSON.parse(raw) : JSON.parse(JSON.stringify(DEFAULT_STATE));
         // Migrate: add new fields if missing
         if(loaded.surplusBank===undefined) loaded.surplusBank=0;
         if(!loaded.monthDisabled) loaded.monthDisabled={};
@@ -586,13 +631,21 @@ function App() {
         loaded.years.forEach((y,i)=>{if(!y.startDate)Object.assign(y,YEAR_CONFIGS[i]);});
         setData(loaded);
       }
-      catch(e){console.error(e);setData(JSON.parse(JSON.stringify(DEFAULT_STATE)));}
+      catch(e){console.error(e);setData(JSON.parse(JSON.stringify(DEFAULT_STATE)));setSyncStatus("offline");}
       setReady(true);
     })();
   },[]);
 
   const save = useCallback(async d => {
-    try{await window.storage.set("wcm_v8",JSON.stringify(d));setFlash(true);setTimeout(()=>setFlash(false),1400);}catch{}
+    const json = JSON.stringify(d);
+    try{await window.storage.set("wcm_v8",json);setFlash(true);setTimeout(()=>setFlash(false),1400);}catch{}
+    // Debounced Gist sync — waits 2s after last change before writing
+    clearTimeout(gistTimerRef.current);
+    setSyncStatus("syncing");
+    gistTimerRef.current = setTimeout(async()=>{
+      const ok = await gistWrite(json);
+      setSyncStatus(ok ? "synced" : "offline");
+    }, 2000);
   },[]);
 
   const upd = d => { setData(d); save(d); };
@@ -1078,6 +1131,9 @@ function App() {
           </div>
         </div>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
+          {syncStatus==="syncing" && <span style={{fontSize:11,color:C.gray,display:"flex",alignItems:"center",gap:4}}><span style={{width:6,height:6,borderRadius:99,background:C.amber,animation:"wcmpulse 1s infinite",flexShrink:0}}/>Syncing…</span>}
+          {syncStatus==="synced"  && <span style={{fontSize:11,color:C.teal,display:"flex",alignItems:"center",gap:4}}><span style={{width:6,height:6,borderRadius:99,background:C.teal,flexShrink:0}}/>Synced</span>}
+          {syncStatus==="offline" && <span style={{fontSize:11,color:C.amber,display:"flex",alignItems:"center",gap:4}}><span style={{width:6,height:6,borderRadius:99,background:C.amber,flexShrink:0}}/>Local only</span>}
           {flash && <span style={{fontSize:12,color:C.teal,fontWeight:600}}>Saved</span>}
           <button onClick={()=>{const d=JSON.parse(JSON.stringify(data));d.darkMode=!d.darkMode;upd(d);}} style={{fontSize:16,padding:"4px 10px",border:`1px solid ${C.border}`,borderRadius:7,background:"transparent",cursor:"pointer"}} title="Toggle dark mode">{data.darkMode?"☀️":"🌙"}</button>
           <button onClick={()=>upd(JSON.parse(JSON.stringify(DEFAULT_STATE)))} style={{fontSize:11,padding:"5px 12px",border:`1px solid ${C.border}`,borderRadius:7,background:"transparent",color:C.gray,cursor:"pointer",fontWeight:500}}>Reset defaults</button>
