@@ -276,7 +276,7 @@ const DEFAULT_STATE = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt  = n => "$"+Math.abs(Math.round(n)).toLocaleString();
-const fmtS = n => (n>=0?"+":"-")+fmt(n);
+const fmtS = n => { const r=Math.round(n); if(r===0) return "$0"; return (r>0?"+":"-")+"$"+Math.abs(r).toLocaleString(); };
 const fmtD = n => "$"+Math.abs(Number(n)||0).toFixed(2);
 const moTotal = m => Object.values(m).reduce((a,b)=>a+(Number(b)||0),0);
 
@@ -636,6 +636,26 @@ function App() {
     })();
   },[]);
 
+  // Auto-select the correct academic year and month once data is loaded
+  useEffect(()=>{
+    if(!data||!ready) return;
+    const now=new Date();
+    for(let i=0;i<data.years.length;i++){
+      const y=data.years[i];
+      if(!y.startDate||!y.endDate) continue;
+      const start=new Date(y.startDate+"T12:00:00");
+      const end=new Date(y.endDate+"T12:00:00");
+      if(now>=start&&now<=end){
+        setAy(y.id);
+        setSelMonth((now.getMonth()-7+12)%12);
+        return;
+      }
+    }
+    // Before first year starts: show Year 1, default to August
+    setAy(data.years[0]?.id||0);
+    setSelMonth(0);
+  },[ready]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const save = useCallback(async d => {
     const json = JSON.stringify(d);
     try{await window.storage.set("wcm_v8",json);setFlash(true);setTimeout(()=>setFlash(false),1400);}catch{}
@@ -738,7 +758,7 @@ function App() {
   const unbudgetedCats = cats.filter(c=>!c.locked && !c.autoCalc && disabledCats.includes(c.id) && spentInMonth(c.id,selMonth)>0);
   const unbudgetedTotal = unbudgetedCats.reduce((a,c)=>a+spentInMonth(c.id,selMonth),0);
 
-  const moSurplus = moSpendable - moSpend - unbudgetedTotal;  // this month's net (auto)
+  const moSurplus = Math.round(moSpendable - moSpend - unbudgetedTotal);  // this month's net (auto)
 
   // Per-month net = spendable - planned budget - unbudgeted spending
   const monthNetFor = (mi) => {
@@ -755,6 +775,7 @@ function App() {
   // Running balance: cumulative net Aug → selected month (auto carry-forward)
   let runningBalance = 0;
   for(let mi=0; mi<=selMonth; mi++) runningBalance += monthNetFor(mi);
+  runningBalance = Math.round(runningBalance);
   // Year net: full 12-month cumulative
   let curYrNet = 0;
   for(let mi=0; mi<12; mi++) curYrNet += monthNetFor(mi);
@@ -1160,11 +1181,11 @@ function App() {
 
       {/* ── Top metrics ── */}
       <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
-        <MetricTile label="Monthly spendable"  value={fmt(moSpendable)} sub="after school costs" color={C.teal}/>
-        <MetricTile label="Monthly budget"     value={fmt(moSpend)}     sub={`${fmt(moSpend-subsMo)} direct + ${fmt(subsMo)} subs`}/>
+        <MetricTile label="Monthly spendable"  value={fmt(moSpendable)} sub="after tuition & fees" color={C.teal}/>
+        <MetricTile label="Monthly budget"     value={fmt(moSpend)}     sub={subsMo>0?`incl. ${fmt(subsMo)} subs`:"planned spending"}/>
         <MetricTile label="Monthly surplus"    value={fmtS(moSurplus)}  sub={moSurplus>0?"available to save":moSurplus<0?"over budget":"balanced"} color={moSurplus>0?C.green:moSurplus<0?C.red:C.gray}/>
-        <MetricTile label="This year net"      value={fmtS(curYrNet)}   sub={yr.label.split("—")[0].trim()} color={curYrNet>=0?C.green:C.red}/>
-        <MetricTile label="Running balance"    value={fmtS(runningBalance)} sub={"through "+MONTH_NAMES[selMonth]} color={runningBalance>=0?C.teal:C.red}/>
+        <MetricTile label="Year net"           value={fmtS(curYrNet)}   sub="full 12 months" color={curYrNet>=0?C.green:C.red}/>
+        <MetricTile label="Running balance"    value={fmtS(runningBalance)} sub={"thru "+MONTH_NAMES[selMonth]} color={runningBalance>=0?C.teal:C.red}/>
       </div>
 
       {/* ── Tabs ── */}
@@ -1185,7 +1206,7 @@ function App() {
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
           <Card>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-              <SectionTitle>{yr.label} — Monthly budget</SectionTitle>
+              <SectionTitle>Monthly budget</SectionTitle>
               <select value={selMonth} onChange={e=>setSelMonth(Number(e.target.value))} style={{fontSize:12,padding:"4px 10px",border:`1px solid ${C.border}`,borderRadius:7,background:C.bg,color:C.text,cursor:"pointer"}}>
                 {MONTH_NAMES.map((m,i)=><option key={m} value={i}>{MONTH_FULL[i]}</option>)}
               </select>
@@ -1263,7 +1284,7 @@ function App() {
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
             <Card>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
-                <SectionTitle>Cash flow — {yr.label}</SectionTitle>
+                <SectionTitle>Cash flow</SectionTitle>
                 <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,color:C.gray}}><span style={{width:7,height:7,borderRadius:99,background:C.green,animation:"wcmpulse 2s infinite"}}/>Live</span>
               </div>
               
@@ -1502,7 +1523,7 @@ function App() {
           <div style={{display:"flex",flexDirection:"column",gap:16}}>
             {/* Running balance */}
             <Card>
-              <SectionTitle>Running balance — {yr.label}</SectionTitle>
+              <SectionTitle>Running balance</SectionTitle>
               <div style={{fontSize:11,color:C.gray,marginBottom:10}}>Cumulative surplus/deficit from August through each month. Positive = ahead of budget.</div>
               <ResponsiveContainer width="100%" height={200}>
                 <AreaChart data={runBalData} margin={{top:4,right:4,bottom:0,left:0}}>
@@ -1527,7 +1548,7 @@ function App() {
 
             {/* Budget vs Actual */}
             <Card>
-              <SectionTitle>Budget vs actual — {yr.label}</SectionTitle>
+              <SectionTitle>Budget vs actual</SectionTitle>
               <div style={{display:"flex",gap:20,marginBottom:10}}>
                 {[["Budgeted",C.teal],["Actual",C.red]].map(([l,c])=>(
                   <div key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:C.gray}}>
@@ -1550,7 +1571,7 @@ function App() {
             {/* Pie + breakdown */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
               <Card>
-                <SectionTitle>{yr.label} — spending distribution</SectionTitle>
+                <SectionTitle>Spending distribution</SectionTitle>
                 <ResponsiveContainer width="100%" height={210}>
                   <PieChart><Pie data={pieData} dataKey="value" cx="50%" cy="50%" innerRadius={54} outerRadius={88} paddingAngle={2}>
                     {pieData.map((e,i)=><Cell key={i} fill={e.color}/>)}
@@ -1608,48 +1629,126 @@ function App() {
           <Card>
             <SectionTitle>STEP Exam Fund</SectionTitle>
             <div style={{fontSize:11,color:C.gray,marginBottom:14}}>Each Step exam costs ~$670–950. Track your savings here and stop contributing once fully funded.</div>
+            {(()=>{
+              const examBudget=yr.monthly.exams||0;
+              if(examBudget<=0) return null;
+              const unfunded=(data.stepGoals||[]).filter(g=>(g.saved||0)<g.targetAmount);
+              if(unfunded.length===0) return null;
+              const suggested=Math.round(examBudget/unfunded.length);
+              return (
+                <div style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",background:C.tealLight,borderRadius:8,marginBottom:14,fontSize:12}}>
+                  <span style={{color:C.teal,fontSize:15,flexShrink:0}}>◎</span>
+                  <div style={{flex:1,color:C.teal,lineHeight:1.6}}>
+                    Your USMLE/Exams budget has <strong>{fmt(examBudget)}/mo</strong> allocated.
+                    Apply {unfunded.length>1?`${fmt(suggested)}/mo to each unfunded goal`:`it to ${unfunded[0].label}`} to track progress here.
+                    <button onClick={()=>{
+                      const d=JSON.parse(JSON.stringify(data));
+                      unfunded.forEach(g=>{
+                        const i=d.stepGoals.findIndex(x=>x.id===g.id);
+                        if(i>=0) d.stepGoals[i].monthlyContribution=suggested;
+                      });
+                      upd(d);
+                    }} style={{marginLeft:10,fontSize:11,padding:"3px 10px",borderRadius:6,border:"none",background:C.teal,color:C.bg,cursor:"pointer",fontWeight:600}}>Apply</button>
+                  </div>
+                </div>
+              );
+            })()}
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               {(data.stepGoals||[]).map(g=>{
                 const pct=g.targetAmount>0?Math.min(100,Math.round((g.saved||0)/g.targetAmount*100)):0;
                 const remaining=Math.max(0,g.targetAmount-(g.saved||0));
                 const funded=remaining===0;
-                const monthsToFund=(!funded&&g.monthlyContribution>0)?Math.ceil(remaining/g.monthlyContribution):null;
-                const projDate=monthsToFund!=null?(()=>{const d=new Date();d.setMonth(d.getMonth()+monthsToFund);return d.toLocaleDateString("en-US",{month:"short",year:"numeric"});})():null;
+                const monthsToFund=(!funded&&(g.monthlyContribution||0)>0)?Math.ceil(remaining/g.monthlyContribution):null;
+                const projDateObj=monthsToFund!=null?(()=>{const d=new Date();d.setMonth(d.getMonth()+monthsToFund);return d;})():null;
+                const projDateStr=projDateObj?projDateObj.toLocaleDateString("en-US",{month:"short",year:"numeric"}):null;
+                const examDateObj=g.targetDate?new Date(g.targetDate+"T12:00:00"):null;
+                const onTrack=projDateObj&&examDateObj?projDateObj<=examDateObj:null;
+                const monthsUntilExam=examDateObj?Math.max(1,Math.ceil((examDateObj-new Date())/2628000000)):null;
+                const neededMonthly=(!funded&&monthsUntilExam)?Math.ceil(remaining/monthsUntilExam):null;
                 return (
                   <div key={g.id} style={{padding:"14px",border:`1px solid ${funded?C.green:C.border}`,borderRadius:10,background:C.bgDark}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                       <div>
                         <div style={{fontWeight:700,fontSize:14,color:C.text}}>{g.label}</div>
                         <div style={{fontSize:11,color:C.gray,marginTop:2}}>
-                          {funded?"Fully funded!!":`${fmt(g.saved||0)} saved · ${fmt(remaining)} to go · target ${fmt(g.targetAmount)}`}
+                          {funded?"Fully funded":`${fmt(g.saved||0)} saved · ${fmt(remaining)} to go · target ${fmt(g.targetAmount)}`}
                         </div>
                       </div>
-                      <Pill ok={funded} warn={!funded&&pct<50}>{pct}%</Pill>
+                      <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                        {!funded&&onTrack===true&&<Pill ok>On track</Pill>}
+                        {!funded&&onTrack===false&&<Pill warn>Behind</Pill>}
+                        <Pill ok={funded} warn={!funded&&pct<50} neutral={!funded&&pct>=50}>{pct}%</Pill>
+                      </div>
                     </div>
                     <ProgressBar value={g.saved||0} max={g.targetAmount} color={funded?C.green:C.teal}/>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,flexWrap:"wrap",gap:8}}>
-                      <div style={{fontSize:11,color:C.gray}}>
-                        {funded?"No further contributions needed."
-                          :projDate?`At ${fmt(g.monthlyContribution)}/mo → funded by ${projDate}`
-                          :"Set a monthly contribution below to see projected date."}
+
+                    {/* Date comparison row */}
+                    {!funded&&(
+                      <div style={{display:"flex",gap:16,marginTop:10,flexWrap:"wrap"}}>
+                        <div>
+                          <div style={{fontSize:10,color:C.gray,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>Exam date</div>
+                          <input type="date" value={g.targetDate||""} onChange={e=>{const d=JSON.parse(JSON.stringify(data));const i=d.stepGoals.findIndex(x=>x.id===g.id);if(i>=0)d.stepGoals[i].targetDate=e.target.value;upd(d);}} style={{fontSize:12,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 8px",background:C.bg,color:C.text}}/>
+                        </div>
+                        <div>
+                          <div style={{fontSize:10,color:C.gray,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>Funded by (projected)</div>
+                          <div style={{fontSize:13,fontWeight:600,color:onTrack===false?C.red:onTrack===true?C.green:C.text,padding:"4px 0"}}>
+                            {projDateStr||"—"}
+                            {onTrack===false&&neededMonthly&&<span style={{fontSize:11,color:C.amber,marginLeft:8}}>needs {fmt(neededMonthly)}/mo to hit deadline</span>}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Controls row */}
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,paddingTop:10,borderTop:`1px solid ${C.border}`,flexWrap:"wrap",gap:8}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,fontSize:12}}>
+                        <span style={{color:C.gray}}>Monthly:</span>
+                        <input type="number" value={g.monthlyContribution||0} onChange={e=>{const d=JSON.parse(JSON.stringify(data));const i=d.stepGoals.findIndex(x=>x.id===g.id);if(i>=0)d.stepGoals[i].monthlyContribution=Number(e.target.value)||0;upd(d);}} style={{width:68,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:6,padding:"3px 7px",background:C.bg,color:C.text}}/>
+                        <span style={{color:C.gray}}>/mo</span>
+                        <span style={{color:C.gray,marginLeft:8}}>Target:</span>
+                        <input type="number" value={g.targetAmount} onChange={e=>{const d=JSON.parse(JSON.stringify(data));const i=d.stepGoals.findIndex(x=>x.id===g.id);if(i>=0)d.stepGoals[i].targetAmount=Number(e.target.value)||0;upd(d);}} style={{width:68,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:6,padding:"3px 7px",background:C.bg,color:C.text}}/>
                       </div>
                       {!funded&&<button onClick={()=>{setSavingsDepositGoal(g.id);setSavingsDepositDate(todayStr());}} style={{fontSize:12,padding:"6px 16px",borderRadius:7,border:"none",background:C.teal,color:C.bg,cursor:"pointer",fontWeight:600}}>Log deposit</button>}
                     </div>
-                    {!funded&&(
-                      <div style={{marginTop:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",fontSize:12,paddingTop:10,borderTop:`1px solid ${C.border}`}}>
-                        <span style={{color:C.gray}}>Monthly:</span>
-                        <input type="number" value={g.monthlyContribution||0} onChange={e=>{const d=JSON.parse(JSON.stringify(data));const i=d.stepGoals.findIndex(x=>x.id===g.id);if(i>=0)d.stepGoals[i].monthlyContribution=Number(e.target.value)||0;upd(d);}} style={{width:72,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:6,padding:"3px 7px",background:C.bg,color:C.text}}/>
-                        <span style={{color:C.gray}}>/mo</span>
-                        <span style={{color:C.gray,marginLeft:8}}>Target:</span>
-                        <input type="number" value={g.targetAmount} onChange={e=>{const d=JSON.parse(JSON.stringify(data));const i=d.stepGoals.findIndex(x=>x.id===g.id);if(i>=0)d.stepGoals[i].targetAmount=Number(e.target.value)||0;upd(d);}} style={{width:72,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:6,padding:"3px 7px",background:C.bg,color:C.text}}/>
-                        <span style={{color:C.gray,marginLeft:8}}>Date:</span>
-                        <input type="date" value={g.targetDate||""} onChange={e=>{const d=JSON.parse(JSON.stringify(data));const i=d.stepGoals.findIndex(x=>x.id===g.id);if(i>=0)d.stepGoals[i].targetDate=e.target.value;upd(d);}} style={{fontSize:11,border:`1px solid ${C.border}`,borderRadius:6,padding:"3px 7px",background:C.bg,color:C.text}}/>
-                      </div>
-                    )}
                   </div>
                 );
               })}
             </div>
+          </Card>
+
+          {/* Deposit History */}
+          <Card>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <SectionTitle>Deposit History</SectionTitle>
+              <span style={{fontSize:11,color:C.gray}}>{(data.savingsLog||[]).length} entries</span>
+            </div>
+            {(data.savingsLog||[]).length===0
+              ?<div style={{textAlign:"center",padding:"16px 0",color:C.gray,fontSize:13}}>No deposits logged yet — use "Log deposit" above.</div>
+              :[...(data.savingsLog||[])].sort((a,b)=>b.date.localeCompare(a.date)).map((entry,i)=>{
+                  const allGoals=[...(data.stepGoals||[]),...(data.savingsGoals||[])];
+                  const goal=allGoals.find(g=>g.id===entry.goalId);
+                  return (
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+                      <div style={{width:8,height:8,borderRadius:99,background:C.teal,flexShrink:0}}/>
+                      <div style={{flex:1}}>
+                        <span style={{fontWeight:600,color:C.text}}>{goal?.label||"Unknown goal"}</span>
+                        {entry.note&&<span style={{color:C.gray}}> · {entry.note}</span>}
+                        <div style={{fontSize:11,color:C.gray,marginTop:2}}>{entry.date}</div>
+                      </div>
+                      <span style={{fontWeight:700,color:C.teal}}>{fmt(entry.amount)}</span>
+                      <button onClick={()=>{
+                        const d=JSON.parse(JSON.stringify(data));
+                        const inStep=d.stepGoals.findIndex(x=>x.id===entry.goalId);
+                        const inCustom=d.savingsGoals.findIndex(x=>x.id===entry.goalId);
+                        if(inStep>=0) d.stepGoals[inStep].saved=Math.max(0,(d.stepGoals[inStep].saved||0)-entry.amount);
+                        else if(inCustom>=0) d.savingsGoals[inCustom].saved=Math.max(0,(d.savingsGoals[inCustom].saved||0)-entry.amount);
+                        d.savingsLog=d.savingsLog.filter((_,j)=>j!==i);
+                        upd(d);
+                      }} style={{width:26,height:26,borderRadius:6,background:C.bg,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:C.gray,fontSize:14,fontWeight:700}}>×</button>
+                    </div>
+                  );
+                })
+            }
           </Card>
 
           {/* Custom Goals */}
@@ -1747,38 +1846,6 @@ function App() {
                 </div>
               ));
             })()}
-          </Card>
-
-          {/* Deposit History */}
-          <Card>
-            <SectionTitle>Deposit History</SectionTitle>
-            {(data.savingsLog||[]).length===0
-              ?<div style={{textAlign:"center",padding:"20px 0",color:C.gray,fontSize:13}}>No deposits logged yet.</div>
-              :[...(data.savingsLog||[])].sort((a,b)=>b.date.localeCompare(a.date)).map((entry,i)=>{
-                  const allGoals=[...(data.stepGoals||[]),...(data.savingsGoals||[])];
-                  const goal=allGoals.find(g=>g.id===entry.goalId);
-                  return (
-                    <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
-                      <div style={{width:8,height:8,borderRadius:99,background:C.teal,flexShrink:0}}/>
-                      <div style={{flex:1}}>
-                        <span style={{fontWeight:600,color:C.text}}>{goal?.label||"Unknown goal"}</span>
-                        {entry.note&&<span style={{color:C.gray}}> · {entry.note}</span>}
-                        <div style={{fontSize:11,color:C.gray,marginTop:2}}>{entry.date}</div>
-                      </div>
-                      <span style={{fontWeight:700,color:C.teal}}>{fmt(entry.amount)}</span>
-                      <button onClick={()=>{
-                        const d=JSON.parse(JSON.stringify(data));
-                        const inStep=d.stepGoals.findIndex(x=>x.id===entry.goalId);
-                        const inCustom=d.savingsGoals.findIndex(x=>x.id===entry.goalId);
-                        if(inStep>=0) d.stepGoals[inStep].saved=Math.max(0,(d.stepGoals[inStep].saved||0)-entry.amount);
-                        else if(inCustom>=0) d.savingsGoals[inCustom].saved=Math.max(0,(d.savingsGoals[inCustom].saved||0)-entry.amount);
-                        d.savingsLog=d.savingsLog.filter((_,j)=>j!==i);
-                        upd(d);
-                      }} style={{width:26,height:26,borderRadius:6,background:C.bg,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:C.gray,fontSize:14,fontWeight:700}}>×</button>
-                    </div>
-                  );
-                })
-            }
           </Card>
 
         </div>
