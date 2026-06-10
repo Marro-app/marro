@@ -1982,7 +1982,9 @@ function App() {
               const yDomMax = (priorYearsCarryover > 0 && priorYearsCarryover > maxBal)
                 ? Math.ceil(priorYearsCarryover / 200) * 200
                 : Math.ceil((maxBal + nicePad) / 200) * 200;
-              const yDomMin = Math.floor((minBal - nicePad) / 200) * 200;
+              const yDomMin = (priorYearsCarryover < 0 && priorYearsCarryover < minBal)
+                ? Math.floor(priorYearsCarryover / 200) * 200
+                : Math.floor((minBal - nicePad) / 200) * 200;
               const yRange = yDomMax - yDomMin;
               // Fraction (0=top, 1=bottom in SVG) where y=0 sits inside [yDomMin, yDomMax]
               const zeroFrac = crossesZero
@@ -2041,7 +2043,7 @@ function App() {
                       </defs>
                       <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
                       <YAxis domain={[yDomMin, yDomMax]} tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>v===0?"$0":v>0?"+"+fmt(v):fmtS(v)} axisLine={false} tickLine={false} width={60}/>
-                      <Tooltip formatter={v=>[fmtS(v),"Total position"]} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
+                      <Tooltip formatter={v=>[fmtS(v),"Total position"]} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
                       {crossesZero && <ReferenceLine y={0} stroke={C.gray} strokeOpacity={0.45} strokeDasharray="4 3"/>}
                       {priorYearsCarryover!==0 && <ReferenceLine y={priorYearsCarryover} stroke={priorColor} strokeWidth={2} strokeOpacity={0.8} strokeDasharray="8 3"/>}
                       <Area type="monotone" dataKey="balance" stroke={strokeColor} fill={fillColor} strokeWidth={2}
@@ -2069,7 +2071,7 @@ function App() {
                 <BarChart data={budgetVsActual.filter(d=>d.Actual>0)} barGap={2} barCategoryGap="28%">
                   <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
                   <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
-                  <Tooltip formatter={v=>fmt(v)} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
+                  <Tooltip formatter={v=>fmt(v)} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
                   <Bar dataKey="Budgeted" fill={C.teal} radius={[3,3,0,0]} opacity={0.85}/>
                   <Bar dataKey="Actual" fill={C.red} radius={[3,3,0,0]}/>
                 </BarChart>
@@ -2083,7 +2085,7 @@ function App() {
                 <ResponsiveContainer width="100%" height={210}>
                   <PieChart><Pie data={pieData} dataKey="value" cx="50%" cy="50%" innerRadius={54} outerRadius={88} paddingAngle={2}>
                     {pieData.map((e,i)=><Cell key={i} fill={e.color}/>)}
-                  </Pie><Tooltip formatter={v=>fmt(v)+"/mo"} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/></PieChart>
+                  </Pie><Tooltip formatter={v=>fmt(v)+"/mo"} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/></PieChart>
                 </ResponsiveContainer>
               </Card>
               <Card>
@@ -2167,7 +2169,7 @@ function App() {
                     })()} margin={{top:4,right:4,bottom:0,left:0}}>
                       <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
                       <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
-                      <Tooltip formatter={v=>fmt(v)} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
+                      <Tooltip formatter={v=>fmt(v)} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
                       <Legend wrapperStyle={{fontSize:11,paddingTop:8}}/>
                       {activeCats.map((c,i)=>(
                         <Line key={c.id} type="monotone" dataKey={c.label} stroke={CHART_COLORS[cats.findIndex(x=>x.id===c.id)%CHART_COLORS.length]} strokeWidth={2} dot={false} activeDot={{r:4}}/>
@@ -2230,7 +2232,7 @@ function App() {
                     <BarChart data={cmpData} barGap={2} barCategoryGap="28%">
                       <XAxis dataKey="name" tick={{fontSize:10,fill:C.gray}} axisLine={false} tickLine={false}/>
                       <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
-                      <Tooltip cursor={false} formatter={(v,name)=>[fmt(v), name==="A"?defaultA.label:defaultB.label]} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
+                      <Tooltip cursor={false} formatter={(v,name)=>[fmt(v), name==="A"?defaultA.label:defaultB.label]} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
                       <Legend formatter={(v)=>v==="A"?defaultA.label:defaultB.label} wrapperStyle={{fontSize:11,paddingTop:8}}/>
                       <Bar dataKey="A" fill={C.teal} radius={[3,3,0,0]} opacity={0.85}/>
                       <Bar dataKey="B" fill={C.amber} radius={[3,3,0,0]}/>
@@ -2285,7 +2287,7 @@ function App() {
                 <BarChart data={barData} barGap={4}>
                   <XAxis dataKey="name" tick={{fontSize:12,fill:C.gray}} axisLine={false} tickLine={false}/>
                   <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
-                  <Tooltip formatter={v=>fmt(v)+"/mo"} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
+                  <Tooltip formatter={v=>fmt(v)+"/mo"} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
                   <Bar dataKey="Spendable" fill={C.teal} radius={[4,4,0,0]}/>
                   <Bar dataKey="Spend" fill={C.red} radius={[4,4,0,0]}/>
                 </BarChart>
@@ -2496,7 +2498,7 @@ function App() {
                       </defs>
                       <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
                       <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>v>=1000?"$"+Math.round(v/1000)+"k":("$"+v)} axisLine={false} tickLine={false} width={44}/>
-                      <Tooltip formatter={v=>[fmt(v),"Projected balance"]} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
+                      <Tooltip formatter={v=>[fmt(v),"Projected balance"]} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
                       <ReferenceLine y={0} stroke={C.border} strokeDasharray="4 2"/>
                       <Area type="monotone" dataKey="balance" stroke={C.teal} fill="url(#projGrad)" strokeWidth={2}/>
                     </AreaChart>
