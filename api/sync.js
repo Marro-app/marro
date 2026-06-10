@@ -12,9 +12,32 @@ export default async function handler(req, res) {
   };
 
   // GET /api/sync?id=<gistId>  → fetch gist content
+  // GET /api/sync               → discover WCM gist by listing user's gists
   if (req.method === "GET") {
     const { id } = req.query;
-    if (!id) return res.status(400).json({ error: "Missing id" });
+
+    if (!id) {
+      // Discovery: find the WCM gist across devices by scanning the user's gist list
+      let page = 1;
+      while (page <= 5) {
+        const r = await fetch(`https://api.github.com/gists?per_page=100&page=${page}`, { headers });
+        if (!r.ok) return res.status(r.status).json({ error: "Gist list failed" });
+        const list = await r.json();
+        if (!list.length) break;
+        const found = list.find(g => g.files?.[GIST_FILE]);
+        if (found) {
+          // Fetch full content for this gist
+          const r2 = await fetch(`https://api.github.com/gists/${found.id}`, { headers });
+          if (!r2.ok) return res.status(r2.status).json({ error: "Gist fetch failed" });
+          const j = await r2.json();
+          const content = j.files?.[GIST_FILE]?.content || null;
+          return res.status(200).json({ id: found.id, content });
+        }
+        page++;
+      }
+      return res.status(200).json({ id: null, content: null });
+    }
+
     const r = await fetch(`https://api.github.com/gists/${id}`, { headers });
     if (!r.ok) return res.status(r.status).json({ error: "Gist fetch failed" });
     const j = await r.json();

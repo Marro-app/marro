@@ -35,11 +35,14 @@ const GIST_ID_KEY = "wcm_gist_id";
 
 const gistFetch = async () => {
   const id = localStorage.getItem(GIST_ID_KEY);
-  if(!id) return null;
   try {
-    const r = await fetch(`/api/sync?id=${id}`);
+    // No local ID → discovery mode: server scans gist list to find WCM gist
+    const url = id ? `/api/sync?id=${id}` : `/api/sync`;
+    const r = await fetch(url);
     if(!r.ok) return null;
     const j = await r.json();
+    // Store discovered ID for future loads on this device
+    if(!id && j.id) localStorage.setItem(GIST_ID_KEY, j.id);
     return j.content || null;
   } catch { return null; }
 };
