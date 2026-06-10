@@ -1979,7 +1979,8 @@ function App() {
               // Explicit domain so gradient zero-fraction aligns exactly with ReferenceLine y=0
               const absExtreme = Math.max(Math.abs(maxBal), Math.abs(minBal));
               const nicePad = Math.max(300, absExtreme * 0.18);
-              const yDomMax = Math.ceil((maxBal + nicePad) / 200) * 200;
+              const ceilCandidate = priorYearsCarryover > 0 ? Math.max(priorYearsCarryover, maxBal) : maxBal;
+              const yDomMax = Math.ceil((ceilCandidate + nicePad) / 200) * 200;
               const yDomMin = Math.floor((minBal - nicePad) / 200) * 200;
               const yRange = yDomMax - yDomMin;
               // Fraction (0=top, 1=bottom in SVG) where y=0 sits inside [yDomMin, yDomMax]
@@ -1999,7 +2000,7 @@ function App() {
                   <div style={{display:"flex",gap:14,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
                     {priorYearsCarryover!==0 && (
                       <div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.gray}}>
-                        <svg width="20" height="8" style={{flexShrink:0}}><line x1="0" y1="4" x2="20" y2="4" stroke={priorColor} strokeWidth="1.5" strokeDasharray="5,3"/></svg>
+                        <svg width="20" height="8" style={{flexShrink:0}}><line x1="0" y1="4" x2="20" y2="4" stroke={priorColor} strokeWidth="2.5" strokeDasharray="8,3"/></svg>
                         <span>Entering {yr.label.split("—")[0].trim()}: <strong style={{color:priorColor}}>{fmtS(priorYearsCarryover)}</strong></span>
                       </div>
                     )}
@@ -2041,7 +2042,7 @@ function App() {
                       <YAxis domain={[yDomMin, yDomMax]} tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>v===0?"$0":v>0?"+"+fmt(v):fmtS(v)} axisLine={false} tickLine={false} width={60}/>
                       <Tooltip formatter={v=>[fmtS(v),"Total position"]} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
                       {crossesZero && <ReferenceLine y={0} stroke={C.gray} strokeOpacity={0.45} strokeDasharray="4 3"/>}
-                      {priorYearsCarryover!==0 && <ReferenceLine y={priorYearsCarryover} stroke={priorColor} strokeOpacity={0.65} strokeDasharray="6 3"/>}
+                      {priorYearsCarryover!==0 && <ReferenceLine y={priorYearsCarryover} stroke={priorColor} strokeWidth={2} strokeOpacity={0.8} strokeDasharray="8 3"/>}
                       <Area type="monotone" dataKey="balance" stroke={strokeColor} fill={fillColor} strokeWidth={2}
                         dot={(p)=>p.index===selMonth?<circle key={p.index} cx={p.cx} cy={p.cy} r={4} fill={p.value>=0?C.teal:C.red}/>:<circle key={p.index} r={0}/>}/>
                     </AreaChart>
