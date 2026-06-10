@@ -1287,7 +1287,7 @@ function App() {
       {/* ── Top metrics ── */}
       <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
         <MetricTile label="Monthly spendable"  value={fmt(moSpendable)} sub="after tuition & fees" color={C.teal}/>
-        <MetricTile label="Monthly budget"     value={fmt(moSpend)}     sub={subsMo>0?`incl. ${fmt(subsMo)} subs`:"planned spending"}/>
+        <MetricTile label="Monthly plan"        value={fmt(moSpend)}     sub={subsMo>0?`incl. ${fmt(subsMo)} subs`:"planned spending"}/>
         <MetricTile label="Monthly surplus"    value={fmtS(moSurplus)}  sub={moSurplus>0?"available to save":moSurplus<0?"over budget":"balanced"} color={moSurplus>0?C.green:moSurplus<0?C.red:C.gray}/>
         <MetricTile label="Year net"           value={fmtS(curYrNet)}   sub="full 12 months" color={curYrNet>=0?C.green:C.red}/>
         <MetricTile label="Running balance"    value={fmtS(runningBalance)} sub={"thru "+MONTH_NAMES[selMonth]} color={runningBalance>=0?C.teal:C.red}/>
@@ -1310,12 +1310,13 @@ function App() {
       {tab==="budget" && (
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
           <Card>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-              <SectionTitle>Monthly budget</SectionTitle>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+              <SectionTitle>Monthly plan</SectionTitle>
               <select value={selMonth} onChange={e=>setSelMonth(Number(e.target.value))} style={{fontSize:12,padding:"4px 10px",border:`1px solid ${C.border}`,borderRadius:7,background:C.bg,color:C.text,cursor:"pointer"}}>
                 {MONTH_NAMES.map((m,i)=><option key={m} value={i}>{MONTH_FULL[i]}</option>)}
               </select>
             </div>
+            <div style={{fontSize:11,color:C.gray,marginBottom:12}}>Set how much you <em>intend</em> to spend each month — actual spending is tracked in the <strong>Weekly</strong> tab.</div>
 
             {/* Housing — read-only */}
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:C.bg,borderRadius:8,marginBottom:10,border:`1px solid ${C.border}`}}>
@@ -1397,7 +1398,7 @@ function App() {
                 {l:"Grant disbursed to you",    v:fmt(annDisburse)+"/yr",    c:C.teal},
                 {l:"Other income",              v:fmt(annOther)+"/yr",       c:C.text},
                 {l:"Monthly spendable",         v:fmt(moSpendable)+"/mo",    c:C.teal,bold:true},
-                {l:"Monthly budget",            v:fmt(moSpend)+"/mo",        c:C.text},
+                {l:"Monthly plan",              v:fmt(moSpend)+"/mo",        c:C.text},
                 {l:"Monthly surplus",           v:fmtS(moSurplus)+"/mo",     c:moSurplus>=0?C.green:C.red,bold:true},
               ].map(r=>(
                 <div key={r.l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
@@ -1493,8 +1494,8 @@ function App() {
 
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
             {[
-              {label:"Weekly budget",    val:fmt(viewBudget),             sub:lastWeekSurplus>0&&!viewWeek?`base ${fmt(weeklyBudget)} + ${fmt(lastWeekSurplus)} rollover`:"spendable ÷ 4.33", color:C.teal},
-              {label:"Spent",            val:fmt(viewTotal),              sub:viewWeek?"archived":"this week",      color:viewTotal>viewBudget?C.red:C.text},
+              {label:"Weekly plan",      val:fmt(viewBudget),             sub:lastWeekSurplus>0&&!viewWeek?`base ${fmt(weeklyBudget)} + ${fmt(lastWeekSurplus)} rollover`:"spendable ÷ 4.33", color:C.teal},
+              {label:"Actually spent",  val:fmt(viewTotal),              sub:viewWeek?"archived":"this week",      color:viewTotal>viewBudget?C.red:C.text},
               {label:"Remaining",        val:fmtS(viewBudget-viewTotal),  sub:"this week",                          color:viewBudget-viewTotal>=0?C.green:C.red},
               {label:"Entries",          val:String(viewEntries.length),  sub:"logged",                             color:C.gray},
             ].map(m=><MetricTile key={m.label} label={m.label} value={m.val} sub={m.sub} color={m.color}/>)}
@@ -1503,7 +1504,8 @@ function App() {
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
             {/* Log entry */}
             <Card>
-              <SectionTitle>Log expense</SectionTitle>
+              <SectionTitle>Log actual expense</SectionTitle>
+              <div style={{fontSize:11,color:C.gray,marginBottom:10}}>Record money you <em>actually</em> spent — this is your real spending, not a plan.</div>
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 <div>
                   <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Date</div>
@@ -1537,7 +1539,10 @@ function App() {
 
             {/* Category breakdown */}
             <Card>
-              <SectionTitle>Category breakdown</SectionTitle>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10}}>
+                <SectionTitle style={{marginBottom:0}}>Category breakdown</SectionTitle>
+                <span style={{fontSize:11,color:C.gray}}>actual <span style={{color:C.border}}>/ planned</span></span>
+              </div>
               {(()=>{
                 const wkRef = viewWeek ? new Date(viewWeek+"T12:00:00") : new Date();
                 const wkMonthIdx = (wkRef.getMonth() - 7 + 12) % 12;
