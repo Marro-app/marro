@@ -2153,15 +2153,25 @@ function App() {
                   {filteredTrend.length===0
                     ? <div style={{textAlign:"center",padding:"32px 0",fontSize:12,color:C.gray}}>No spending logged yet — entries will appear here as you log them.</div>
                     : <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={filteredTrend} margin={{top:4,right:4,bottom:0,left:0}}>
-                      <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
-                      <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
-                      <Tooltip formatter={v=>fmt(v)} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
-                      <Legend wrapperStyle={{fontSize:11,paddingTop:8}}/>
-                      {activeCats.map((c,i)=>(
-                        <Line key={c.id} type="monotone" dataKey={c.label} stroke={CHART_COLORS[cats.findIndex(x=>x.id===c.id)%CHART_COLORS.length]} strokeWidth={2} dot={false} activeDot={{r:4}}/>
-                      ))}
-                    </LineChart>
+                    {filteredTrend.length===1
+                      ? <BarChart data={filteredTrend} barCategoryGap="50%" margin={{top:4,right:4,bottom:0,left:0}}>
+                          <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
+                          <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
+                          <Tooltip formatter={v=>fmt(v)} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
+                          <Legend wrapperStyle={{fontSize:11,paddingTop:8}}/>
+                          {activeCats.map((c,i)=>(
+                            <Bar key={c.id} dataKey={c.label} fill={CHART_COLORS[cats.findIndex(x=>x.id===c.id)%CHART_COLORS.length]} radius={[3,3,0,0]}/>
+                          ))}
+                        </BarChart>
+                      : <LineChart data={filteredTrend} margin={{top:4,right:4,bottom:0,left:0}}>
+                          <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
+                          <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
+                          <Tooltip formatter={v=>fmt(v)} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
+                          <Legend wrapperStyle={{fontSize:11,paddingTop:8}}/>
+                          {activeCats.map((c,i)=>(
+                            <Line key={c.id} type="monotone" dataKey={c.label} stroke={CHART_COLORS[cats.findIndex(x=>x.id===c.id)%CHART_COLORS.length]} strokeWidth={2} dot={false} activeDot={{r:4}}/>
+                          ))}
+                        </LineChart>}
                   </ResponsiveContainer>}
                 </Card>
               );
@@ -2219,7 +2229,7 @@ function App() {
                     <BarChart data={cmpData} barGap={2} barCategoryGap="28%">
                       <XAxis dataKey="name" tick={{fontSize:10,fill:C.gray}} axisLine={false} tickLine={false}/>
                       <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
-                      <Tooltip formatter={(v,name)=>[fmt(v), name==="A"?defaultA.label:defaultB.label]} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
+                      <Tooltip cursor={false} formatter={(v,name)=>[fmt(v), name==="A"?defaultA.label:defaultB.label]} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
                       <Legend formatter={(v)=>v==="A"?defaultA.label:defaultB.label} wrapperStyle={{fontSize:11,paddingTop:8}}/>
                       <Bar dataKey="A" fill={C.teal} radius={[3,3,0,0]} opacity={0.85}/>
                       <Bar dataKey="B" fill={C.amber} radius={[3,3,0,0]}/>
