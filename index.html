@@ -3,24 +3,27 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>WCM Budget Planner</title>
-<meta name="description" content="Personal finance tracker for Weill Cornell Medicine MD Class of 2030"/>
+<title>Marro</title>
+<meta name="description" content="Financial companion for medical students"/>
 <link rel="manifest" href="manifest.json"/>
-<meta name="theme-color" content="#b31b1b"/>
+<meta name="theme-color" content="#0b1611"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
-<meta name="apple-mobile-web-app-status-bar-style" content="default"/>
-<meta name="apple-mobile-web-app-title" content="WCM Budget"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Marro"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;500&family=Inter:wght@200;300;400;500&display=swap" rel="stylesheet"/>
 <link rel="apple-touch-icon" href="icon.svg"/>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; transition: background .3s; }
+  body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #0b1611; color: #F6EFDD; transition: background .3s; }
   #root { min-height: 100vh; }
-  #loading { display: flex; align-items: center; justify-content: center; height: 100vh; font-size: 14px; color: #64748b; }
-  input, select, textarea { color-scheme: light dark; }
+  #loading { display: flex; align-items: center; justify-content: center; height: 100vh; font-size: 14px; color: rgba(246,239,221,0.5); font-family: 'Inter', system-ui, sans-serif; }
+  input, select, textarea { color-scheme: dark; }
 </style>
 </head>
 <body>
-<div id="root"><div id="loading">Loading WCM Budget Planner…</div></div>
+<div id="root"><div id="loading">Loading Marro…</div></div>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -208,29 +211,47 @@ const { useState, useEffect, useCallback } = React;
 // recharts loaded above
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
-const getTheme = (dark) => dark ? {
-  red:"#ef4444", redLight:"#450a0a", redMid:"#7f1d1d",
-  teal:"#2dd4bf", tealLight:"#042f2e", tealMid:"#115e59",
-  amber:"#fbbf24", amberLight:"#451a03", amberMid:"#78350f",
-  green:"#4ade80", greenLight:"#052e16", greenMid:"#14532d",
-  blue:"#60a5fa", blueLight:"#172554", blueMid:"#1e3a5f",
-  border:"#334155", borderDark:"#475569",
-  bg:"#0f172a", bgDark:"#1e293b",
-  white:"#1e293b", text:"#f1f5f9", textMid:"#cbd5e1", gray:"#94a3b8",
-  purple:"#a78bfa", purpleLight:"#2e1065",
-} : {
-  red:"#b31b1b", redLight:"#fef2f2", redMid:"#fecaca",
-  teal:"#0f766e", tealLight:"#f0fdfa", tealMid:"#99f6e4",
-  amber:"#b45309", amberLight:"#fffbeb", amberMid:"#fcd34d",
-  green:"#15803d", greenLight:"#f0fdf4", greenMid:"#86efac",
-  blue:"#1d4ed8", blueLight:"#eff6ff", blueMid:"#bfdbfe",
-  border:"#e2e8f0", borderDark:"#cbd5e1",
-  bg:"#f8fafc", bgDark:"#f1f5f9",
-  white:"#ffffff", text:"#0f172a", textMid:"#475569", gray:"#64748b",
-  purple:"#6d28d9", purpleLight:"#f5f3ff",
+// Marro design system — always dark, single theme
+const C = {
+  // Backgrounds
+  bg:         "#0b1611",
+  bgDark:     "#0d1e17",
+  white:      "#132218",
+  // Text
+  text:       "#F6EFDD",
+  textMid:    "rgba(246,239,221,0.65)",
+  gray:       "rgba(246,239,221,0.40)",
+  // Borders
+  border:     "rgba(255,255,255,0.12)",
+  borderDark: "rgba(255,255,255,0.20)",
+  // Primary accent — sage (active, selected, positive)
+  red:        "#3E6B52",
+  redLight:   "rgba(62,107,82,0.18)",
+  redMid:     "rgba(62,107,82,0.35)",
+  teal:       "#3E6B52",
+  tealLight:  "rgba(62,107,82,0.18)",
+  tealMid:    "rgba(62,107,82,0.35)",
+  green:      "#3E6B52",
+  greenLight: "rgba(62,107,82,0.18)",
+  greenMid:   "rgba(62,107,82,0.35)",
+  // Info — lighter sage
+  blue:       "#5A9A72",
+  blueLight:  "rgba(90,154,114,0.15)",
+  blueMid:    "rgba(90,154,114,0.30)",
+  // Milestone / warning — marigold
+  amber:      "#DDA528",
+  amberLight: "rgba(221,165,40,0.15)",
+  amberMid:   "rgba(221,165,40,0.30)",
+  purple:     "#DDA528",
+  purpleLight:"rgba(221,165,40,0.15)",
+  // Brand tokens
+  ink:        "#1E3A2F",
+  sage:       "#3E6B52",
+  cream:      "#F6EFDD",
+  marigold:   "#DDA528",
+  lowTide:    "#7C8471",
 };
-let C = getTheme(false);
-const CHART_COLORS = ["#0f766e","#1d4ed8","#b45309","#6d28d9","#b91c1c","#be185d","#15803d","#c2410c","#475569","#0369a1"];
+const CHART_COLORS = ["#3E6B52","#DDA528","#7C8471","#5A9A72","#F6EFDD","#1E3A2F","#8FB89A","#C8A84B","#9BAF93","#2D5040"];
 
 // ── SVG brand icons (inline, no external deps) ────────────────────────────────
 // Each returns an SVG path + color so BrandIcon renders a clean colored tile
@@ -577,15 +598,22 @@ const InfoTip = ({text}) => {
   </span>;
 };
 
-const WCMLogo = ({logo, onClick}) => {
-  const [err,setErr] = useState(false);
-  const base = {width:38,height:38,borderRadius:10,overflow:"hidden",flexShrink:0,background:"#b31b1b",display:"flex",alignItems:"center",justifyContent:"center",cursor:onClick?"pointer":"default"};
-  if(logo && logo.startsWith("data:")) return <div style={base} onClick={onClick}><img src={logo} alt="logo" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>;
-  if(logo==="w") return <div style={{...base,background:"linear-gradient(135deg,#b31b1b,#8b1515)"}} onClick={onClick}><span style={{color:"white",fontWeight:800,fontSize:18,fontFamily:"Georgia,serif"}}>W</span></div>;
-  return <div style={{...base,padding:4}} onClick={onClick}>
-    {!err ? <img src="https://brand.weill.cornell.edu/profiles/wcmc/themes/wcm_brand_base/images/WCM_logo_white.png" alt="WCM" style={{width:"100%",height:"100%",objectFit:"contain"}} onError={()=>setErr(true)}/> : <span style={{color:"white",fontWeight:800,fontSize:16,fontFamily:"Georgia,serif"}}>W</span>}
-  </div>;
-};
+const MarroLogo = ({size=46}) => (
+  <div style={{width:size,height:size,borderRadius:Math.round(size*0.26),background:"#1E3A2F",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:"0 0 0 1.5px rgba(246,239,221,0.14), 0 4px 20px rgba(0,0,0,0.45)"}}>
+    <svg width={size*0.7} height={size*0.7} viewBox="0 0 26 26" style={{overflow:"visible"}}>
+      <g transform="translate(13,13)">
+        <circle r="1.5" fill="#DDA528"
+          style={{transformBox:"fill-box",transformOrigin:"center",animation:"marroRingPop 0.55s cubic-bezier(0.34,1.56,0.64,1) 0s both, marroDotPulse 3s ease-in-out 1.2s infinite"}}/>
+        <circle r="4" fill="none" stroke="#F6EFDD" strokeWidth="1.5" opacity="0.72"
+          style={{transformBox:"fill-box",transformOrigin:"center",animation:"marroRingPop 0.55s cubic-bezier(0.34,1.56,0.64,1) 0.13s both"}}/>
+        <circle r="7.5" fill="none" stroke="#F6EFDD" strokeWidth="1.5"
+          style={{transformBox:"fill-box",transformOrigin:"center",animation:"marroRingPop 0.55s cubic-bezier(0.34,1.56,0.64,1) 0.26s both"}}/>
+        <circle r="11" fill="none" stroke="#F6EFDD" strokeWidth="1.5"
+          style={{transformBox:"fill-box",transformOrigin:"center",animation:"marroRingPop 0.55s cubic-bezier(0.34,1.56,0.64,1) 0.39s both"}}/>
+      </g>
+    </svg>
+  </div>
+);
 
 const Divider = () => <div style={{height:1,background:C.border,margin:"10px 0"}}/>;
 
@@ -984,10 +1012,8 @@ function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[ready]);
 
-  // Update theme when dark mode changes
-  if(data?.darkMode !== undefined) C = getTheme(data.darkMode);
 
-  if(!ready) return <div style={{padding:40,color:C.gray,fontSize:14,fontFamily:"system-ui"}}>Loading…</div>;
+  if(!ready) return <div style={{padding:40,color:C.gray,fontSize:14,fontFamily:"'Inter',system-ui,sans-serif"}}>Loading…</div>;
 
   const yr   = data.years.find(y=>y.id===ay)||data.years[0];
   const yrStartYear = yr.startDate ? new Date(yr.startDate+"T12:00:00").getFullYear() : 2026;
@@ -1391,7 +1417,11 @@ function App() {
 
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",maxWidth:940,margin:"0 auto",padding:"24px 20px",minHeight:"100vh",background:C.bg,color:C.text,transition:"background .3s, color .3s"}}>
-      <style>{`@keyframes wcmpulse{0%,100%{opacity:1}50%{opacity:0.3}}`}</style>
+      <style>{`
+        @keyframes wcmpulse{0%,100%{opacity:1}50%{opacity:0.3}}
+        @keyframes marroRingPop{0%{transform:scale(0);opacity:0}100%{transform:scale(1);opacity:1}}
+        @keyframes marroDotPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.3)}}
+      `}</style>
       {/* Modals */}
       {renewDlg && <RenewalDialog sub={renewDlg} onClose={()=>setRenewDlg(null)} onConfirm={handleRenewal}/>}
       {weeklyNotice && weeklyNotice.type==="warn" && <Modal title={weeklyNotice.month+" is over budget"} onClose={()=>setWeeklyNotice(null)} width={360}>
@@ -1729,9 +1759,9 @@ function App() {
       {/* ── Header ── */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,paddingBottom:16,borderBottom:`1px solid ${C.border}`}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <WCMLogo logo={data.logo} onClick={()=>setShowLogoPicker(true)}/>
+          <MarroLogo/>
           <div>
-            <div style={{fontSize:17,fontWeight:700,color:C.text,letterSpacing:"-0.02em"}}>WCM Budget Planner</div>
+            <div style={{fontSize:17,fontWeight:700,color:C.text,letterSpacing:"-0.02em",fontFamily:"'Newsreader', Georgia, serif"}}>Marro</div>
             <div style={{fontSize:11,color:C.gray,marginTop:1}}>MD Class of 2030 · Extended Curriculum</div>
           </div>
         </div>
