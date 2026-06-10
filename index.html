@@ -897,36 +897,38 @@ function App() {
     setPendingConflict(null);
   },[]);
 
-  // Pull latest from cloud when tab becomes visible (catches changes made on other devices)
+  // Shared: pull from cloud if server is newer and no local changes pending
+  const syncStatusRef = React.useRef(syncStatus);
+  useEffect(()=>{ syncStatusRef.current=syncStatus; },[syncStatus]);
+  const checkAndPull = React.useCallback(async()=>{
+    if(syncStatusRef.current==='conflict') return;
+    const baseRaw=localStorage.getItem(SYNC_BASE_KEY);
+    const base=baseRaw?JSON.parse(baseRaw):null;
+    if(!base) return;
+    const serverContent=await gistFetch();
+    if(!serverContent) return;
+    const server=JSON.parse(serverContent);
+    if(!server._savedAt||!base._savedAt||server._savedAt<=base._savedAt) return;
+    const strip=o=>{const c={...o};delete c._savedAt;return c;};
+    const baseClean=strip(base), serverClean=strip(server);
+    const localCh=diffStates(baseClean,dataRef.current||{});
+    if(Object.keys(localCh).length===0){
+      const sJson=JSON.stringify(server);
+      localStorage.setItem(SYNC_BASE_KEY,sJson);
+      await window.storage.set("wcm_v8",sJson);
+      setData(serverClean);
+      setSyncStatus("synced");
+    }
+  },[]);
+
+  // Pull on tab focus + poll every 30s while visible
   useEffect(()=>{
     if(!ready) return;
-    const onViz=async()=>{
-      if(document.visibilityState!=='visible') return;
-      const now=Date.now();
-      if(now-lastFocusRef.current<30000) return; // max once per 30s
-      lastFocusRef.current=now;
-      const baseRaw=localStorage.getItem(SYNC_BASE_KEY);
-      const base=baseRaw?JSON.parse(baseRaw):null;
-      if(!base) return;
-      const serverContent=await gistFetch();
-      if(!serverContent) return;
-      const server=JSON.parse(serverContent);
-      if(!server._savedAt||!base._savedAt||server._savedAt<=base._savedAt) return;
-      // Server is newer — only auto-pull if we have no local unsaved changes
-      const strip=o=>{const c={...o};delete c._savedAt;return c;};
-      const baseClean=strip(base), serverClean=strip(server);
-      const localCh=diffStates(baseClean,dataRef.current||{});
-      if(Object.keys(localCh).length===0){
-        const sJson=JSON.stringify(server);
-        localStorage.setItem(SYNC_BASE_KEY,sJson);
-        await window.storage.set("wcm_v8",sJson);
-        setData(serverClean);
-        setSyncStatus("synced");
-      }
-    };
+    const onViz=()=>{ if(document.visibilityState==='visible') checkAndPull(); };
     document.addEventListener('visibilitychange',onViz);
-    return()=>document.removeEventListener('visibilitychange',onViz);
-  },[ready]);
+    const poll=setInterval(()=>{ if(document.visibilityState==='visible') checkAndPull(); },30000);
+    return()=>{ document.removeEventListener('visibilitychange',onViz); clearInterval(poll); };
+  },[ready,checkAndPull]);
 
   // Re-sync immediately when internet comes back
   const saveRef = React.useRef(save);
