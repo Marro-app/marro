@@ -413,6 +413,7 @@ const DEFAULT_STATE = {
   stepGoals: [
     { id:"step1", label:"Step 1", targetAmount:850, targetDate:"2028-06-01", saved:0, monthlyContribution:50 },
     { id:"step2", label:"Step 2 CK", targetAmount:850, targetDate:"2029-09-01", saved:0, monthlyContribution:50 },
+    { id:"step3", label:"Step 3", targetAmount:1000, targetDate:"2031-06-01", saved:0, monthlyContribution:0 },
   ],
   savingsGoals: [],
   savingsLog: [],
@@ -759,6 +760,12 @@ function App() {
 
   // Month selector (0=Aug, 11=Jul for academic year)
   const [selMonth, setSelMonth] = useState((new Date().getMonth() - 7 + 12) % 12);
+  const [pieMonthStart, setPieMonthStart] = useState((new Date().getMonth() - 7 + 12) % 12);
+  const [pieMonthEnd, setPieMonthEnd] = useState(null);
+  const [piePickerOpen, setPiePickerOpen] = useState(false);
+  const [showCsvImport, setShowCsvImport] = useState(false);
+  const [csvText, setCsvText] = useState("");
+  const [csvRows, setCsvRows] = useState(null);
 
 
   // Add category modal
@@ -818,6 +825,7 @@ function App() {
         if(!loaded.coverMonths) loaded.coverMonths={};
         if(!loaded.monthlyDeposits) loaded.monthlyDeposits={};
         if(!loaded.stepGoals) loaded.stepGoals=JSON.parse(JSON.stringify(DEFAULT_STATE.stepGoals));
+        if(loaded.stepGoals && !loaded.stepGoals.find(g=>g.id==="step3")) loaded.stepGoals.push({id:"step3",label:"Step 3",targetAmount:1000,targetDate:"2031-06-01",saved:0,monthlyContribution:0});
         if(!loaded.savingsGoals) loaded.savingsGoals=[];
         if(!loaded.savingsLog) loaded.savingsLog=[];
         loaded.years.forEach((y,i)=>{if(!y.startDate)Object.assign(y,YEAR_CONFIGS[i]);});
@@ -1359,7 +1367,7 @@ function App() {
   };
 
   // Charts
-  const pieData = cats.map((c,i)=>({name:c.label,value:c.id==="subs"?subsMo:Number(rawMonthly[c.id])||0,color:CHART_COLORS[i%CHART_COLORS.length]})).filter(d=>d.value>0);
+
   const barData = data.years.map(y=>{
     const sp=Math.round((Math.max((Number(y.grant)||0)-(Number(y.tuitionFees)||0)-(Number(y.healthIns)||0),0)+(Number(y.otherIncome)||0)*12)/12);
     return {name:y.label.split("—")[0].trim().replace("Year ","Y").replace("Extended","Ext"),Spendable:sp,Spend:Math.round(moTotal({...y.monthly,subs:subsMo}))};
@@ -1567,6 +1575,156 @@ function App() {
           </div>
         </Modal>
       )}
+
+      {showCsvImport && (()=>{
+        const catOptions = cats.filter(c=>!c.autoCalc&&!c.locked);
+        const CSV_KEYWORDS = [
+          {id:"food",      words:["grubhub","doordash","uber eats","ubereats","chipotle","mcdonald","burger","pizza","restaurant","dining","starbucks","dunkin","panera","chick-fil","subway","whole foods","trader joe","kroger","safeway","instacart","fresh direct","freshdirect","supermarket","grocery","diner","cafe","sushi","thai","chinese","indian","taco"]},
+          {id:"transport", words:["uber","lyft","mta","metro","transit","bus","train","amtrak","subway fare","parking","garage","gas station","exxon","bp gas","shell","citgo","zipcar","citi bike","lime","bird"]},
+          {id:"personal",  words:["amazon","target","walmart","costco","walgreens","cvs","rite aid","duane reade","pharmacy","clothing","zara","h&m","uniqlo","gap","nike","apple store","best buy","home depot","ikea","bed bath"]},
+          {id:"exams",     words:["uworld","amboss","anki","kaplan","nbme","usmle","step 1","step 2","step 3","board","prometric","examity","lecturio","sketchy","pathoma","first aid","boards"]},
+          {id:"social",    words:["bar","nightclub","concert","ticket","eventbrite","ticketmaster","bowling","movie","amc","regal","theater","theatre","escape room","dave &"]},
+          {id:"books",     words:["book","textbook","barnes","amazon books","kindle","chegg","library fine"]},
+          {id:"savings",   words:["transfer to savings","zelle to","venmo to","deposit"]},
+          {id:"subs",      words:["netflix","spotify","hulu","apple one","apple tv","disney","hbo","youtube premium","google one","dropbox","icloud","adobe","notion","zoom","slack"]},
+        ];
+        const autoCategory = (desc="") => {
+          const d = desc.toLowerCase();
+          for(const {id,words} of CSV_KEYWORDS){
+            if(words.some(w=>d.includes(w))) return catOptions.find(c=>c.id===id)?id:"";
+          }
+          return "";
+        };
+        const parseCSV = () => {
+          const lines = csvText.trim().split(/\r?\n/).filter(l=>l.trim());
+          if(lines.length < 2) return;
+          const sep = lines[0].includes("\t") ? "\t" : ",";
+          const splitLine = (l) => {
+            if(sep==="\t") return l.split("\t").map(s=>s.trim());
+            const cols=[]; let cur="", inQ=false;
+            for(const ch of l){
+              if(ch==='"'){inQ=!inQ;}
+              else if(ch===","&&!inQ){cols.push(cur.trim());cur="";}
+              else cur+=ch;
+            }
+            cols.push(cur.trim()); return cols;
+          };
+          const headers = splitLine(lines[0]).map(h=>h.toLowerCase().replace(/"/g,""));
+          const findCol = (...names) => names.reduce((found,n)=>{
+            if(found>=0) return found;
+            const idx=headers.findIndex(h=>h.includes(n));
+            return idx>=0?idx:-1;
+          }, -1);
+          const dateCol   = findCol("date","posted","trans");
+          const amtCol    = findCol("amount","debit","charge","withdrawal");
+          const descCol   = findCol("description","merchant","memo","payee","name");
+          if(dateCol<0||amtCol<0) { alert("Could not detect Date and Amount columns. Make sure your CSV has headers."); return; }
+          const rows = lines.slice(1).map((line,i)=>{
+            const cols = splitLine(line);
+            const rawAmt = (cols[amtCol]||"").replace(/[$,"]/g,"").trim();
+            const amt = Math.abs(parseFloat(rawAmt)||0);
+            const desc = descCol>=0 ? (cols[descCol]||"").replace(/"/g,"").trim() : "";
+            const dateRaw = (cols[dateCol]||"").replace(/"/g,"").trim();
+            const dateObj = new Date(dateRaw+"T12:00:00");
+            const dateStr = isNaN(dateObj)?null:[dateObj.getFullYear(),String(dateObj.getMonth()+1).padStart(2,"0"),String(dateObj.getDate()).padStart(2,"0")].join("-");
+            return {id:i, date:dateStr, desc, amt, catId:autoCategory(desc), include:amt>0&&dateStr!==null};
+          }).filter(r=>r.amt>0&&r.date);
+          setCsvRows(rows);
+        };
+        const doImport = () => {
+          if(!csvRows) return;
+          const toImport = csvRows.filter(r=>r.include&&r.catId&&r.date);
+          if(!toImport.length) return;
+          const d = JSON.parse(JSON.stringify(data));
+          if(!d.weeklyArchive) d.weeklyArchive=[];
+          if(!d.currentWeekEntries) d.currentWeekEntries=[];
+          if(!d.savingsLog) d.savingsLog=[];
+          const thisWeek = getMonday(new Date());
+          toImport.forEach(r=>{
+            const entry={id:"e_"+Date.now()+"_"+r.id, catId:r.catId, amount:r.amt, note:r.desc, date:r.date};
+            const entryWeek=getMonday(r.date);
+            if(entryWeek===thisWeek){
+              d.currentWeekEntries.push(entry);
+            } else {
+              const ex=d.weeklyArchive.find(a=>a.weekStart===entryWeek);
+              if(ex){ex.entries.push(entry);ex.total=ex.entries.reduce((a,e)=>a+Number(e.amount),0);}
+              else d.weeklyArchive.push({weekStart:entryWeek,weekEnd:getSunday(entryWeek),entries:[entry],total:entry.amount});
+            }
+            if(r.catId==="exams"){
+              let rem=r.amt;
+              (d.stepGoals||[]).forEach((g,gi)=>{
+                if(rem<=0) return;
+                const room=Math.max(0,(g.targetAmount||0)-(g.saved||0));
+                const credit=Math.min(room,rem);
+                if(credit<=0) return;
+                d.stepGoals[gi].saved=(d.stepGoals[gi].saved||0)+credit;
+                d.savingsLog.push({id:"sl_"+Date.now()+"_"+r.id+"_"+gi,goalId:g.id,amount:credit,date:r.date,note:r.desc||"CSV import",weeklyEntryId:entry.id,budgetAdded:null});
+                rem-=credit;
+              });
+            }
+          });
+          upd(d);
+          setShowCsvImport(false);setCsvText("");setCsvRows(null);
+        };
+        const total=csvRows?csvRows.filter(r=>r.include&&r.catId).length:0;
+        return (
+          <Modal title="Import from bank CSV" onClose={()=>{setShowCsvImport(false);setCsvText("");setCsvRows(null);}} width={680}>
+            {!csvRows ? (
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                <div style={{fontSize:12,color:C.gray,lineHeight:1.6}}>
+                  Export a CSV from your bank (Chase, BofA, etc.) and paste it below. Needs at least a <strong>Date</strong> and <strong>Amount</strong> column. A description column helps with auto-categorization.
+                </div>
+                <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} placeholder={"Date,Description,Amount\n06/01/2026,GRUBHUB,-12.50\n06/02/2026,MTA TRANSIT,-2.90"} rows={10} style={{width:"100%",fontSize:12,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px",background:C.bg,color:C.text,boxSizing:"border-box",fontFamily:"monospace",resize:"vertical"}}/>
+                <button onClick={parseCSV} disabled={!csvText.trim()} style={{padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:!csvText.trim()?C.bgDark:C.red,color:!csvText.trim()?C.gray:"#fff",cursor:!csvText.trim()?"not-allowed":"pointer"}}>Parse transactions</button>
+              </div>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontSize:12,color:C.gray}}>{csvRows.length} transactions found — review categories and uncheck any to skip</span>
+                  <button onClick={()=>setCsvRows(null)} style={{background:"none",border:"none",color:C.gray,cursor:"pointer",fontSize:12}}>← Paste again</button>
+                </div>
+                <div style={{maxHeight:360,overflowY:"auto",border:`1px solid ${C.border}`,borderRadius:8}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                    <thead>
+                      <tr style={{background:C.bgDark,position:"sticky",top:0}}>
+                        <th style={{padding:"8px 10px",textAlign:"left",color:C.gray,fontWeight:600,borderBottom:`1px solid ${C.border}`}}>✓</th>
+                        <th style={{padding:"8px 10px",textAlign:"left",color:C.gray,fontWeight:600,borderBottom:`1px solid ${C.border}`}}>Date</th>
+                        <th style={{padding:"8px 10px",textAlign:"left",color:C.gray,fontWeight:600,borderBottom:`1px solid ${C.border}`}}>Description</th>
+                        <th style={{padding:"8px 10px",textAlign:"right",color:C.gray,fontWeight:600,borderBottom:`1px solid ${C.border}`}}>Amount</th>
+                        <th style={{padding:"8px 10px",textAlign:"left",color:C.gray,fontWeight:600,borderBottom:`1px solid ${C.border}`}}>Category</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {csvRows.map((row,i)=>(
+                        <tr key={row.id} style={{background:row.include?"transparent":C.bgDark+"88",opacity:row.include?1:0.45}}>
+                          <td style={{padding:"6px 10px",borderBottom:`1px solid ${C.border}`}}>
+                            <input type="checkbox" checked={row.include} onChange={e=>{const r=[...csvRows];r[i]={...r[i],include:e.target.checked};setCsvRows(r);}}/>
+                          </td>
+                          <td style={{padding:"6px 10px",borderBottom:`1px solid ${C.border}`,color:C.text,whiteSpace:"nowrap"}}>{row.date}</td>
+                          <td style={{padding:"6px 10px",borderBottom:`1px solid ${C.border}`,color:C.text,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{row.desc}</td>
+                          <td style={{padding:"6px 10px",borderBottom:`1px solid ${C.border}`,color:C.text,textAlign:"right",fontWeight:600}}>{fmt(row.amt)}</td>
+                          <td style={{padding:"6px 10px",borderBottom:`1px solid ${C.border}`}}>
+                            <select value={row.catId} onChange={e=>{const r=[...csvRows];r[i]={...r[i],catId:e.target.value};setCsvRows(r);}} style={{fontSize:11,border:`1px solid ${row.catId?C.border:C.amber}`,borderRadius:5,padding:"3px 6px",background:C.bg,color:row.catId?C.text:C.amber,cursor:"pointer"}}>
+                              <option value="">— pick —</option>
+                              {catOptions.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+                            </select>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontSize:12,color:C.gray}}>{total} entries will be imported</span>
+                  <button onClick={doImport} disabled={total===0} style={{padding:"10px 24px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:total===0?C.bgDark:C.red,color:total===0?C.gray:"#fff",cursor:total===0?"not-allowed":"pointer"}}>
+                    Import {total} {total===1?"entry":"entries"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </Modal>
+        );
+      })()}
 
       {/* ── Header ── */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,paddingBottom:16,borderBottom:`1px solid ${C.border}`}}>
@@ -1871,6 +2029,9 @@ function App() {
                 <button onClick={addEntry} disabled={!wCat||!wAmt} style={{padding:"9px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:(!wCat||!wAmt)?C.bgDark:C.red,color:(!wCat||!wAmt)?C.gray:"#fff",cursor:(!wCat||!wAmt)?"not-allowed":"pointer",marginTop:2,transition:"all .15s"}}>
                   Add entry
                 </button>
+                <button onClick={()=>{setShowCsvImport(true);setCsvText("");setCsvRows(null);}} style={{padding:"7px",fontSize:12,fontWeight:500,border:`1px solid ${C.border}`,borderRadius:8,background:"transparent",color:C.gray,cursor:"pointer",marginTop:2}}>
+                  Import from bank CSV
+                </button>
               </div>
             </Card>
 
@@ -2076,34 +2237,93 @@ function App() {
               </ResponsiveContainer>}
             </Card>
 
-            {/* Pie + breakdown */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-              <Card>
-                <SectionTitle>Spending distribution</SectionTitle>
-                <ResponsiveContainer width="100%" height={210}>
-                  <PieChart><Pie data={pieData} dataKey="value" cx="50%" cy="50%" innerRadius={54} outerRadius={88} paddingAngle={2}>
-                    {pieData.map((e,i)=><Cell key={i} fill={e.color}/>)}
-                  </Pie><Tooltip formatter={v=>fmt(v)+"/mo"} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/></PieChart>
-                </ResponsiveContainer>
-              </Card>
-              <Card>
-                <SectionTitle>Category breakdown — {MONTH_NAMES[selMonth]}</SectionTitle>
-                {cats.map((cat,i)=>{
-                  const amt=cat.id==="subs"?subsMo:(Number(rawMonthly[cat.id])||0);
-                  const pct=moSpend>0?Math.round(amt/moSpend*100):0;
-                  return <div key={cat.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <div style={{width:10,height:10,borderRadius:3,background:CHART_COLORS[i%CHART_COLORS.length],flexShrink:0}}/>
-                      <span style={{color:C.text}}>{cat.label}</span>
+            {/* Pie + breakdown — merged */}
+            {(()=>{
+              const pStart = Math.min(pieMonthStart, pieMonthEnd??pieMonthStart);
+              const pEnd   = Math.max(pieMonthStart, pieMonthEnd??pieMonthStart);
+              const isRange = pieMonthEnd !== null;
+              const pieLabel = isRange ? `${MONTH_NAMES[pStart]} – ${MONTH_NAMES[pEnd]}` : MONTH_NAMES[pStart];
+              // Aggregate actual spending over selected range
+              const pieActual = {};
+              cats.forEach(c => {
+                let tot = 0;
+                for(let m=pStart; m<=pEnd; m++) tot += spentInMonth(c.id, m);
+                pieActual[c.id] = tot;
+              });
+              const pieTotal = Object.values(pieActual).reduce((a,v)=>a+v, 0);
+              const pieSeries = cats.map((c,i)=>({name:c.label,value:Math.round(pieActual[c.id]||0),color:CHART_COLORS[i%CHART_COLORS.length]})).filter(d=>d.value>0);
+              return (
+                <Card>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                    <SectionTitle style={{margin:0}}>Spending distribution</SectionTitle>
+                    <div style={{position:"relative"}}>
+                      <button onClick={()=>setPiePickerOpen(o=>!o)} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:7,border:`1px solid ${C.border}`,background:isRange?C.teal+"22":"transparent",color:isRange?C.teal:C.text,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                        {pieLabel} <span style={{fontSize:10,opacity:0.6}}>▾</span>
+                      </button>
+                      {piePickerOpen && <>
+                        <div onClick={()=>setPiePickerOpen(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
+                        <div style={{position:"absolute",right:0,top:"calc(100% + 4px)",background:C.bgDark,border:`1px solid ${C.border}`,borderRadius:10,padding:12,zIndex:100,width:220,boxShadow:"0 4px 20px rgba(0,0,0,0.18)"}}>
+                          <div style={{fontSize:10,color:C.gray,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:8}}>
+                            {pieMonthEnd===null ? "Select month or drag a range" : "Range selected — click to start over"}
+                          </div>
+                          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:3}}>
+                            {MONTH_NAMES.map((m,mi)=>{
+                              const inRange = mi>=pStart && mi<=pEnd;
+                              const isEdge  = mi===pStart || mi===pEnd;
+                              return (
+                                <button key={mi} onClick={()=>{
+                                  if(pieMonthEnd!==null){
+                                    // range exists — reset to new single month
+                                    setPieMonthStart(mi); setPieMonthEnd(null);
+                                  } else if(mi===pieMonthStart){
+                                    setPiePickerOpen(false);
+                                  } else {
+                                    setPieMonthEnd(mi); setPiePickerOpen(false);
+                                  }
+                                }} style={{padding:"5px 2px",borderRadius:5,border:"none",fontSize:11,fontWeight:isEdge?700:400,background:inRange?C.teal+"44":"transparent",color:inRange?C.teal:C.text,cursor:"pointer",transition:"background 0.1s"}}>
+                                  {m}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${C.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <button onClick={()=>{setPieMonthStart((new Date().getMonth()-7+12)%12);setPieMonthEnd(null);setPiePickerOpen(false);}} style={{background:"none",border:"none",color:C.gray,cursor:"pointer",fontSize:11,padding:0}}>Reset</button>
+                            {pieMonthEnd===null && <span style={{fontSize:10,color:C.gray}}>Click another for range</span>}
+                          </div>
+                        </div>
+                      </>}
                     </div>
-                    <div style={{display:"flex",gap:10}}>
-                      <span style={{fontWeight:600}}>{fmt(amt)}/mo</span>
-                      <span style={{color:C.gray,minWidth:28,textAlign:"right"}}>{pct}%</span>
-                    </div>
-                  </div>;
-                })}
-              </Card>
-            </div>
+                  </div>
+                  {pieTotal===0
+                    ? <div style={{textAlign:"center",padding:"32px 0",fontSize:12,color:C.gray}}>No spending logged for this period yet.</div>
+                    : <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,alignItems:"start"}}>
+                        <ResponsiveContainer width="100%" height={210}>
+                          <PieChart><Pie data={pieSeries} dataKey="value" cx="50%" cy="50%" innerRadius={54} outerRadius={88} paddingAngle={2}>
+                            {pieSeries.map((e,i)=><Cell key={i} fill={e.color}/>)}
+                          </Pie><Tooltip formatter={v=>fmt(v)} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/></PieChart>
+                        </ResponsiveContainer>
+                        <div style={{paddingTop:8}}>
+                          {cats.map((cat,i)=>{
+                            const amt=Math.round(pieActual[cat.id]||0);
+                            const pct=pieTotal>0?Math.round(amt/pieTotal*100):0;
+                            if(amt===0) return null;
+                            return <div key={cat.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+                              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                                <div style={{width:10,height:10,borderRadius:3,background:CHART_COLORS[i%CHART_COLORS.length],flexShrink:0}}/>
+                                <span style={{color:C.text}}>{cat.label}</span>
+                              </div>
+                              <div style={{display:"flex",gap:10}}>
+                                <span style={{fontWeight:600}}>{fmt(amt)}</span>
+                                <span style={{color:C.gray,minWidth:28,textAlign:"right"}}>{pct}%</span>
+                              </div>
+                            </div>;
+                          })}
+                        </div>
+                      </div>
+                  }
+                </Card>
+              );
+            })()}
 
             {/* Monthly trend per category */}
             {(()=>{
@@ -2656,9 +2876,13 @@ function App() {
                 </Card>
               );
             })}
+            <div onClick={()=>setShowAddYear(true)} style={{border:`2px dashed ${C.border}`,borderRadius:12,minHeight:120,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,cursor:"pointer",color:C.gray,transition:"border-color 0.15s, color 0.15s"}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=C.teal;e.currentTarget.style.color=C.teal;}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.gray;}}>
+              <span style={{fontSize:24,fontWeight:300,lineHeight:1}}>+</span>
+              <span style={{fontSize:12,fontWeight:600}}>Add year</span>
+            </div>
           </div>
-
-          <button onClick={()=>setShowAddYear(true)} style={{alignSelf:"flex-start",padding:"8px 16px",fontSize:13,fontWeight:600,border:`1px solid ${C.border}`,borderRadius:8,background:"transparent",color:C.textMid,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>+ Add year</button>
 
           {/* 5-year table */}
           <Card>
