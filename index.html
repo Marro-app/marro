@@ -889,6 +889,22 @@ function App() {
       d.currentWeekEntries.push(entry);
       setViewWeek(null);
     }
+    // Exams spending is an actual contribution to the Step fund — credit the first
+    // unfunded Step goal, overflowing into the next once one is full. Links each
+    // credit to this weekly entry so deleting either side stays in sync.
+    if(wCat==="exams"){
+      if(!d.savingsLog) d.savingsLog=[];
+      let remainingAmt=amtNum;
+      (d.stepGoals||[]).forEach((g,gi)=>{
+        if(remainingAmt<=0) return;
+        const room=Math.max(0,(g.targetAmount||0)-(g.saved||0));
+        const credit=Math.min(room,remainingAmt);
+        if(credit<=0) return;
+        d.stepGoals[gi].saved=(d.stepGoals[gi].saved||0)+credit;
+        d.savingsLog.push({id:"sl_"+Date.now()+"_"+gi,goalId:g.id,amount:credit,date:wDate,note:(wNote||"From weekly log"),weeklyEntryId:entry.id,budgetAdded:null});
+        remainingAmt-=credit;
+      });
+    }
     upd(d);setWAmt("");setWNote("");
 
     // Recompute that month's net (spendable - planned - unbudgeted) to flag over-budget
@@ -935,15 +951,24 @@ function App() {
     // Remove the savings log entry itself
     d.savingsLog=(d.savingsLog||[]).filter(e=>e.id!==slEntry.id);
   };
+  // Reverse a deposit AND any siblings derived from the same weekly entry
+  // (one weekly exams entry can be split across multiple Step goals). Mutates d.
+  const reverseDepositGroup = (d, slEntry) => {
+    if(!slEntry) return;
+    if(slEntry.weeklyEntryId){
+      (d.savingsLog||[]).filter(s=>s.weeklyEntryId===slEntry.weeklyEntryId).forEach(s=>reverseDeposit(d, s));
+    } else {
+      reverseDeposit(d, slEntry);
+    }
+  };
 
   const delEntry = (eid, isArchived) => {
     let d = JSON.parse(JSON.stringify(data));
-    // If this weekly entry came from a savings deposit, reverse the whole deposit
-    const allFlat=[...(d.currentWeekEntries||[]),...((d.weeklyArchive||[]).flatMap(a=>a.entries||[]))];
-    const we=allFlat.find(e=>e.id===eid);
-    if(we?.depositId){
-      const slEntry=(d.savingsLog||[]).find(s=>s.id===we.depositId);
-      if(slEntry){ reverseDeposit(d, slEntry); upd(d); return; }
+    // If this weekly entry is linked to savings deposits/contributions, reverse them all
+    const linkedSls=(d.savingsLog||[]).filter(s=>s.weeklyEntryId===eid);
+    if(linkedSls.length){
+      linkedSls.forEach(sl=>reverseDeposit(d, sl));
+      upd(d); return;
     }
     if(isArchived){
       d.weeklyArchive=d.weeklyArchive.map(a=>{
@@ -1819,7 +1844,7 @@ function App() {
                       <button onClick={()=>{
                         const d=JSON.parse(JSON.stringify(data));
                         const slEntry=(d.savingsLog||[]).find(s=>s.id===entry.id);
-                        reverseDeposit(d, slEntry);
+                        reverseDepositGroup(d, slEntry);
                         upd(d);
                       }} style={{width:26,height:26,borderRadius:6,background:C.bg,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:C.gray,fontSize:14,fontWeight:700}}>×</button>
                     </div>
