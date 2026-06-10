@@ -20,6 +20,70 @@
   #root { min-height: 100vh; }
   #loading { display: flex; align-items: center; justify-content: center; height: 100vh; font-size: 14px; color: rgba(246,239,221,0.5); font-family: 'Inter', system-ui, sans-serif; }
   input, select, textarea { color-scheme: dark; }
+
+  /* ── Glass card system ── */
+  @keyframes cardIn {
+    from { opacity:0; transform:scale(0.96) translateY(6px); }
+    to   { opacity:1; transform:scale(1)    translateY(0);   }
+  }
+  .mc {
+    background: #132218;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 22px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.22);
+    transition: transform 260ms cubic-bezier(0.23,1,0.32,1), opacity 260ms ease;
+    will-change: transform;
+    position: relative;
+  }
+  @supports (backdrop-filter: blur(1px)) {
+    .mc {
+      background: rgba(246,239,221,0.10);
+      backdrop-filter: blur(22px) saturate(140%);
+      -webkit-backdrop-filter: blur(22px) saturate(140%);
+      border-color: rgba(255,255,255,0.22);
+    }
+    .mc-p {
+      background: rgba(246,239,221,0.16) !important;
+      border-color: rgba(255,255,255,0.30) !important;
+    }
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .mc:hover { transform: translateY(-3px); }
+    .mc:hover .mc-sh { opacity: 1; }
+  }
+  .mc:active { transform: scale(0.97); }
+  .mc:focus-visible { outline: 2px solid rgba(246,239,221,0.65); outline-offset: 3px; }
+  .mc-e { animation: cardIn 260ms cubic-bezier(0.23,1,0.32,1) both; }
+  .mc-sh {
+    position: absolute; inset: 0; border-radius: inherit;
+    background: linear-gradient(135deg, rgba(255,255,255,0.07) 0%, transparent 55%);
+    pointer-events: none; opacity: 0; transition: opacity 180ms ease;
+  }
+  .mc-sp {
+    position: absolute; left: 10%; right: 10%; top: 0;
+    height: 1px; background: rgba(255,255,255,0.40); pointer-events: none;
+  }
+  /* ── Glass modal panel ── */
+  .mm {
+    background: #1a2e22;
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+  }
+  @supports (backdrop-filter: blur(1px)) {
+    .mm {
+      background: rgba(246,239,221,0.13);
+      backdrop-filter: blur(28px) saturate(145%);
+      -webkit-backdrop-filter: blur(28px) saturate(145%);
+      border-color: rgba(255,255,255,0.25);
+    }
+  }
+  /* Respect user motion preferences (Emil Kowalski) */
+  @media (prefers-reduced-motion: reduce) {
+    .mc { transition: none; }
+    .mc-e { animation: none !important; opacity: 1 !important; transform: none !important; }
+    .mc-sh { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -518,13 +582,16 @@ const Pill = ({ok, warn, neutral, children, sm}) => {
   );
 };
 
-const Card = ({children, style={}, accent}) => (
-  <div style={{
-    background:C.white, border:`1px solid ${C.border}`,
-    borderRadius:12, padding:"18px 20px",
+const Card = ({children, style={}, accent, primary=false}) => (
+  <div className={`mc mc-e${primary?' mc-p':''}`} style={{
+    padding:"18px 20px",
     borderTop: accent ? `3px solid ${accent}` : undefined,
     ...style,
-  }}>{children}</div>
+  }}>
+    <div className="mc-sp"/>
+    <div className="mc-sh"/>
+    {children}
+  </div>
 );
 
 const SectionTitle = ({children, sub}) => (
@@ -580,7 +647,7 @@ const Banner = ({children, type="info", onClose}) => {
 
 const Modal = ({title, onClose, children, width=440}) => (
   <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(2px)"}}>
-    <div onClick={e=>e.stopPropagation()} style={{background:C.white,borderRadius:16,padding:"24px",maxWidth:width,width:"calc(100% - 32px)",boxShadow:"0 20px 60px rgba(0,0,0,0.2)",maxHeight:"90vh",overflowY:"auto"}}>
+    <div onClick={e=>e.stopPropagation()} className="mm" style={{padding:"24px",maxWidth:width,width:"calc(100% - 32px)",maxHeight:"90vh",overflowY:"auto"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
         <div style={{fontWeight:700,fontSize:16,color:C.text}}>{title}</div>
         <button onClick={onClose} style={{background:C.bgDark,border:"none",cursor:"pointer",width:28,height:28,borderRadius:7,fontSize:16,color:C.gray,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
@@ -723,7 +790,7 @@ function ConflictModal({pending, data, onResolve}) {
   const autoCount=Object.keys(pending.mergeLocal).length+Object.keys(pending.mergeServer).length;
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
-      <div style={{background:C.white,borderRadius:16,padding:24,width:'100%',maxWidth:480,maxHeight:'90vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+      <div className="mm" style={{padding:24,width:'100%',maxWidth:480,maxHeight:'90vh',overflowY:'auto'}}>
         <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:6}}>Sync conflict</div>
         <div style={{fontSize:13,color:C.textMid,marginBottom:18}}>
           The same {pending.conflicts.length===1?'item was':pending.conflicts.length+' items were'} changed on two devices. Pick which version to keep.
