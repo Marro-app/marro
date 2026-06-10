@@ -943,10 +943,15 @@ function App() {
     const inCustom=(d.savingsGoals||[]).findIndex(x=>x.id===slEntry.goalId);
     if(inStep>=0) d.stepGoals[inStep].saved=Math.max(0,(d.stepGoals[inStep].saved||0)-slEntry.amount);
     else if(inCustom>=0) d.savingsGoals[inCustom].saved=Math.max(0,(d.savingsGoals[inCustom].saved||0)-slEntry.amount);
-    // Revert the auto-added budget override, but only if it still equals what we set
+    // Decrement the auto-managed budget override by the amount this deposit contributed.
+    // Using subtraction (not exact-match) so multiple deposits in the same month each
+    // remove only their own delta, leaving any remaining contributions intact.
     const ba=slEntry.budgetAdded;
-    if(ba && d.years[ba.ay]?.monthlyOverrides?.[ba.monthName]?.[ba.catId]===ba.amount){
-      delete d.years[ba.ay].monthlyOverrides[ba.monthName][ba.catId];
+    if(ba && d.years[ba.ay]?.monthlyOverrides?.[ba.monthName]){
+      const cur=d.years[ba.ay].monthlyOverrides[ba.monthName][ba.catId]||0;
+      const next=Math.max(0,cur-ba.amount);
+      if(next===0) delete d.years[ba.ay].monthlyOverrides[ba.monthName][ba.catId];
+      else d.years[ba.ay].monthlyOverrides[ba.monthName][ba.catId]=next;
     }
     // Remove the savings log entry itself
     d.savingsLog=(d.savingsLog||[]).filter(e=>e.id!==slEntry.id);
@@ -1186,17 +1191,19 @@ function App() {
                 } else {
                   d.currentWeekEntries.push(entry);
                 }
-                // If no budget set for this month, add deposit amount as the budget override
+                // Auto-manage the budget override only when there is no manual base budget.
+                // If there IS a base monthly rate the user set it intentionally — leave it alone.
+                // When auto-managing, always increment so multiple deposits in the same month
+                // stack correctly; deletions then decrement by the same delta.
                 if(!depYr.monthlyOverrides) depYr.monthlyOverrides={};
                 if(!depYr.monthlyOverrides[depMonthName]) depYr.monthlyOverrides[depMonthName]={};
-                const existingBudget = depYr.monthlyOverrides[depMonthName][catId] !== undefined
-                  ? depYr.monthlyOverrides[depMonthName][catId]
-                  : (Number(depYr.monthly[catId])||0);
+                const baseBudget = Number(depYr.monthly[catId])||0;
                 let budgetAdded=null;
-                if(!existingBudget) {
-                  depYr.monthlyOverrides[depMonthName][catId] = amt;
+                if(!baseBudget) {
+                  const curOverride = depYr.monthlyOverrides[depMonthName][catId]||0;
+                  depYr.monthlyOverrides[depMonthName][catId] = curOverride + amt;
                   budgetAdded={ay:depAy,monthName:depMonthName,catId,amount:amt};
-                  // Remove from disabled cats for that month if present
+                  // Remove from disabled cats for that month if present (first deposit enables it)
                   const mk=depAy+"-"+depMonthName;
                   if(d.monthDisabled?.[mk]) d.monthDisabled[mk]=d.monthDisabled[mk].filter(c=>c!==catId);
                 }
