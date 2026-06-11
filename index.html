@@ -14,6 +14,18 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;500;600;700&family=Inter:wght@200;300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="apple-touch-icon" href="icon.svg"/>
+<script>
+// Pre-paint theme guard: set data-theme before the stylesheet is consumed so an
+// offline PWA cold start never flashes the wrong theme. Mirrors the app logic:
+// legacy states (no wcm_theme_v2 marker) stay dark; fresh visitors follow the OS.
+(function(){try{
+  var dark = true;
+  var raw = localStorage.getItem("wcm_v8");
+  if (raw && localStorage.getItem("wcm_theme_v2")) dark = JSON.parse(raw).darkMode !== false;
+  else if (!raw) dark = !window.matchMedia("(prefers-color-scheme: light)").matches;
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+}catch(e){ document.documentElement.dataset.theme = "dark"; }})();
+</script>
 <style>
   /* ── Theme variables (mirrored subset of the JS THEMES object — keep in sync) ── */
   :root {
@@ -45,6 +57,44 @@
     --blob2-a: #33342B; --blob2-b: #1A1B15;
     --blob3-a: #473A18; --blob3-b: #14150F;
     --blob4-a: #25261F; --blob4-b: #121310;
+    --shadow-card: 0 8px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.10);
+    --shadow-card-hover: 0 14px 42px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(0,0,0,0.12);
+    --shadow-modal: 0 20px 60px rgba(0,0,0,0.48), inset 0 1px 0 rgba(255,255,255,0.20);
+    --glass-modal-border: rgba(255,255,255,0.22);
+  }
+  [data-theme="light"] {
+    --bg: #F5F4EF;
+    --text: #26251E;
+    --text-dim: rgba(38,37,30,0.5);
+    --text-faint: rgba(38,37,30,0.38);
+    --text-soft: rgba(38,37,30,0.45);
+    --input-bg: rgba(30,30,20,0.05);
+    --input-border: rgba(30,30,20,0.14);
+    --input-focus-bg: rgba(30,30,20,0.08);
+    --input-focus-border: rgba(38,37,30,0.45);
+    --focus-glow: rgba(51,104,158,0.25);
+    --focus-ring: rgba(51,104,158,0.80);
+    --accent: #33689E;
+    --color-scheme: light;
+    --date-icon-filter: invert(0.25) sepia(0.15) saturate(0.4);
+    --select-caret: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2.5 4.5L6 8l3.5-3.5' fill='none' stroke='%2326251E' stroke-opacity='0.6' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    --glass-card: rgba(255,255,255,0.55);
+    --glass-card-fallback: #FBFAF6;
+    --glass-card-border: rgba(30,30,20,0.10);
+    --glass-card-border-fallback: rgba(30,30,20,0.12);
+    --glass-primary: rgba(255,255,255,0.72);
+    --glass-primary-border: rgba(30,30,20,0.14);
+    --glass-modal: rgba(255,255,255,0.70);
+    --glass-modal-fallback: #FFFFFF;
+    --blob-opacity: 0.55;
+    --blob1-a: #E2E0D6; --blob1-b: #F0EEE6;
+    --blob2-a: #DAD9D0; --blob2-b: #ECEAE2;
+    --blob3-a: #EFE2C2; --blob3-b: #F5F4EF;
+    --blob4-a: #E8E6DE; --blob4-b: #F1EFE8;
+    --shadow-card: 0 8px 24px rgba(60,55,40,0.10), inset 0 1px 0 rgba(255,255,255,0.85), inset 0 -1px 0 rgba(60,55,40,0.04);
+    --shadow-card-hover: 0 14px 36px rgba(60,55,40,0.15), inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -1px 0 rgba(60,55,40,0.05);
+    --shadow-modal: 0 20px 50px rgba(60,55,40,0.22), inset 0 1px 0 rgba(255,255,255,0.9);
+    --glass-modal-border: rgba(30,30,20,0.14);
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); transition: background .3s; }
@@ -176,7 +226,7 @@
     background: var(--glass-card-fallback);
     border: 1px solid var(--glass-card-border-fallback);
     border-radius: 22px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.12);
+    box-shadow: var(--shadow-card);
     transition: transform 260ms cubic-bezier(0.23,1,0.32,1), opacity 260ms ease;
     will-change: transform;
     position: relative;
@@ -187,7 +237,7 @@
       backdrop-filter: blur(40px) saturate(180%) brightness(1.08);
       -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(1.08);
       border-color: var(--glass-card-border);
-      box-shadow: 0 8px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.10);
+      box-shadow: var(--shadow-card);
     }
     .mc-p {
       background: var(--glass-primary) !important;
@@ -195,7 +245,7 @@
     }
   }
   @media (hover: hover) and (pointer: fine) {
-    .mc:hover { transform: translateY(-3px); box-shadow: 0 14px 42px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(0,0,0,0.12); }
+    .mc:hover { transform: translateY(-3px); box-shadow: var(--shadow-card-hover); }
     .mc:hover .mc-sh { opacity: 1; }
   }
   .mc:active { transform: scale(0.97); }
@@ -216,15 +266,15 @@
     background: var(--glass-modal-fallback);
     border: 1px solid var(--glass-card-border-fallback);
     border-radius: 16px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.50);
+    box-shadow: var(--shadow-modal);
   }
   @supports (backdrop-filter: blur(1px)) {
     .mm {
       background: var(--glass-modal);
       backdrop-filter: blur(50px) saturate(200%) brightness(1.08);
       -webkit-backdrop-filter: blur(50px) saturate(200%) brightness(1.08);
-      border-color: rgba(255,255,255,0.22);
-      box-shadow: 0 20px 60px rgba(0,0,0,0.48), inset 0 1px 0 rgba(255,255,255,0.20);
+      border-color: var(--glass-modal-border);
+      box-shadow: var(--shadow-modal);
     }
   }
   /* Respect user motion preferences (Emil Kowalski) */
@@ -495,9 +545,76 @@ const THEMES = {
     // blue → gold → tan → sage-gray → sand → steel → ochre → cream → slate → lilac
     chartColors: ["#82AEDB","#DDA528","#D99C7C","#9CB5A4","#C9C2A6","#5E8FBC","#C8861A","#F6EFDD","#7FA0B8","#B89BC7"],
   },
+  light: {
+    // Backgrounds — warm off-white; alphas re-derived for white compositing (not mirrored)
+    bg:         "#F5F4EF",
+    bgDark:     "#EBEAE3",
+    white:      "#FBFAF6",
+    surface:    "rgba(30,30,20,0.05)",
+    surfaceMid: "rgba(30,30,20,0.09)",
+    glassTooltip: "rgba(252,251,247,0.94)",
+    glassCard:  "rgba(255,255,255,0.55)",
+    scrim:      "rgba(40,38,32,0.35)",
+    // Selection / active states — ink on light
+    sel:        "rgba(38,37,30,0.55)",
+    selBg:      "rgba(38,37,30,0.08)",
+    tabActiveBg:"rgba(255,255,255,0.96)",
+    tabMuted:   "rgba(38,37,30,0.55)",
+    creamSoft:  "rgba(38,37,30,0.08)",
+    // Text
+    text:       "#26251E",
+    textMid:    "rgba(38,37,30,0.68)",
+    gray:       "rgba(38,37,30,0.55)",
+    // Borders
+    border:     "rgba(30,30,20,0.12)",
+    borderDark: "rgba(30,30,20,0.20)",
+    // Destructive / errors — clay, darkened for contrast on light
+    danger:      "#B05A38",
+    dangerLight: "rgba(176,90,56,0.12)",
+    dangerMid:   "rgba(176,90,56,0.30)",
+    // Negative data — amber, darkened
+    neg:        "#9C6A00",
+    negLight:   "rgba(156,106,0,0.10)",
+    negMid:     "rgba(156,106,0,0.28)",
+    // Positive — blue, darkened
+    teal:       "#33689E",
+    tealLight:  "rgba(51,104,158,0.10)",
+    tealMid:    "rgba(51,104,158,0.30)",
+    green:      "#33689E",
+    greenLight: "rgba(51,104,158,0.10)",
+    greenMid:   "rgba(51,104,158,0.30)",
+    // Info — slate
+    blue:       "#5C7282",
+    blueLight:  "rgba(92,114,130,0.10)",
+    blueMid:    "rgba(92,114,130,0.28)",
+    // Milestone / warning — marigold, darkened for text legibility on light
+    amber:      "#A87B12",
+    amberLight: "rgba(168,123,18,0.12)",
+    amberMid:   "rgba(168,123,18,0.30)",
+    purple:     "#A87B12",
+    purpleLight:"rgba(168,123,18,0.12)",
+    // Brand tokens
+    ink:        "#26251E",
+    cream:      "#F6EFDD",
+    marigold:   "#A87B12",
+    lowTide:    "#9A9E8D",
+    // Same hue order as dark, lifted ~30 L points down; cream slot → ink
+    chartColors: ["#33689E","#C8861A","#B06A45","#5E7A68","#9A9474","#4A7AAE","#8A6A10","#26251E","#5E88A8","#7E5E94"],
+  },
 };
 const C = {...THEMES.dark};
 const CHART_COLORS = [...THEMES.dark.chartColors];
+// Swap every themed surface at once: the C object mutates in place (all ~400
+// inline refs recompute on the next render), CSS picks up [data-theme], and
+// the browser chrome follows via the theme-color meta.
+const applyTheme = (dark) => {
+  const t = THEMES[dark ? "dark" : "light"];
+  Object.assign(C, t);
+  CHART_COLORS.length = 0; CHART_COLORS.push(...t.chartColors);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = t.bg;
+};
 // Shared Recharts tooltip styling (G3 glass tier). A function, not a constant:
 // C mutates on theme swap, so styles must be rebuilt per render.
 const tipProps = () => ({
@@ -1137,7 +1254,11 @@ function App() {
         // Migrate: add new fields if missing
         if(loaded.surplusBank===undefined) loaded.surplusBank=0;
         if(!loaded.monthDisabled) loaded.monthDisabled={};
-        if(loaded.darkMode===undefined) loaded.darkMode=false;
+        if(loaded.darkMode===undefined) loaded.darkMode=!window.matchMedia("(prefers-color-scheme: light)").matches;
+        // One-time migration: before the theme system existed the toggle was inert and
+        // darkMode:false still rendered dark — preserve that experience for legacy states.
+        if(raw && !localStorage.getItem("wcm_theme_v2")) loaded.darkMode=true;
+        localStorage.setItem("wcm_theme_v2","1");
         if(loaded.logo===undefined) loaded.logo=null;
         if(!loaded.coverMonths) loaded.coverMonths={};
         if(!loaded.monthlyDeposits) loaded.monthlyDeposits={};
@@ -1158,6 +1279,12 @@ function App() {
       setReady(true);
     })();
   },[]);
+
+  // Theme follows data.darkMode from every path (toggle, sync pull, conflict resolution).
+  // applyTheme mutates C outside React, so tick a render afterwards — the render that
+  // changed darkMode painted with the previous theme's inline styles.
+  const [,setThemeTick] = useState(0);
+  useEffect(()=>{ if(data){ applyTheme(data.darkMode); setThemeTick(t=>t+1); } },[data && data.darkMode]);
 
   // Auto-select the correct academic year and month once data is loaded
   useEffect(()=>{
