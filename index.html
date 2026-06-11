@@ -17,7 +17,7 @@
 <style>
   /* ── Theme variables (mirrored subset of the JS THEMES object — keep in sync) ── */
   :root {
-    --bg: #0b1611;
+    --bg: #101210;
     --text: #F6EFDD;
     --text-dim: rgba(246,239,221,0.5);
     --text-faint: rgba(246,239,221,0.38);
@@ -26,24 +26,25 @@
     --input-border: rgba(255,255,255,0.14);
     --input-focus-bg: rgba(255,255,255,0.12);
     --input-focus-border: rgba(246,239,221,0.45);
-    --focus-glow: rgba(98,181,138,0.28);
-    --focus-ring: rgba(98,181,138,0.85);
-    --accent: #62B58A;
+    --focus-glow: rgba(130,174,219,0.28);
+    --focus-ring: rgba(130,174,219,0.85);
+    --accent: #82AEDB;
     --color-scheme: dark;
     --date-icon-filter: invert(0.85) sepia(0.15) saturate(0.4) brightness(1.05);
     --select-caret: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2.5 4.5L6 8l3.5-3.5' fill='none' stroke='%23F6EFDD' stroke-opacity='0.55' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
     --glass-card: rgba(246,239,221,0.07);
-    --glass-card-fallback: #132218;
+    --glass-card-fallback: #1A1C18;
     --glass-card-border: rgba(255,255,255,0.20);
     --glass-card-border-fallback: rgba(255,255,255,0.18);
     --glass-primary: rgba(246,239,221,0.12);
     --glass-primary-border: rgba(255,255,255,0.28);
     --glass-modal: rgba(246,239,221,0.09);
-    --glass-modal-fallback: #1a2e22;
-    --blob1-a: #4A9068; --blob1-b: #1E3A2F;
-    --blob2-a: #5EAD80; --blob2-b: #2D5040;
-    --blob3-a: #3A7A58; --blob3-b: #0f2218;
-    --blob4-a: #4A9068; --blob4-b: #1A3828;
+    --glass-modal-fallback: #232520;
+    --blob-opacity: 0.6;
+    --blob1-a: #2A2B23; --blob1-b: #14150F;
+    --blob2-a: #33342B; --blob2-b: #1A1B15;
+    --blob3-a: #473A18; --blob3-b: #14150F;
+    --blob4-a: #25261F; --blob4-b: #121310;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); transition: background .3s; }
@@ -123,7 +124,7 @@
   }
   .blob {
     position: absolute; border-radius: 50%; will-change: transform;
-    filter: blur(90px); opacity: 0.75;
+    filter: blur(90px); opacity: var(--blob-opacity);
   }
   .blob-1 {
     width: 700px; height: 700px; top: -180px; left: -200px;
@@ -436,13 +437,13 @@ const { useState, useEffect, useCallback } = React;
 // keep both in sync (documented in docs/DESIGN_SYSTEM.md).
 const THEMES = {
   dark: {
-    // Backgrounds
-    bg:         "#0b1611",
-    bgDark:     "#0d1e17",
-    white:      "#132218",                  // glass-card fallback surface (legacy key name)
+    // Backgrounds — warm near-black (neutral; green ambient identity retired)
+    bg:         "#101210",
+    bgDark:     "#161814",
+    white:      "#1A1C18",                  // glass-card fallback surface (legacy key name)
     surface:    "rgba(255,255,255,0.06)",   // inner panels, sub-tiles, non-card containers
     surfaceMid: "rgba(255,255,255,0.10)",   // slightly elevated surface (hover, active)
-    glassTooltip: "rgba(11,22,17,0.88)",    // dark glass for chart tooltips + dropdowns
+    glassTooltip: "rgba(16,18,16,0.88)",    // dark glass for chart tooltips + dropdowns
     glassCard:  "rgba(246,239,221,0.07)",   // inline glass surfaces (mirrors --glass-card)
     scrim:      "rgba(0,0,0,0.65)",         // modal overlay backdrop
     // Selection / active states — cream, never a semantic hue (rule: selection ≠ danger)
@@ -462,21 +463,23 @@ const THEMES = {
     danger:      "#E08A6B",
     dangerLight: "rgba(224,138,107,0.18)",
     dangerMid:   "rgba(224,138,107,0.40)",
-    // Negative DATA (over-budget, deficits, actual-vs-plan series) — distinct meaning from danger
-    neg:        "#E08A6B",
-    negLight:   "rgba(224,138,107,0.18)",
-    negMid:     "rgba(224,138,107,0.40)",
-    // Positive / surplus / on-track
-    teal:       "#62B58A",
-    tealLight:  "rgba(98,181,138,0.16)",
-    tealMid:    "rgba(98,181,138,0.34)",
-    green:      "#62B58A",
-    greenLight: "rgba(98,181,138,0.16)",
-    greenMid:   "rgba(98,181,138,0.34)",
-    // Info banners/chips
-    blue:       "#86B2CC",
-    blueLight:  "rgba(134,178,204,0.16)",
-    blueMid:    "rgba(134,178,204,0.32)",
+    // Negative DATA (over-budget, deficits, actual-vs-plan series) — amber.
+    // Paired with the blue positive below: colorblind-safe (deuteranopia/protanopia),
+    // and always accompanied by +/− signs or labels (color is never the only signal).
+    neg:        "#E5A23E",
+    negLight:   "rgba(229,162,62,0.15)",
+    negMid:     "rgba(229,162,62,0.32)",
+    // Positive / surplus / on-track — blue (legacy key names teal/green kept, same value)
+    teal:       "#82AEDB",
+    tealLight:  "rgba(130,174,219,0.16)",
+    tealMid:    "rgba(130,174,219,0.34)",
+    green:      "#82AEDB",
+    greenLight: "rgba(130,174,219,0.16)",
+    greenMid:   "rgba(130,174,219,0.34)",
+    // Info banners/chips — slate (blue is now the positive hue)
+    blue:       "#9FB0BC",
+    blueLight:  "rgba(159,176,188,0.16)",
+    blueMid:    "rgba(159,176,188,0.32)",
     // Milestone / warning — marigold
     amber:      "#DDA528",
     amberLight: "rgba(221,165,40,0.15)",
@@ -484,13 +487,13 @@ const THEMES = {
     purple:     "#DDA528",
     purpleLight:"rgba(221,165,40,0.15)",
     // Brand tokens
-    ink:        "#1E3A2F",
-    sage:       "#3E6B52",
+    ink:        "#26251E",                  // dark text on cream fills (active tab pill)
     cream:      "#F6EFDD",
     marigold:   "#DDA528",
     lowTide:    "#7C8471",
-    // Ordered so NO two neighbours (incl. the wrap from last→first) share a hue family
-    chartColors: ["#62B58A","#DDA528","#86B2CC","#7C8471","#B6C7AE","#C8A84B","#4A9068","#F6EFDD","#5A9A72","#8FB89A"],
+    // Ordered so NO two neighbours (incl. the wrap from last→first) share a hue family:
+    // blue → gold → tan → sage-gray → sand → steel → ochre → cream → slate → lilac
+    chartColors: ["#82AEDB","#DDA528","#D99C7C","#9CB5A4","#C9C2A6","#5E8FBC","#C8861A","#F6EFDD","#7FA0B8","#B89BC7"],
   },
 };
 const C = {...THEMES.dark};
@@ -862,7 +865,7 @@ const InfoTip = ({text}) => {
 };
 
 const MarroLogo = ({size=54}) => (
-  <div style={{width:size,height:size,borderRadius:Math.round(size*0.24),background:"#1E3A2F",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:"0 0 0 1.5px rgba(246,239,221,0.14), 0 4px 20px rgba(0,0,0,0.45)"}}>
+  <div style={{width:size,height:size,borderRadius:Math.round(size*0.24),background:"#14150F",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:"0 0 0 1.5px rgba(246,239,221,0.14), 0 4px 20px rgba(0,0,0,0.45)"}}>
     <svg width={size*0.72} height={size*0.72} viewBox="0 0 26 26" style={{overflow:"visible"}}>
       <g transform="translate(13,13)">
         <circle r="1.5" fill="#DDA528"
@@ -2169,7 +2172,7 @@ function App() {
                   onDragEnd={()=>{setDragCat(null);setDragOverCat(null);}}
                   onDragOver={e=>{e.preventDefault();if(dragCat&&dragCat!==cat.id)setDragOverCat(cat.id);}}
                   onDrop={e=>{e.preventDefault();if(dragCat)reorderCats(dragCat,cat.id);setDragCat(null);setDragOverCat(null);}}
-                  style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`,opacity:dragCat===cat.id?0.4:1,borderTop:dragOverCat===cat.id?`2px solid ${C.neg}`:"2px solid transparent",cursor:isAuto?"default":"grab",background:dragOverCat===cat.id?C.bgDark:"transparent"}}>
+                  style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`,opacity:dragCat===cat.id?0.4:1,borderTop:dragOverCat===cat.id?`2px solid ${C.sel}`:"2px solid transparent",cursor:isAuto?"default":"grab",background:dragOverCat===cat.id?C.bgDark:"transparent"}}>
                   {!isAuto && <span style={{color:C.gray,fontSize:12,cursor:"grab",userSelect:"none"}} title="Drag to reorder">⠿</span>}
                   <div style={{width:6,height:6,borderRadius:99,background:CHART_COLORS[i%CHART_COLORS.length],flexShrink:0,boxShadow:"0 0 0 1px rgba(255,255,255,0.28)"}}/>
                   <span style={{flex:1,fontSize:13,color:C.text}}>{cat.label}</span>
