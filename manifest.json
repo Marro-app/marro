@@ -1,11 +1,11 @@
 {
-  "name": "WCM Budget Planner",
-  "short_name": "WCM Budget",
-  "description": "Personal finance tracker for Weill Cornell Medicine MD Class of 2030",
+  "name": "Marro",
+  "short_name": "Marro",
+  "description": "Financial companion for medical students",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#b31b1b",
+  "background_color": "#101210",
+  "theme_color": "#101210",
   "orientation": "portrait-primary",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
