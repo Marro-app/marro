@@ -12,14 +12,129 @@
 <meta name="apple-mobile-web-app-title" content="Marro"/>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;500&family=Inter:wght@200;300;400;500&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;500;600;700&family=Inter:wght@200;300;400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="apple-touch-icon" href="icon.svg"/>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #0b1611; color: #F6EFDD; transition: background .3s; }
-  #root { min-height: 100vh; }
+  #root { min-height: 100vh; background: transparent; position: relative; z-index: 1; }
   #loading { display: flex; align-items: center; justify-content: center; height: 100vh; font-size: 14px; color: rgba(246,239,221,0.5); font-family: 'Inter', system-ui, sans-serif; }
   input, select, textarea { color-scheme: dark; }
+  /* ── Glass inputs — override all inline background:C.bg on form controls ── */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  select, textarea {
+    background: rgba(255,255,255,0.08) !important;
+    border-color: rgba(255,255,255,0.14) !important;
+    color: #F6EFDD !important;
+  }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
+  select:focus, textarea:focus {
+    outline: none !important;
+    border-color: rgba(246,239,221,0.45) !important;
+    background: rgba(255,255,255,0.12) !important;
+    box-shadow: 0 0 0 3px rgba(98,181,138,0.28) !important;
+  }
+  /* Consistent placeholder treatment everywhere */
+  input::placeholder, textarea::placeholder { color: rgba(246,239,221,0.38) !important; opacity: 1; }
+  /* Remove legacy number-input spinner arrows (Chrome/Safari + Firefox) */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+  /* Soften the native date-picker calendar icon so it reads as part of the UI, not a stock browser control */
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.85) sepia(0.15) saturate(0.4) brightness(1.05);
+    opacity: 0.5; cursor: pointer; transition: opacity .15s;
+  }
+  input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 0.85; }
+  /* Date field text reads as part of the UI, not a stock browser control */
+  input[type="date"]::-webkit-datetime-edit { color: #F6EFDD; }
+  input[type="date"]::-webkit-datetime-edit-fields-wrapper { color: #F6EFDD; }
+  input[type="date"]::-webkit-datetime-edit-text { color: rgba(246,239,221,0.45); padding: 0 1px; }
+  /* Empty (unset) date fields render as muted placeholders */
+  input[type="date"]:invalid::-webkit-datetime-edit { color: rgba(246,239,221,0.38); }
+
+  /* Tooltip entrance — short, origin-aware (Emil) */
+  @keyframes tipIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(4px) scale(0.96); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0)   scale(1);    }
+  }
+  /* Native select: drop OS chrome, add one consistent caret */
+  select {
+    -webkit-appearance: none; -moz-appearance: none; appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2.5 4.5L6 8l3.5-3.5' fill='none' stroke='%23F6EFDD' stroke-opacity='0.55' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 10px center !important;
+    padding-right: 28px !important;
+  }
+  /* One unified keyboard-focus ring for buttons & interactive controls */
+  button:focus-visible, [role="button"]:focus-visible, a:focus-visible, summary:focus-visible {
+    outline: 2px solid rgba(98,181,138,0.85);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+  /* Mouse clicks shouldn't show the ring (only keyboard) */
+  button:focus:not(:focus-visible) { outline: none; }
+  /* Checkboxes/radios pick up the brand tint instead of OS blue */
+  input[type="checkbox"], input[type="radio"] { accent-color: #62B58A; cursor: pointer; }
+
+  /* Tab bar: hide scrollbar; on narrow screens fade the right edge to hint more tabs */
+  .tabbar { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .tabbar::-webkit-scrollbar { display: none; }
+  @media (max-width: 600px) {
+    .tabbar {
+      -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent 100%);
+              mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent 100%);
+    }
+  }
+
+  /* ── Ambient blob background ── */
+  .blob-layer {
+    position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0;
+  }
+  .blob {
+    position: absolute; border-radius: 50%; will-change: transform;
+    filter: blur(90px); opacity: 0.75;
+  }
+  .blob-1 {
+    width: 700px; height: 700px; top: -180px; left: -200px;
+    background: radial-gradient(circle, #4A9068 0%, #1E3A2F 65%);
+    animation: blobFloat1 21s ease-in-out infinite;
+  }
+  .blob-2 {
+    width: 560px; height: 560px; top: 8%; right: -160px;
+    background: radial-gradient(circle, #5EAD80 0%, #2D5040 60%);
+    animation: blobFloat2 25s ease-in-out infinite;
+  }
+  .blob-3 {
+    width: 520px; height: 520px; bottom: 10%; left: 3%;
+    background: radial-gradient(circle, #3A7A58 0%, #0f2218 70%);
+    animation: blobFloat3 19s ease-in-out infinite;
+  }
+  .blob-4 {
+    width: 420px; height: 420px; bottom: -80px; right: 6%;
+    background: radial-gradient(circle, #4A9068 0%, #1A3828 70%);
+    animation: blobFloat4 23s ease-in-out infinite;
+  }
+  @keyframes blobFloat1 {
+    0%,100% { transform: translate(0,0) scale(1); }
+    33%     { transform: translate(55px,45px) scale(1.08); }
+    66%     { transform: translate(-25px,65px) scale(0.96); }
+  }
+  @keyframes blobFloat2 {
+    0%,100% { transform: translate(0,0) scale(1); }
+    40%     { transform: translate(-65px,55px) scale(1.06); }
+    70%     { transform: translate(28px,-38px) scale(1.12); }
+  }
+  @keyframes blobFloat3 {
+    0%,100% { transform: translate(0,0) scale(1); }
+    30%     { transform: translate(48px,-55px) scale(1.1); }
+    65%     { transform: translate(-35px,28px) scale(0.93); }
+  }
+  @keyframes blobFloat4 {
+    0%,100% { transform: translate(0,0) scale(1); }
+    45%     { transform: translate(-48px,-45px) scale(1.14); }
+    75%     { transform: translate(55px,18px) scale(0.91); }
+  }
 
   /* ── Glass card system ── */
   @keyframes cardIn {
@@ -28,27 +143,28 @@
   }
   .mc {
     background: #132218;
-    border: 1px solid rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.18);
     border-radius: 22px;
-    box-shadow: 0 8px 28px rgba(0,0,0,0.22);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.12);
     transition: transform 260ms cubic-bezier(0.23,1,0.32,1), opacity 260ms ease;
     will-change: transform;
     position: relative;
   }
   @supports (backdrop-filter: blur(1px)) {
     .mc {
-      background: rgba(246,239,221,0.10);
-      backdrop-filter: blur(22px) saturate(140%);
-      -webkit-backdrop-filter: blur(22px) saturate(140%);
-      border-color: rgba(255,255,255,0.22);
+      background: rgba(246,239,221,0.07);
+      backdrop-filter: blur(40px) saturate(180%) brightness(1.08);
+      -webkit-backdrop-filter: blur(40px) saturate(180%) brightness(1.08);
+      border-color: rgba(255,255,255,0.20);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -1px 0 rgba(0,0,0,0.10);
     }
     .mc-p {
-      background: rgba(246,239,221,0.16) !important;
-      border-color: rgba(255,255,255,0.30) !important;
+      background: rgba(246,239,221,0.12) !important;
+      border-color: rgba(255,255,255,0.28) !important;
     }
   }
   @media (hover: hover) and (pointer: fine) {
-    .mc:hover { transform: translateY(-3px); }
+    .mc:hover { transform: translateY(-3px); box-shadow: 0 14px 42px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(0,0,0,0.12); }
     .mc:hover .mc-sh { opacity: 1; }
   }
   .mc:active { transform: scale(0.97); }
@@ -56,26 +172,28 @@
   .mc-e { animation: cardIn 260ms cubic-bezier(0.23,1,0.32,1) both; }
   .mc-sh {
     position: absolute; inset: 0; border-radius: inherit;
-    background: linear-gradient(135deg, rgba(255,255,255,0.07) 0%, transparent 55%);
+    background: linear-gradient(135deg, rgba(255,255,255,0.10) 0%, transparent 50%);
     pointer-events: none; opacity: 0; transition: opacity 180ms ease;
   }
   .mc-sp {
-    position: absolute; left: 10%; right: 10%; top: 0;
-    height: 1px; background: rgba(255,255,255,0.40); pointer-events: none;
+    position: absolute; left: 8%; right: 8%; top: 0;
+    height: 1px; background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 30%, rgba(255,255,255,0.55) 70%, transparent 100%);
+    pointer-events: none;
   }
   /* ── Glass modal panel ── */
   .mm {
     background: #1a2e22;
     border: 1px solid rgba(255,255,255,0.18);
     border-radius: 20px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.50);
   }
   @supports (backdrop-filter: blur(1px)) {
     .mm {
-      background: rgba(246,239,221,0.13);
-      backdrop-filter: blur(28px) saturate(145%);
-      -webkit-backdrop-filter: blur(28px) saturate(145%);
-      border-color: rgba(255,255,255,0.25);
+      background: rgba(246,239,221,0.09);
+      backdrop-filter: blur(50px) saturate(200%) brightness(1.08);
+      -webkit-backdrop-filter: blur(50px) saturate(200%) brightness(1.08);
+      border-color: rgba(255,255,255,0.22);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.48), inset 0 1px 0 rgba(255,255,255,0.20);
     }
   }
   /* Respect user motion preferences (Emil Kowalski) */
@@ -83,10 +201,17 @@
     .mc { transition: none; }
     .mc-e { animation: none !important; opacity: 1 !important; transform: none !important; }
     .mc-sh { display: none; }
+    .blob { animation: none !important; }
   }
 </style>
 </head>
 <body>
+<div class="blob-layer" aria-hidden="true">
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+  <div class="blob blob-4"></div>
+</div>
 <div id="root"><div id="loading">Loading Marro…</div></div>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -281,27 +406,31 @@ const C = {
   bg:         "#0b1611",
   bgDark:     "#0d1e17",
   white:      "#132218",
+  surface:    "rgba(255,255,255,0.06)",   // inner panels, sub-tiles, non-card containers
+  surfaceMid: "rgba(255,255,255,0.10)",   // slightly elevated surface (hover, active)
+  glassTooltip: "rgba(11,22,17,0.88)",   // dark glass for chart tooltips + dropdowns
   // Text
   text:       "#F6EFDD",
   textMid:    "rgba(246,239,221,0.65)",
-  gray:       "rgba(246,239,221,0.40)",
+  gray:       "rgba(246,239,221,0.52)",
   // Borders
   border:     "rgba(255,255,255,0.12)",
   borderDark: "rgba(255,255,255,0.20)",
-  // Primary accent — sage (active, selected, positive)
-  red:        "#3E6B52",
-  redLight:   "rgba(62,107,82,0.18)",
-  redMid:     "rgba(62,107,82,0.35)",
-  teal:       "#3E6B52",
-  tealLight:  "rgba(62,107,82,0.18)",
-  tealMid:    "rgba(62,107,82,0.35)",
-  green:      "#3E6B52",
-  greenLight: "rgba(62,107,82,0.18)",
-  greenMid:   "rgba(62,107,82,0.35)",
-  // Info — lighter sage
-  blue:       "#5A9A72",
-  blueLight:  "rgba(90,154,114,0.15)",
-  blueMid:    "rgba(90,154,114,0.30)",
+  // Negative / over-budget / destructive — warm clay "danger" (distinct from green, but not an alarm-red)
+  red:        "#E08A6B",
+  redLight:   "rgba(224,138,107,0.18)",
+  redMid:     "rgba(224,138,107,0.40)",
+  // Positive / surplus / on-track — readable sage (brightened for contrast on dark glass)
+  teal:       "#62B58A",
+  tealLight:  "rgba(98,181,138,0.16)",
+  tealMid:    "rgba(98,181,138,0.34)",
+  green:      "#62B58A",
+  greenLight: "rgba(98,181,138,0.16)",
+  greenMid:   "rgba(98,181,138,0.34)",
+  // Info — distinct cool steel-blue, clearly separate from positive green
+  blue:       "#86B2CC",
+  blueLight:  "rgba(134,178,204,0.16)",
+  blueMid:    "rgba(134,178,204,0.32)",
   // Milestone / warning — marigold
   amber:      "#DDA528",
   amberLight: "rgba(221,165,40,0.15)",
@@ -315,7 +444,9 @@ const C = {
   marigold:   "#DDA528",
   lowTide:    "#7C8471",
 };
-const CHART_COLORS = ["#3E6B52","#DDA528","#7C8471","#5A9A72","#F6EFDD","#1E3A2F","#8FB89A","#C8A84B","#9BAF93","#2D5040"];
+// Ordered so NO two neighbours (incl. the wrap from last→first) share a hue family:
+// green → gold → steel-blue → tan → pale-sage → ochre → mid-green → cream → green → pale-sage
+const CHART_COLORS = ["#62B58A","#DDA528","#86B2CC","#7C8471","#B6C7AE","#C8A84B","#4A9068","#F6EFDD","#5A9A72","#8FB89A"];
 
 // ── SVG brand icons (inline, no external deps) ────────────────────────────────
 // Each returns an SVG path + color so BrandIcon renders a clean colored tile
@@ -508,6 +639,9 @@ const DEFAULT_STATE = {
 const fmt  = n => "$"+Math.abs(Math.round(n)).toLocaleString();
 const fmtS = n => { const r=Math.round(n); if(r===0) return "$0"; return (r>0?"+":"-")+"$"+Math.abs(r).toLocaleString(); };
 const fmtD = n => "$"+Math.abs(Number(n)||0).toFixed(2);
+// Actual money (logged/imported spending): show cents only when they exist — never round real transactions
+const fmtA = n => { const v=Math.abs(Number(n)||0); const cents=Math.round(v*100)%100!==0; return "$"+v.toLocaleString(undefined,cents?{minimumFractionDigits:2,maximumFractionDigits:2}:{maximumFractionDigits:0}); };
+const fmtSA = n => { const v=Number(n)||0; if(Math.round(v*100)===0) return "$0"; return (v>0?"+":"-")+fmtA(v); };
 const moTotal = m => Object.values(m).reduce((a,b)=>a+(Number(b)||0),0);
 
 const todayStr = () => {
@@ -603,42 +737,46 @@ const SectionTitle = ({children, sub}) => (
 
 const TabBtn = ({label, active, onClick, badge}) => (
   <button onClick={onClick} style={{
-    padding:"9px 16px", border:"none",
-    borderBottom: active ? `2px solid ${C.red}` : "2px solid transparent",
-    background:"transparent", cursor:"pointer", fontSize:13,
-    fontWeight: active?600:400, color: active?C.red:C.gray,
-    whiteSpace:"nowrap", position:"relative", transition:"color .15s",
+    padding:"7px 16px", border:"none",
+    borderRadius:28,
+    background: active ? "rgba(246,239,221,0.92)" : "transparent",
+    cursor:"pointer", fontSize:13,
+    fontWeight: active ? 600 : 400,
+    color: active ? C.ink : "rgba(246,239,221,0.50)",
+    whiteSpace:"nowrap", position:"relative", flexShrink:0,
+    transition:"all 220ms cubic-bezier(0.23,1,0.32,1)",
+    boxShadow: active ? "0 1px 8px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.35)" : "none",
   }}>
     {label}
-    {badge>0 && <span style={{position:"absolute",top:5,right:5,minWidth:16,height:16,borderRadius:8,background:C.red,color:"#fff",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 3px"}}>{badge}</span>}
+    {badge>0 && <span style={{position:"absolute",top:3,right:3,minWidth:14,height:14,borderRadius:7,background:C.marigold,color:C.ink,fontSize:8,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 2px"}}>{badge}</span>}
   </button>
 );
 
 const YrBtn = ({yr, active, onClick}) => (
   <button onClick={onClick} style={{
     padding:"5px 14px", borderRadius:8,
-    border: active ? `1.5px solid ${C.red}` : `1.5px solid ${C.border}`,
-    background: active ? C.redLight : "transparent",
-    color: active ? C.red : C.gray,
+    border: active ? `1.5px solid rgba(246,239,221,0.75)` : `1.5px solid ${C.border}`,
+    background: active ? "rgba(246,239,221,0.14)" : "transparent",
+    color: active ? C.text : C.gray,
     fontWeight: active?600:400, fontSize:12, cursor:"pointer",
     transition:"all .15s",
   }}>
     {yr.label.split("—")[0].trim()}
     {yr.type==="extended" ? " ★" : ""}
-    {yr.startDate && <span style={{display:"block",fontSize:9,color:"inherit",opacity:0.7,marginTop:1}}>{new Date(yr.startDate+"T12:00:00").toLocaleDateString("en-US",{month:"short",year:"2-digit"})} – {new Date(yr.endDate+"T12:00:00").toLocaleDateString("en-US",{month:"short",year:"2-digit"})}</span>}
+    {yr.startDate && <span style={{display:"block",fontSize:9,color:"inherit",opacity:0.7,marginTop:1}}>{new Date(yr.startDate+"T12:00:00").toLocaleDateString("en-US",{month:"short"})} ’{new Date(yr.startDate+"T12:00:00").toLocaleDateString("en-US",{year:"2-digit"})} – {new Date(yr.endDate+"T12:00:00").toLocaleDateString("en-US",{month:"short"})} ’{new Date(yr.endDate+"T12:00:00").toLocaleDateString("en-US",{year:"2-digit"})}</span>}
   </button>
 );
 
 const Banner = ({children, type="info", onClose}) => {
   const styles = {
-    info:    {bg:"#eff6ff", color:"#1e40af", border:"#bfdbfe"},
+    info:    {bg:"rgba(134,178,204,0.12)", color:C.blue, border:"rgba(134,178,204,0.30)"},
     warn:    {bg:C.amberLight, color:C.amber, border:C.amberMid},
     success: {bg:C.greenLight, color:C.green, border:C.greenMid},
     error:   {bg:C.redLight, color:C.red, border:C.redMid},
   };
   const s = styles[type]||styles.info;
   return (
-    <div style={{background:s.bg, border:`1px solid ${s.border}`, borderRadius:10, padding:"10px 14px", marginBottom:10, fontSize:12, color:s.color, display:"flex", gap:10, alignItems:"flex-start"}}>
+    <div style={{background:s.bg, border:`1px solid ${s.border}`, borderRadius:10, padding:"10px 14px", marginBottom:10, fontSize:12, color:s.color, display:"flex", gap:10, alignItems:"flex-start", backdropFilter:"blur(20px)", WebkitBackdropFilter:"blur(20px)"}}>
       <div style={{flex:1, lineHeight:1.6}}>{children}</div>
       {onClose && <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:s.color,lineHeight:1,padding:0,flexShrink:0,opacity:0.7}}>×</button>}
     </div>
@@ -646,11 +784,11 @@ const Banner = ({children, type="info", onClose}) => {
 };
 
 const Modal = ({title, onClose, children, width=440}) => (
-  <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(2px)"}}>
+  <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(14px)",WebkitBackdropFilter:"blur(14px)"}}>
     <div onClick={e=>e.stopPropagation()} className="mm" style={{padding:"24px",maxWidth:width,width:"calc(100% - 32px)",maxHeight:"90vh",overflowY:"auto"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
         <div style={{fontWeight:700,fontSize:16,color:C.text}}>{title}</div>
-        <button onClick={onClose} style={{background:C.bgDark,border:"none",cursor:"pointer",width:28,height:28,borderRadius:7,fontSize:16,color:C.gray,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+        <button onClick={onClose} style={{background:"rgba(255,255,255,0.10)",border:"1px solid rgba(255,255,255,0.14)",cursor:"pointer",width:28,height:28,borderRadius:8,fontSize:18,color:C.textMid,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,transition:"background 0.15s"}}><span style={{marginTop:-1}}>×</span></button>
       </div>
       {children}
     </div>
@@ -659,9 +797,12 @@ const Modal = ({title, onClose, children, width=440}) => (
 
 const InfoTip = ({text}) => {
   const [show,setShow] = useState(false);
-  return <span style={{position:"relative",display:"inline-flex"}} onMouseEnter={()=>setShow(true)} onMouseLeave={()=>setShow(false)} onClick={()=>setShow(!show)}>
-    <span style={{width:16,height:16,borderRadius:8,background:C.bgDark,color:C.gray,fontSize:9,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"help",border:`1px solid ${C.border}`}}>i</span>
-    {show && <div style={{position:"absolute",bottom:"calc(100% + 6px)",left:"50%",transform:"translateX(-50%)",background:C.text,color:C.bg,fontSize:11,padding:"6px 10px",borderRadius:6,whiteSpace:"normal",width:200,zIndex:999,lineHeight:1.5,boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>{text}</div>}
+  const timer = React.useRef();
+  const open  = () => { clearTimeout(timer.current); timer.current = setTimeout(()=>setShow(true),140); };
+  const close = () => { clearTimeout(timer.current); setShow(false); };
+  return <span style={{position:"relative",display:"inline-flex"}} onMouseEnter={open} onMouseLeave={close} onClick={()=>setShow(s=>!s)}>
+    <span style={{width:16,height:16,borderRadius:8,background:C.surface,color:C.gray,fontSize:9,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"help",border:`1px solid ${C.border}`}}>i</span>
+    {show && <div style={{position:"absolute",bottom:"calc(100% + 6px)",left:"50%",transform:"translateX(-50%)",transformOrigin:"bottom center",animation:"tipIn 140ms cubic-bezier(0.23,1,0.32,1)",background:C.glassTooltip,color:C.text,fontSize:11,padding:"6px 10px",borderRadius:8,whiteSpace:"normal",width:200,zIndex:999,lineHeight:1.5,boxShadow:"0 4px 16px rgba(0,0,0,0.32)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:"1px solid rgba(255,255,255,0.10)"}}>{text}</div>}
   </span>;
 };
 
@@ -685,9 +826,20 @@ const MarroLogo = ({size=54}) => (
 const Divider = () => <div style={{height:1,background:C.border,margin:"10px 0"}}/>;
 
 const MetricTile = ({label, value, sub, color, onClick}) => (
-  <div onClick={onClick} style={{background:C.bg,borderRadius:10,padding:"14px 16px",flex:1,minWidth:130,cursor:onClick?"pointer":"default",transition:"background .15s"}}>
+  <div onClick={onClick} style={{
+    background:"rgba(255,255,255,0.07)",
+    backdropFilter:"blur(30px) saturate(160%)",
+    WebkitBackdropFilter:"blur(30px) saturate(160%)",
+    border:"1px solid rgba(255,255,255,0.14)",
+    borderRadius:14, padding:"14px 16px", flex:1, minWidth:130,
+    cursor:onClick?"pointer":"default",
+    transition:"all 200ms cubic-bezier(0.23,1,0.32,1)",
+    boxShadow:"0 4px 16px rgba(0,0,0,0.20), inset 0 1px 0 rgba(255,255,255,0.12)",
+    position:"relative", overflow:"hidden",
+  }}>
+    <div style={{position:"absolute",left:"8%",right:"8%",top:0,height:1,background:"linear-gradient(90deg,transparent,rgba(255,255,255,0.40),transparent)",pointerEvents:"none"}}/>
     <div style={{fontSize:10,color:C.gray,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}}>{label}</div>
-    <div style={{fontSize:21,fontWeight:700,color:color||C.text,letterSpacing:"-0.02em"}}>{value}</div>
+    <div style={{fontSize:21,fontWeight:700,color:color||C.text,letterSpacing:"-0.02em",fontFamily:"'Newsreader',Georgia,serif"}}>{value}</div>
     {sub && <div style={{fontSize:11,color:C.gray,marginTop:3}}>{sub}</div>}
   </div>
 );
@@ -695,7 +847,7 @@ const MetricTile = ({label, value, sub, color, onClick}) => (
 const ProgressBar = ({value, max, color, height=6}) => {
   const pct = max>0 ? Math.min(Math.round(value/max*100),100) : 0;
   return (
-    <div style={{height,background:C.border,borderRadius:height,overflow:"hidden"}}>
+    <div style={{height,background:"rgba(255,255,255,0.16)",borderRadius:height,overflow:"hidden"}}>
       <div style={{width:pct+"%",height:"100%",background:color,borderRadius:height,transition:"width .4s"}}/>
     </div>
   );
@@ -706,10 +858,21 @@ function RenewalDialog({sub, onClose, onConfirm}) {
   const [renewed, setRenewed] = useState(null);
   const [samePrice, setSamePrice] = useState(true);
   const [newAmt, setNewAmt] = useState(String(sub.amount));
-  const [newDate, setNewDate] = useState("");
+  // Prefill with the next cycle date so "Save" works without retyping a date
+  const nextCycleDate = (() => {
+    if(!sub.renewal) return "";
+    const d = new Date(sub.renewal+"T12:00:00");
+    if(isNaN(d)) return "";
+    const months = sub.cycle==="annual"?12:sub.cycle==="quarterly"?3:sub.cycle==="monthly"?1:0;
+    if(!months) return "";
+    const today = new Date();
+    while(d<=today) d.setMonth(d.getMonth()+months);
+    return [d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-");
+  })();
+  const [newDate, setNewDate] = useState(nextCycleDate);
   return (
     <Modal title="Handle renewal" onClose={onClose}>
-      <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:C.bg,borderRadius:10,marginBottom:20}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,marginBottom:20}}>
         <BrandIcon name={sub.name} size={40}/>
         <div>
           <div style={{fontWeight:600,fontSize:14}}>{sub.name}</div>
@@ -744,7 +907,7 @@ function RenewalDialog({sub, onClose, onConfirm}) {
       </>}
       {renewed===false && <Banner type="warn" style={{marginBottom:16}}>This subscription will be removed and your budget updated automatically.</Banner>}
       {renewed !== null && (
-        <button onClick={()=>onConfirm(sub,renewed,samePrice?sub.amount:newAmt,newDate)} style={{width:"100%",padding:"11px",fontSize:14,fontWeight:700,border:"none",borderRadius:10,background:renewed?C.teal:C.red,color:"#fff",cursor:"pointer"}}>
+        <button onClick={()=>onConfirm(sub,renewed,samePrice?sub.amount:newAmt,newDate)} style={{width:"100%",padding:"11px",fontSize:14,fontWeight:700,border:"none",borderRadius:10,background:renewed?C.teal:C.red,color:C.bg,cursor:"pointer"}}>
           {renewed ? "Save subscription" : "Remove subscription"}
         </button>
       )}
@@ -763,9 +926,9 @@ function WeekSelectorModal({archives, currentWeekStart, currentWeekEnd, selected
       <div style={{display:"flex",flexDirection:"column",gap:6}}>
         {allWeeks.map(w=>(
           <button key={w.weekStart} onClick={()=>{onSelect(w.isCurrent?null:w.weekStart);onClose();}} style={{
-            padding:"10px 14px",borderRadius:10,border:`1.5px solid ${(!selected&&w.isCurrent)||(selected===w.weekStart)?C.red:C.border}`,
-            background:(!selected&&w.isCurrent)||(selected===w.weekStart)?C.redLight:"transparent",
-            color:(!selected&&w.isCurrent)||(selected===w.weekStart)?C.red:C.text,
+            padding:"10px 14px",borderRadius:10,border:`1.5px solid ${(!selected&&w.isCurrent)||(selected===w.weekStart)?"rgba(246,239,221,0.75)":C.border}`,
+            background:(!selected&&w.isCurrent)||(selected===w.weekStart)?"rgba(246,239,221,0.14)":"transparent",
+            color:(!selected&&w.isCurrent)||(selected===w.weekStart)?C.text:C.text,
             cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center",
             fontWeight:(!selected&&w.isCurrent)||(selected===w.weekStart)?600:400,fontSize:13,
           }}>
@@ -789,14 +952,14 @@ function ConflictModal({pending, data, onResolve}) {
   };
   const autoCount=Object.keys(pending.mergeLocal).length+Object.keys(pending.mergeServer).length;
   return (
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.65)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:16,backdropFilter:'blur(14px)',WebkitBackdropFilter:'blur(14px)'}}>
       <div className="mm" style={{padding:24,width:'100%',maxWidth:480,maxHeight:'90vh',overflowY:'auto'}}>
         <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:6}}>Sync conflict</div>
         <div style={{fontSize:13,color:C.textMid,marginBottom:18}}>
           The same {pending.conflicts.length===1?'item was':pending.conflicts.length+' items were'} changed on two devices. Pick which version to keep.
         </div>
         {pending.conflicts.map(c=>(
-          <div key={c.key} style={{marginBottom:12,padding:12,borderRadius:10,background:C.bgDark,border:`1px solid ${C.border}`}}>
+          <div key={c.key} style={{marginBottom:12,padding:12,borderRadius:10,background:C.surface,border:`1px solid ${C.border}`}}>
             <div style={{fontSize:12,fontWeight:600,color:C.text,marginBottom:10}}>{conflictLabel(c.key,data)}</div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
               {[['local','This device',c.local],['server','Other device',c.server]].map(([side,label,val])=>(
@@ -808,7 +971,7 @@ function ConflictModal({pending, data, onResolve}) {
             </div>
           </div>
         ))}
-        {autoCount>0&&<div style={{fontSize:11,color:C.gray,marginBottom:14,padding:'8px 12px',borderRadius:8,background:C.bgDark,border:`1px solid ${C.border}`}}>
+        {autoCount>0&&<div style={{fontSize:11,color:C.gray,marginBottom:14,padding:'8px 12px',borderRadius:8,background:C.surface,border:`1px solid ${C.border}`}}>
           {autoCount} other change{autoCount>1?'s':''} on different items will be merged automatically — no action needed.
         </div>}
         <button onClick={resolve} style={{width:'100%',padding:'12px',fontSize:14,fontWeight:700,border:'none',borderRadius:10,background:C.teal,color:'#fff',cursor:'pointer',marginTop:4}}>
@@ -861,13 +1024,14 @@ function App() {
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [csvText, setCsvText] = useState("");
   const [csvRows, setCsvRows] = useState(null);
+  const [csvError, setCsvError] = useState(null);
 
 
   // Add category modal
   const [showAddCat, setShowAddCat] = useState(false);
-  const [showLogoPicker, setShowLogoPicker] = useState(false);
   const [showAddYear, setShowAddYear] = useState(false);
   const [confirmYearRemove, setConfirmYearRemove] = useState(null);
+  const [confirmReset, setConfirmReset] = useState(false);
   const [dragCat, setDragCat] = useState(null);
   const [dragOverCat, setDragOverCat] = useState(null);
   const [weeklyNotice, setWeeklyNotice] = useState(null);
@@ -1483,7 +1647,7 @@ function App() {
   const isOtherWeekDate = isPastWeekDate || isFutureWeekDate;
 
   return (
-    <div style={{fontFamily:"'Inter',system-ui,sans-serif",maxWidth:940,margin:"0 auto",padding:"24px 20px",minHeight:"100vh",background:C.bg,color:C.text,transition:"background .3s, color .3s"}}>
+    <div style={{fontFamily:"'Inter',system-ui,sans-serif",maxWidth:940,margin:"0 auto",padding:"24px 20px",minHeight:"100vh",background:"transparent",color:C.text,transition:"color .3s"}}>
       <style>{`
         @keyframes wcmpulse{0%,100%{opacity:1}50%{opacity:0.3}}
         @keyframes marroRingPop{
@@ -1505,13 +1669,20 @@ function App() {
         <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>
           {weeklyNotice.month} is now <strong style={{color:C.red}}>{fmt(weeklyNotice.deficit)}</strong> over your monthly income{weeklyNotice.cat?<>, after logging <strong>{weeklyNotice.cat}</strong></>:""}. This lowers your running balance and year-end net. Consider trimming a category or adjusting your budget.
         </div>
-        <button onClick={()=>setWeeklyNotice(null)} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.red,color:"#fff",cursor:"pointer"}}>Got it</button>
+        <button onClick={()=>setWeeklyNotice(null)} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.red,color:C.bg,cursor:"pointer"}}>Got it</button>
+      </Modal>}
+      {confirmReset && <Modal title="Reset everything?" onClose={()=>setConfirmReset(false)} width={350}>
+        <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>This replaces <strong>all</strong> of your budget, weekly entries, savings, and subscriptions with the starting defaults. This cannot be undone.</div>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>setConfirmReset(false)} style={{flex:1.4,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:"rgba(246,239,221,0.16)",color:C.text,cursor:"pointer"}}>Cancel</button>
+          <button onClick={()=>{upd(JSON.parse(JSON.stringify(DEFAULT_STATE)));setConfirmReset(false);}} style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:`1px solid ${C.redMid}`,borderRadius:8,background:C.redLight,color:C.red,cursor:"pointer"}}>Reset everything</button>
+        </div>
       </Modal>}
       {confirmYearRemove!==null && <Modal title="Remove year" onClose={()=>setConfirmYearRemove(null)} width={350}>
         <div style={{fontSize:13,color:C.textMid,marginBottom:16}}>Remove <strong>{data.years.find(y=>y.id===confirmYearRemove)?.label}</strong>? This permanently deletes its budget data and cannot be undone.</div>
         <div style={{display:"flex",gap:8}}>
-          <button onClick={()=>{removeYear(confirmYearRemove);setConfirmYearRemove(null);}} style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.red,color:"#fff",cursor:"pointer"}}>Remove</button>
-          <button onClick={()=>setConfirmYearRemove(null)} style={{flex:1,padding:"10px",fontSize:13,fontWeight:500,border:`1px solid ${C.border}`,borderRadius:8,background:"transparent",color:C.gray,cursor:"pointer"}}>Cancel</button>
+          <button onClick={()=>setConfirmYearRemove(null)} style={{flex:1.4,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:"rgba(246,239,221,0.16)",color:C.text,cursor:"pointer"}}>Cancel</button>
+          <button onClick={()=>{removeYear(confirmYearRemove);setConfirmYearRemove(null);}} style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:`1px solid ${C.redMid}`,borderRadius:8,background:C.redLight,color:C.red,cursor:"pointer"}}>Remove</button>
         </div>
       </Modal>}
       {showAddYear && <Modal title="Add academic year" onClose={()=>setShowAddYear(false)} width={360}>
@@ -1524,29 +1695,12 @@ function App() {
           <div style={{fontSize:11,fontWeight:600,color:C.textMid,marginBottom:4}}>End date</div>
           <input type="date" value={nyEnd} onChange={e=>setNyEnd(e.target.value)} style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text}}/>
         </div>
-        <button onClick={()=>addYear(nyStart,nyEnd)} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.red,color:"#fff",cursor:"pointer"}}>Add year</button>
-      </Modal>}
-      {showLogoPicker && <Modal title="App logo" onClose={()=>setShowLogoPicker(false)} width={360}>
-        <div style={{fontSize:12,color:C.textMid,marginBottom:14}}>Choose a logo or upload your own.</div>
-        <div style={{display:"flex",gap:10,marginBottom:16}}>
-          <button onClick={()=>{const d=JSON.parse(JSON.stringify(data));d.logo=null;upd(d);setShowLogoPicker(false);}} style={{flex:1,padding:"12px 8px",borderRadius:10,border:`2px solid ${!data.logo?C.red:C.border}`,background:C.bg,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
-            <div style={{width:36,height:36,borderRadius:9,background:"#b31b1b",display:"flex",alignItems:"center",justifyContent:"center",padding:4}}><img src="https://brand.weill.cornell.edu/profiles/wcmc/themes/wcm_brand_base/images/WCM_logo_white.png" style={{width:"100%",objectFit:"contain"}} alt=""/></div>
-            <span style={{fontSize:11,color:C.text}}>WCM Official</span>
-          </button>
-          <button onClick={()=>{const d=JSON.parse(JSON.stringify(data));d.logo="w";upd(d);setShowLogoPicker(false);}} style={{flex:1,padding:"12px 8px",borderRadius:10,border:`2px solid ${data.logo==="w"?C.red:C.border}`,background:C.bg,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
-            <div style={{width:36,height:36,borderRadius:9,background:"linear-gradient(135deg,#b31b1b,#8b1515)",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{color:"white",fontWeight:800,fontSize:18,fontFamily:"Georgia,serif"}}>W</span></div>
-            <span style={{fontSize:11,color:C.text}}>Monogram</span>
-          </button>
-        </div>
-        <label style={{display:"block",padding:"10px",borderRadius:10,border:`1px dashed ${C.border}`,textAlign:"center",cursor:"pointer",fontSize:12,color:C.gray}}>
-          Upload custom image
-          <input type="file" accept="image/*" style={{display:"none"}} onChange={(e)=>{const f=e.target.files[0];if(f){const r=new FileReader();r.onload=()=>{const d=JSON.parse(JSON.stringify(data));d.logo=r.result;upd(d);setShowLogoPicker(false);};r.readAsDataURL(f);}}}/>
-        </label>
+        <button onClick={()=>addYear(nyStart,nyEnd)} style={{width:"100%",padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.teal,color:C.bg,cursor:"pointer"}}>Add year</button>
       </Modal>}
       {confirmRemove && <Modal title="Remove category" onClose={()=>setConfirmRemove(null)} width={340}>
         <div style={{fontSize:13,color:C.textMid,marginBottom:16}}>Remove <strong>{cats.find(c=>c.id===confirmRemove)?.label}</strong> from {MONTH_FULL[selMonth]}? You can add it back anytime.</div>
         <div style={{display:"flex",gap:8}}>
-          <button onClick={()=>{toggleMonthCat(confirmRemove);setConfirmRemove(null);}} style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.red,color:"#fff",cursor:"pointer"}}>Remove</button>
+          <button onClick={()=>{toggleMonthCat(confirmRemove);setConfirmRemove(null);}} style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.red,color:C.bg,cursor:"pointer"}}>Remove</button>
           <button onClick={()=>setConfirmRemove(null)} style={{flex:1,padding:"10px",fontSize:13,fontWeight:500,border:`1px solid ${C.border}`,borderRadius:8,background:"transparent",color:C.gray,cursor:"pointer"}}>Cancel</button>
         </div>
       </Modal>}
@@ -1560,7 +1714,7 @@ function App() {
         <div style={{fontSize:12,fontWeight:600,color:C.textMid,marginBottom:8}}>Create new category</div>
         <div style={{display:"flex",gap:8}}>
           <input placeholder="Category name" value={newCatName} onChange={e=>setNewCatName(e.target.value)} style={{flex:1,fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",background:C.bg,color:C.text}}/>
-          <button onClick={()=>{if(newCatName.trim()){addCat();setShowAddCat(false);}}} style={{padding:"8px 16px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.red,color:"#fff",cursor:"pointer"}}>Add</button>
+          <button onClick={()=>{if(newCatName.trim()){addCat();setShowAddCat(false);}}} disabled={!newCatName.trim()} style={{padding:"8px 16px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:!newCatName.trim()?C.surface:C.teal,color:!newCatName.trim()?C.gray:C.bg,cursor:!newCatName.trim()?"not-allowed":"pointer"}}>Add</button>
         </div>
       </Modal>}
       {showWeekPicker && <WeekSelectorModal archives={archives} currentWeekStart={currentWeekStart} currentWeekEnd={currentWeekEnd} selected={viewWeek} onSelect={setViewWeek} onClose={()=>setShowWeekPicker(false)}/>}
@@ -1642,7 +1796,7 @@ function App() {
 
                 upd(d);
                 setSavingsDepositGoal(null);setSavingsDepositAmt("");setSavingsDepositNote("");setSavingsDepositDate(todayStr());
-              }} style={{padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.teal,color:C.bg,cursor:"pointer",marginTop:4}}>
+              }} disabled={!(parseFloat(savingsDepositAmt)>0)} style={{padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:!(parseFloat(savingsDepositAmt)>0)?C.surface:C.teal,color:!(parseFloat(savingsDepositAmt)>0)?C.gray:C.bg,cursor:!(parseFloat(savingsDepositAmt)>0)?"not-allowed":"pointer",marginTop:4}}>
                 Confirm deposit
               </button>
             </div>
@@ -1676,7 +1830,7 @@ function App() {
               const d=JSON.parse(JSON.stringify(data));
               d.savingsGoals.push({id:"sg_"+Date.now(),label:newGoalLabel.trim(),targetAmount:parseFloat(newGoalTarget)||0,saved:0,monthlyContribution:parseFloat(newGoalMonthly)||0,targetDate:newGoalDate});
               upd(d);setShowAddSavingsGoal(false);setNewGoalLabel("");setNewGoalTarget("");setNewGoalDate("");setNewGoalMonthly("");
-            }} style={{padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.red,color:"#fff",cursor:"pointer",marginTop:4}}>
+            }} disabled={!newGoalLabel.trim()||!(parseFloat(newGoalTarget)>0)} style={{padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:(!newGoalLabel.trim()||!(parseFloat(newGoalTarget)>0))?C.surface:C.teal,color:(!newGoalLabel.trim()||!(parseFloat(newGoalTarget)>0))?C.gray:C.bg,cursor:(!newGoalLabel.trim()||!(parseFloat(newGoalTarget)>0))?"not-allowed":"pointer",marginTop:4}}>
               Add goal
             </button>
           </div>
@@ -1725,17 +1879,33 @@ function App() {
           const dateCol   = findCol("date","posted","trans");
           const amtCol    = findCol("amount","debit","charge","withdrawal");
           const descCol   = findCol("description","merchant","memo","payee","name");
-          if(dateCol<0||amtCol<0) { alert("Could not detect Date and Amount columns. Make sure your CSV has headers."); return; }
+          if(dateCol<0||amtCol<0) { setCsvError("Couldn't find Date and Amount columns. Make sure the first line of your CSV has headers like “Date, Description, Amount”."); return; }
+          // Signed amounts: negatives are spending, positives are deposits (skipped).
+          // All-positive amounts: debit-only export — keep everything.
+          const signedVals = lines.slice(1).map(l=>parseFloat((splitLine(l)[amtCol]||"").replace(/[$,"]/g,"").trim()));
+          const hasNegatives = signedVals.some(v=>v<0);
           const rows = lines.slice(1).map((line,i)=>{
             const cols = splitLine(line);
             const rawAmt = (cols[amtCol]||"").replace(/[$,"]/g,"").trim();
-            const amt = Math.abs(parseFloat(rawAmt)||0);
+            const signed = parseFloat(rawAmt)||0;
+            const amt = (hasNegatives && signed>0) ? 0 : Math.abs(signed);
             const desc = descCol>=0 ? (cols[descCol]||"").replace(/"/g,"").trim() : "";
             const dateRaw = (cols[dateCol]||"").replace(/"/g,"").trim();
-            const dateObj = new Date(dateRaw+"T12:00:00");
-            const dateStr = isNaN(dateObj)?null:[dateObj.getFullYear(),String(dateObj.getMonth()+1).padStart(2,"0"),String(dateObj.getDate()).padStart(2,"0")].join("-");
+            // Accept ISO (2026-06-09), US (6/9/2026, 06-09-26), with -, / or . separators
+            let dateObj = null, m;
+            if ((m = dateRaw.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/))) {
+              dateObj = new Date(+m[1], +m[2]-1, +m[3], 12);
+            } else if ((m = dateRaw.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/))) {
+              const yr = m[3].length===2 ? 2000+ +m[3] : +m[3];
+              dateObj = new Date(yr, +m[1]-1, +m[2], 12);
+            } else {
+              const t = new Date(dateRaw); if(!isNaN(t)) dateObj = t;
+            }
+            const dateStr = (!dateObj||isNaN(dateObj))?null:[dateObj.getFullYear(),String(dateObj.getMonth()+1).padStart(2,"0"),String(dateObj.getDate()).padStart(2,"0")].join("-");
             return {id:i, date:dateStr, desc, amt, catId:autoCategory(desc), include:amt>0&&dateStr!==null};
           }).filter(r=>r.amt>0&&r.date);
+          if(!rows.length){ setCsvError("No transactions recognized. Check that each line has a date and a dollar amount — deposits and $0 rows are skipped automatically."); return; }
+          setCsvError(null);
           setCsvRows(rows);
         };
         const doImport = () => {
@@ -1771,29 +1941,30 @@ function App() {
             }
           });
           upd(d);
-          setShowCsvImport(false);setCsvText("");setCsvRows(null);
+          setShowCsvImport(false);setCsvText("");setCsvRows(null);setCsvError(null);
         };
         const total=csvRows?csvRows.filter(r=>r.include&&r.catId).length:0;
         return (
-          <Modal title="Import from bank CSV" onClose={()=>{setShowCsvImport(false);setCsvText("");setCsvRows(null);}} width={680}>
+          <Modal title="Import from bank CSV" onClose={()=>{setShowCsvImport(false);setCsvText("");setCsvRows(null);setCsvError(null);}} width={680}>
             {!csvRows ? (
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{fontSize:12,color:C.gray,lineHeight:1.6}}>
                   Export a CSV from your bank (Chase, BofA, etc.) and paste it below. Needs at least a <strong>Date</strong> and <strong>Amount</strong> column. A description column helps with auto-categorization.
                 </div>
-                <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} placeholder={"Date,Description,Amount\n06/01/2026,GRUBHUB,-12.50\n06/02/2026,MTA TRANSIT,-2.90"} rows={10} style={{width:"100%",fontSize:12,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px",background:C.bg,color:C.text,boxSizing:"border-box",fontFamily:"monospace",resize:"vertical"}}/>
-                <button onClick={parseCSV} disabled={!csvText.trim()} style={{padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:!csvText.trim()?C.bgDark:C.red,color:!csvText.trim()?C.gray:"#fff",cursor:!csvText.trim()?"not-allowed":"pointer"}}>Parse transactions</button>
+                <textarea value={csvText} onChange={e=>{setCsvText(e.target.value);setCsvError(null);}} placeholder={"Date,Description,Amount\n06/01/2026,GRUBHUB,-12.50\n06/02/2026,MTA TRANSIT,-2.90"} rows={10} style={{width:"100%",fontSize:12,border:`1px solid ${csvError?C.redMid:C.border}`,borderRadius:8,padding:"10px",background:C.bg,color:C.text,boxSizing:"border-box",fontFamily:"monospace",resize:"vertical"}}/>
+                {csvError && <div role="alert" style={{fontSize:12,lineHeight:1.5,color:C.red,background:C.redLight,border:`1px solid ${C.redMid}`,borderRadius:8,padding:"8px 12px"}}>{csvError}</div>}
+                <button onClick={parseCSV} disabled={!csvText.trim()} style={{padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:!csvText.trim()?C.surface:C.teal,color:!csvText.trim()?C.gray:C.bg,cursor:!csvText.trim()?"not-allowed":"pointer"}}>Parse transactions</button>
               </div>
             ) : (
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{fontSize:12,color:C.gray}}>{csvRows.length} transactions found — review categories and uncheck any to skip</span>
+                  <span style={{fontSize:12,color:C.gray}}>{csvRows.length} {csvRows.length===1?"transaction":"transactions"} found — review categories and uncheck any to skip</span>
                   <button onClick={()=>setCsvRows(null)} style={{background:"none",border:"none",color:C.gray,cursor:"pointer",fontSize:12}}>← Paste again</button>
                 </div>
                 <div style={{maxHeight:360,overflowY:"auto",border:`1px solid ${C.border}`,borderRadius:8}}>
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                     <thead>
-                      <tr style={{background:C.bgDark,position:"sticky",top:0}}>
+                      <tr style={{background:"rgba(11,22,17,0.90)",backdropFilter:"blur(10px)",position:"sticky",top:0}}>
                         <th style={{padding:"8px 10px",textAlign:"left",color:C.gray,fontWeight:600,borderBottom:`1px solid ${C.border}`}}>✓</th>
                         <th style={{padding:"8px 10px",textAlign:"left",color:C.gray,fontWeight:600,borderBottom:`1px solid ${C.border}`}}>Date</th>
                         <th style={{padding:"8px 10px",textAlign:"left",color:C.gray,fontWeight:600,borderBottom:`1px solid ${C.border}`}}>Description</th>
@@ -1803,13 +1974,13 @@ function App() {
                     </thead>
                     <tbody>
                       {csvRows.map((row,i)=>(
-                        <tr key={row.id} style={{background:row.include?"transparent":C.bgDark+"88",opacity:row.include?1:0.45}}>
+                        <tr key={row.id} style={{background:row.include?"transparent":"rgba(255,255,255,0.03)",opacity:row.include?1:0.45}}>
                           <td style={{padding:"6px 10px",borderBottom:`1px solid ${C.border}`}}>
                             <input type="checkbox" checked={row.include} onChange={e=>{const r=[...csvRows];r[i]={...r[i],include:e.target.checked};setCsvRows(r);}}/>
                           </td>
                           <td style={{padding:"6px 10px",borderBottom:`1px solid ${C.border}`,color:C.text,whiteSpace:"nowrap"}}>{row.date}</td>
                           <td style={{padding:"6px 10px",borderBottom:`1px solid ${C.border}`,color:C.text,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{row.desc}</td>
-                          <td style={{padding:"6px 10px",borderBottom:`1px solid ${C.border}`,color:C.text,textAlign:"right",fontWeight:600}}>{fmt(row.amt)}</td>
+                          <td style={{padding:"6px 10px",borderBottom:`1px solid ${C.border}`,color:C.text,textAlign:"right",fontWeight:600}}>{fmtA(row.amt)}</td>
                           <td style={{padding:"6px 10px",borderBottom:`1px solid ${C.border}`}}>
                             <select value={row.catId} onChange={e=>{const r=[...csvRows];r[i]={...r[i],catId:e.target.value};setCsvRows(r);}} style={{fontSize:11,border:`1px solid ${row.catId?C.border:C.amber}`,borderRadius:5,padding:"3px 6px",background:C.bg,color:row.catId?C.text:C.amber,cursor:"pointer"}}>
                               <option value="">— pick —</option>
@@ -1823,7 +1994,7 @@ function App() {
                 </div>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <span style={{fontSize:12,color:C.gray}}>{total} entries will be imported</span>
-                  <button onClick={doImport} disabled={total===0} style={{padding:"10px 24px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:total===0?C.bgDark:C.red,color:total===0?C.gray:"#fff",cursor:total===0?"not-allowed":"pointer"}}>
+                  <button onClick={doImport} disabled={total===0} style={{padding:"10px 24px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:total===0?C.surface:C.teal,color:total===0?C.gray:C.bg,cursor:total===0?"not-allowed":"pointer"}}>
                     Import {total} {total===1?"entry":"entries"}
                   </button>
                 </div>
@@ -1834,8 +2005,8 @@ function App() {
       })()}
 
       {/* ── Header ── */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,paddingBottom:16,borderBottom:`1px solid ${C.border}`}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,paddingBottom:16,borderBottom:`1px solid ${C.border}`,flexWrap:"wrap",columnGap:12,rowGap:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,flex:"1 1 230px",minWidth:0}}>
           <MarroLogo/>
           <div>
             <div style={{fontSize:17,fontWeight:700,color:C.text,letterSpacing:"-0.02em",fontFamily:"'Newsreader', Georgia, serif"}}>Marro</div>
@@ -1849,7 +2020,7 @@ function App() {
           {syncStatus==="conflict" && <span style={{fontSize:11,color:C.red,display:"flex",alignItems:"center",gap:4}}><span style={{width:6,height:6,borderRadius:99,background:C.red,flexShrink:0}}/>Conflict</span>}
           {flash && <span style={{fontSize:12,color:C.teal,fontWeight:600}}>Saved</span>}
           <button onClick={()=>{const d=JSON.parse(JSON.stringify(data));d.darkMode=!d.darkMode;upd(d);}} style={{fontSize:16,padding:"4px 10px",border:`1px solid ${C.border}`,borderRadius:7,background:"transparent",cursor:"pointer"}} title="Toggle dark mode">{data.darkMode?"☀️":"🌙"}</button>
-          <button onClick={()=>upd(JSON.parse(JSON.stringify(DEFAULT_STATE)))} style={{fontSize:11,padding:"5px 12px",border:`1px solid ${C.border}`,borderRadius:7,background:"transparent",color:C.gray,cursor:"pointer",fontWeight:500}}>Reset defaults</button>
+          <button onClick={()=>setConfirmReset(true)} style={{fontSize:11,padding:"5px 12px",border:`1px solid ${C.border}`,borderRadius:7,background:"transparent",color:C.gray,cursor:"pointer",fontWeight:500}}>Reset defaults</button>
         </div>
       </div>
 
@@ -1891,7 +2062,15 @@ function App() {
       </div>
 
       {/* ── Tabs ── */}
-      <div style={{display:"flex",borderBottom:`1px solid ${C.border}`,marginBottom:20,overflowX:"auto"}}>
+      <div className="tabbar" style={{
+        display:"flex", marginBottom:24, overflowX:"auto", gap:2, padding:"4px",
+        background:"rgba(246,239,221,0.07)",
+        backdropFilter:"blur(24px) saturate(150%)",
+        WebkitBackdropFilter:"blur(24px) saturate(150%)",
+        border:"1px solid rgba(255,255,255,0.14)",
+        borderRadius:32,
+        boxShadow:"0 2px 16px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.10)",
+      }}>
         {[
           ["budget","Budget"],
           ["weekly","Weekly"],
@@ -1905,7 +2084,7 @@ function App() {
 
       {/* ══════════════ BUDGET ══════════════ */}
       {tab==="budget" && (
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,300px),1fr))",gap:16}}>
           <Card>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
               <SectionTitle>Monthly plan</SectionTitle>
@@ -1916,7 +2095,7 @@ function App() {
             <div style={{fontSize:11,color:C.gray,marginBottom:12}}>Set how much you <em>intend</em> to spend each month — actual spending is tracked in the <strong>Weekly</strong> tab.</div>
 
             {/* Housing — read-only */}
-            <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:C.bg,borderRadius:8,marginBottom:10,border:`1px solid ${C.border}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:C.surface,borderRadius:8,marginBottom:10,border:`1px solid ${C.border}`}}>
               <div style={{flex:1}}>
                 <div style={{fontSize:12,fontWeight:600,color:C.text}}>Housing</div>
                 <div style={{fontSize:11,color:C.gray,marginTop:1,display:"flex",alignItems:"center",gap:4}}>Fixed by housing contract <InfoTip text="Housing is set by your WCM housing assignment. Edit the rate in the Aid & Detail tab."/></div>
@@ -1937,7 +2116,7 @@ function App() {
                   onDrop={e=>{e.preventDefault();if(dragCat)reorderCats(dragCat,cat.id);setDragCat(null);setDragOverCat(null);}}
                   style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`,opacity:dragCat===cat.id?0.4:1,borderTop:dragOverCat===cat.id?`2px solid ${C.red}`:"2px solid transparent",cursor:isAuto?"default":"grab",background:dragOverCat===cat.id?C.bgDark:"transparent"}}>
                   {!isAuto && <span style={{color:C.gray,fontSize:12,cursor:"grab",userSelect:"none"}} title="Drag to reorder">⠿</span>}
-                  <div style={{width:6,height:6,borderRadius:99,background:CHART_COLORS[i%CHART_COLORS.length],flexShrink:0}}/>
+                  <div style={{width:6,height:6,borderRadius:99,background:CHART_COLORS[i%CHART_COLORS.length],flexShrink:0,boxShadow:"0 0 0 1px rgba(255,255,255,0.28)"}}/>
                   <span style={{flex:1,fontSize:13,color:C.text}}>{cat.label}</span>
                   {isAuto
                     ? <span style={{fontSize:13,fontWeight:600,color:C.blue,minWidth:72,textAlign:"right"}}>{fmt(amt)}<span style={{fontSize:10,color:C.gray,fontWeight:400}}> auto</span></span>
@@ -1945,7 +2124,7 @@ function App() {
                         style={{width:80,textAlign:"right",fontSize:13,border:`1px solid ${C.border}`,borderRadius:7,padding:"4px 8px",background:C.bg,color:C.text,fontWeight:600}}/>
                   }
                   <span style={{fontSize:10,color:C.gray,width:28,textAlign:"right"}}>{pct}%</span>
-                  {!isAuto && <button onClick={()=>setConfirmRemove(cat.id)} style={{width:20,height:20,borderRadius:4,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center",color:C.gray,flexShrink:0,opacity:0.5}} title={"Remove for "+MONTH_NAMES[selMonth]}>✕</button>}
+                  {!isAuto && <button aria-label={"Remove "+cat.label} onClick={()=>setConfirmRemove(cat.id)} style={{width:28,height:28,borderRadius:7,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",justifyContent:"center",color:C.textMid,flexShrink:0,opacity:0.85}} title={"Remove for "+MONTH_NAMES[selMonth]}>✕</button>}
                 </div>
               );
             })}
@@ -2083,7 +2262,7 @@ function App() {
             <button onClick={()=>setShowWeekPicker(true)} style={{padding:"6px 14px",borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",fontSize:12,color:C.gray,fontWeight:500,display:"flex",alignItems:"center",gap:6}}>
               Browse weeks {archives.length>0&&`(${archives.length} archived)`}
             </button>
-            {viewWeek && <button onClick={()=>setViewWeek(null)} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${C.redMid}`,background:C.redLight,cursor:"pointer",fontSize:12,color:C.red,fontWeight:600}}>← Current week</button>}
+            {viewWeek && <button onClick={()=>setViewWeek(null)} style={{padding:"6px 12px",borderRadius:8,border:`1px solid rgba(246,239,221,0.45)`,background:"rgba(246,239,221,0.10)",cursor:"pointer",fontSize:12,color:C.text,fontWeight:600}}>← Back to current week</button>}
           </div>
 
           {/* Week metrics */}
@@ -2097,13 +2276,13 @@ function App() {
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
             {[
               {label:"Weekly plan",      val:fmt(viewBudget),             sub:lastWeekSurplus>0&&!viewWeek?`base ${fmt(weeklyBudget)} + ${fmt(lastWeekSurplus)} rollover`:"spendable ÷ 4.33", color:C.teal},
-              {label:"Actually spent",  val:fmt(viewTotal),              sub:viewWeek?"archived":"this week",      color:viewTotal>viewBudget?C.red:C.text},
-              {label:"Remaining",        val:fmtS(viewBudget-viewTotal),  sub:"this week",                          color:viewBudget-viewTotal>=0?C.green:C.red},
+              {label:"Actually spent",  val:fmtA(viewTotal),             sub:viewWeek?"archived":"this week",      color:viewTotal>viewBudget?C.red:C.text},
+              {label:"Remaining",        val:fmtSA(viewBudget-viewTotal), sub:"this week",                          color:viewBudget-viewTotal>=0?C.green:C.red},
               {label:"Entries",          val:String(viewEntries.length),  sub:"logged",                             color:C.gray},
             ].map(m=><MetricTile key={m.label} label={m.label} value={m.val} sub={m.sub} color={m.color}/>)}
           </div>
 
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,300px),1fr))",gap:16}}>
             {/* Log entry */}
             <Card>
               <SectionTitle>Log actual expense</SectionTitle>
@@ -2133,7 +2312,7 @@ function App() {
                   <input type="text" placeholder="e.g. Trader Joe's" value={wNote} onChange={e=>setWNote(e.target.value)}
                     style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
                 </div>
-                <button onClick={addEntry} disabled={!wCat||!wAmt} style={{padding:"9px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:(!wCat||!wAmt)?C.bgDark:C.red,color:(!wCat||!wAmt)?C.gray:"#fff",cursor:(!wCat||!wAmt)?"not-allowed":"pointer",marginTop:2,transition:"all .15s"}}>
+                <button onClick={addEntry} disabled={!wCat||!wAmt} style={{padding:"9px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:(!wCat||!wAmt)?C.surface:C.teal,color:(!wCat||!wAmt)?C.gray:C.bg,cursor:(!wCat||!wAmt)?"not-allowed":"pointer",marginTop:2,transition:"all .15s"}}>
                   Add entry
                 </button>
                 <button onClick={()=>{setShowCsvImport(true);setCsvText("");setCsvRows(null);}} style={{padding:"7px",fontSize:12,fontWeight:500,border:`1px solid ${C.border}`,borderRadius:8,background:"transparent",color:C.gray,cursor:"pointer",marginTop:2}}>
@@ -2191,8 +2370,8 @@ function App() {
                         <div style={{fontSize:13,fontWeight:500,color:C.text}}>{cat.label}</div>
                         <div style={{fontSize:11,color:C.gray,marginTop:1}}>{e.date}{e.note?" · "+e.note:""}</div>
                       </div>
-                      <span style={{fontWeight:700,fontSize:13,color:C.red}}>{fmtD(e.amount)}</span>
-                      <button onClick={()=>delEntry(e.id,!!viewWeek)} style={{width:26,height:26,borderRadius:6,background:C.bg,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:C.gray,fontSize:14,fontWeight:700}}>×</button>
+                      <span style={{fontWeight:700,fontSize:13,color:C.text}}>{fmtA(e.amount)}</span>
+                      <button aria-label="Delete entry" onClick={()=>delEntry(e.id,!!viewWeek)} style={{width:26,height:26,borderRadius:6,background:C.surface,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:C.gray,fontSize:14,fontWeight:700}}>×</button>
                     </div>
                   );
                 })
@@ -2200,13 +2379,13 @@ function App() {
             {viewEntries.length>0 && (
               <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0 0",fontSize:14,fontWeight:700}}>
                 <span>Week total</span>
-                <span style={{color:viewTotal>viewBudget?C.red:C.teal}}>{fmt(viewTotal)}</span>
+                <span style={{color:viewTotal>viewBudget?C.red:C.teal}}>{fmtA(viewTotal)}</span>
               </div>
             )}
             {viewWeek && <div style={{fontSize:11,color:C.gray,marginTop:8,fontStyle:"italic"}}>Archived week — entries can still be added or deleted.</div>}
           </Card>
 
-          <div style={{fontSize:11,color:C.gray,padding:"6px 12px",background:C.bg,borderRadius:8,border:`1px solid ${C.border}`}}>
+          <div style={{fontSize:11,color:C.gray,padding:"6px 12px",background:C.surface,borderRadius:8,border:`1px solid ${C.border}`}}>
             Entries auto-archive each Sunday. Past-dated entries are filed to the correct week. Unspent balance rolls forward.
           </div>
         </div>
@@ -2309,11 +2488,11 @@ function App() {
                       </defs>
                       <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
                       <YAxis domain={[yDomMin, yDomMax]} tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>v===0?"$0":v>0?"+"+fmt(v):fmtS(v)} axisLine={false} tickLine={false} width={60}/>
-                      <Tooltip formatter={v=>[fmtS(v),"Total position"]} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
+                      <Tooltip separator=": " formatter={v=>[fmtS(v),"Total position"]} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.glassTooltip,color:C.text,border:"1px solid rgba(255,255,255,0.16)",borderRadius:10,fontSize:12,backdropFilter:"blur(20px)"}}/>
                       {crossesZero && <ReferenceLine y={0} stroke={C.gray} strokeOpacity={0.45} strokeDasharray="4 3"/>}
                       {priorYearsCarryover!==0 && <ReferenceLine y={priorYearsCarryover} stroke={priorColor} strokeWidth={2} strokeOpacity={0.8} strokeDasharray="8 3"/>}
                       <Area type="monotone" dataKey="balance" stroke={strokeColor} fill={fillColor} strokeWidth={2}
-                        dot={(p)=>p.index===selMonth?<circle key={p.index} cx={p.cx} cy={p.cy} r={4} fill={p.value>=0?C.teal:C.red}/>:<circle key={p.index} r={0}/>}/>
+                        dot={(p)=>p.index===selMonth?<circle key={p.index} cx={p.cx} cy={p.cy} r={4} fill={(p.payload?.balance??0)>=0?C.teal:C.red}/>:<circle key={p.index} r={0}/>}/>
                     </AreaChart>
                   </ResponsiveContainer>
                 </Card>
@@ -2332,12 +2511,12 @@ function App() {
                 <div style={{fontSize:11,color:C.gray,marginLeft:"auto",alignSelf:"center"}}>Actual = logged weekly entries only</div>
               </div>
               {budgetVsActual.every(d=>d.Actual===0)
-                ? <div style={{textAlign:"center",padding:"32px 0",fontSize:12,color:C.gray}}>No spending logged yet — months will appear here as you log entries.</div>
+                ? <div style={{textAlign:"center",padding:"28px 16px",fontSize:12,color:C.textMid,border:`1px dashed ${C.borderDark}`,borderRadius:12,background:C.surface}}>No spending logged yet — months will appear here as you log entries.</div>
                 : <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={budgetVsActual.filter(d=>d.Actual>0)} barGap={2} barCategoryGap="28%">
                   <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
                   <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
-                  <Tooltip formatter={v=>fmt(v)} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
+                  <Tooltip separator=": " formatter={v=>fmt(v)} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.glassTooltip,color:C.text,border:"1px solid rgba(255,255,255,0.16)",borderRadius:10,fontSize:12,backdropFilter:"blur(20px)"}}/>
                   <Bar dataKey="Budgeted" fill={C.teal} radius={[3,3,0,0]} opacity={0.85}/>
                   <Bar dataKey="Actual" fill={C.red} radius={[3,3,0,0]}/>
                 </BarChart>
@@ -2376,7 +2555,7 @@ function App() {
                       </button>
                       {piePickerOpen && <>
                         <div onClick={()=>setPiePickerOpen(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
-                        <div style={{position:"absolute",right:0,top:"calc(100% + 4px)",background:C.bgDark,border:`1px solid ${C.border}`,borderRadius:10,padding:12,zIndex:100,width:220,boxShadow:"0 4px 20px rgba(0,0,0,0.18)"}}>
+                        <div style={{position:"absolute",right:0,top:"calc(100% + 4px)",background:C.glassTooltip,backdropFilter:"blur(28px)",WebkitBackdropFilter:"blur(28px)",border:"1px solid rgba(255,255,255,0.16)",borderRadius:12,padding:12,zIndex:100,width:220,boxShadow:"0 8px 32px rgba(0,0,0,0.40)"}}>
                           <div style={{fontSize:10,color:C.gray,fontWeight:600,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:8}}>
                             {pieMonthEnd===null ? "Select month or drag a range" : "Range selected — click to start over"}
                           </div>
@@ -2409,12 +2588,12 @@ function App() {
                     </div>
                   </div>
                   {pieTotal===0
-                    ? <div style={{textAlign:"center",padding:"32px 0",fontSize:12,color:C.gray}}>No spending logged for this period yet.</div>
-                    : <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,alignItems:"start"}}>
+                    ? <div style={{textAlign:"center",padding:"28px 16px",fontSize:12,color:C.textMid,border:`1px dashed ${C.borderDark}`,borderRadius:12,background:C.surface}}>No spending logged for this period yet.</div>
+                    : <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,300px),1fr))",gap:16,alignItems:"start"}}>
                         <ResponsiveContainer width="100%" height={210}>
                           <PieChart><Pie data={pieSeries} dataKey="value" cx="50%" cy="50%" innerRadius={54} outerRadius={88} paddingAngle={2}>
                             {pieSeries.map((e,i)=><Cell key={i} fill={e.color}/>)}
-                          </Pie><Tooltip formatter={v=>fmt(v)} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/></PieChart>
+                          </Pie><Tooltip separator=": " formatter={v=>fmt(v)} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.glassTooltip,color:C.text,border:"1px solid rgba(255,255,255,0.16)",borderRadius:10,fontSize:12,backdropFilter:"blur(20px)"}}/></PieChart>
                         </ResponsiveContainer>
                         <div style={{paddingTop:8}}>
                           {cats.map((cat,i)=>{
@@ -2487,7 +2666,7 @@ function App() {
                     })}
                   </div>
                   {filteredTrend.length===0
-                    ? <div style={{textAlign:"center",padding:"32px 0",fontSize:12,color:C.gray}}>No spending logged yet — entries will appear here as you log them.</div>
+                    ? <div style={{textAlign:"center",padding:"28px 16px",fontSize:12,color:C.textMid,border:`1px dashed ${C.borderDark}`,borderRadius:12,background:C.surface}}>No spending logged yet — entries will appear here as you log them.</div>
                     : <ResponsiveContainer width="100%" height={200}>
                     <LineChart data={(()=>{
                       if(filteredTrend.length>1) return filteredTrend;
@@ -2501,7 +2680,7 @@ function App() {
                     })()} margin={{top:4,right:4,bottom:0,left:0}}>
                       <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
                       <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
-                      <Tooltip formatter={v=>fmt(v)} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
+                      <Tooltip separator=": " formatter={v=>fmt(v)} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.glassTooltip,color:C.text,border:"1px solid rgba(255,255,255,0.16)",borderRadius:10,fontSize:12,backdropFilter:"blur(20px)"}}/>
                       <Legend wrapperStyle={{fontSize:11,paddingTop:8}}/>
                       {activeCats.map((c,i)=>(
                         <Line key={c.id} type="monotone" dataKey={c.label} stroke={CHART_COLORS[cats.findIndex(x=>x.id===c.id)%CHART_COLORS.length]} strokeWidth={2} dot={false} activeDot={{r:4}}/>
@@ -2545,7 +2724,7 @@ function App() {
                 return {name:c.label,A:a,B:b,delta:b-a,color:CHART_COLORS[i%CHART_COLORS.length]};
               }).filter(r=>r.A>0||r.B>0);
 
-              const selStyle={fontSize:12,border:`1px solid ${C.border}`,borderRadius:7,padding:"5px 8px",background:C.bg,color:C.text,cursor:"pointer"};
+              const selStyle={fontSize:12,border:`1px solid ${C.border}`,borderRadius:7,padding:"5px 8px",background:"rgba(255,255,255,0.07)",color:C.text,cursor:"pointer"};
               return (
                 <Card>
                   <SectionTitle>Comparison</SectionTitle>
@@ -2559,12 +2738,12 @@ function App() {
                     </select>
                   </div>
                   {cmpData.length===0
-                    ? <div style={{textAlign:"center",padding:"32px 0",fontSize:12,color:C.gray}}>No spending logged for either period — entries will appear here once you log them.</div>
+                    ? <div style={{textAlign:"center",padding:"28px 16px",fontSize:12,color:C.textMid,border:`1px dashed ${C.borderDark}`,borderRadius:12,background:C.surface}}>No spending logged for either period — entries will appear here once you log them.</div>
                     : <ResponsiveContainer width="100%" height={200}>
                     <BarChart data={cmpData} barGap={2} barCategoryGap="28%">
                       <XAxis dataKey="name" tick={{fontSize:10,fill:C.gray}} axisLine={false} tickLine={false}/>
                       <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
-                      <Tooltip cursor={false} formatter={(v,name)=>[fmt(v), name==="A"?defaultA.label:defaultB.label]} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
+                      <Tooltip separator=": " cursor={false} formatter={(v,name)=>[fmt(v), name==="A"?defaultA.label:defaultB.label]} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.glassTooltip,color:C.text,border:"1px solid rgba(255,255,255,0.16)",borderRadius:10,fontSize:12,backdropFilter:"blur(20px)"}}/>
                       <Legend formatter={(v)=>v==="A"?defaultA.label:defaultB.label} wrapperStyle={{fontSize:11,paddingTop:8}}/>
                       <Bar dataKey="A" fill={C.teal} radius={[3,3,0,0]} opacity={0.85}/>
                       <Bar dataKey="B" fill={C.amber} radius={[3,3,0,0]}/>
@@ -2619,9 +2798,9 @@ function App() {
                 <BarChart data={barData} barGap={4}>
                   <XAxis dataKey="name" tick={{fontSize:12,fill:C.gray}} axisLine={false} tickLine={false}/>
                   <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
-                  <Tooltip formatter={v=>fmt(v)+"/mo"} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
-                  <Bar dataKey="Spendable" fill={C.teal} radius={[4,4,0,0]}/>
-                  <Bar dataKey="Spend" fill={C.red} radius={[4,4,0,0]}/>
+                  <Tooltip separator=": " formatter={v=>fmt(v)+"/mo"} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.glassTooltip,color:C.text,border:"1px solid rgba(255,255,255,0.16)",borderRadius:10,fontSize:12,backdropFilter:"blur(20px)"}}/>
+                  <Bar dataKey="Spendable" name="Spendable" fill={C.teal} radius={[4,4,0,0]}/>
+                  <Bar dataKey="Spend" name="Budget" fill={C.red} radius={[4,4,0,0]}/>
                 </BarChart>
               </ResponsiveContainer>
             </Card>
@@ -2644,7 +2823,7 @@ function App() {
               if(unfunded.length===0) return null;
               const suggested=Math.round(examBudget/unfunded.length);
               return (
-                <div style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",background:C.tealLight,borderRadius:8,marginBottom:14,fontSize:12}}>
+                <div style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",background:C.tealLight,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",border:`1px solid rgba(90,154,114,0.28)`,borderRadius:8,marginBottom:14,fontSize:12}}>
                   <span style={{color:C.teal,fontSize:15,flexShrink:0}}>◎</span>
                   <div style={{flex:1,color:C.teal,lineHeight:1.6}}>
                     Your USMLE/Exams budget has <strong>{fmt(examBudget)}/mo</strong> allocated.
@@ -2674,7 +2853,7 @@ function App() {
                 const monthsUntilExam=examDateObj?Math.max(1,Math.ceil((examDateObj-new Date())/2628000000)):null;
                 const neededMonthly=(!funded&&monthsUntilExam)?Math.ceil(remaining/monthsUntilExam):null;
                 return (
-                  <div key={g.id} style={{padding:"14px",border:`1px solid ${funded?C.green:C.border}`,borderRadius:10,background:C.bgDark}}>
+                  <div key={g.id} style={{padding:"14px",border:`1px solid ${funded?C.green:C.border}`,borderRadius:10,background:C.surface,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                       <div>
                         <div style={{fontWeight:700,fontSize:14,color:C.text}}>{g.label}</div>
@@ -2728,7 +2907,7 @@ function App() {
           <Card>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
               <SectionTitle>Deposit History</SectionTitle>
-              <span style={{fontSize:11,color:C.gray}}>{(data.savingsLog||[]).length} entries</span>
+              <span style={{fontSize:11,color:C.gray}}>{(data.savingsLog||[]).length} {(data.savingsLog||[]).length===1?"entry":"entries"}</span>
             </div>
             {(data.savingsLog||[]).length===0
               ?<div style={{textAlign:"center",padding:"16px 0",color:C.gray,fontSize:13}}>No deposits logged yet — use "Log deposit" above.</div>
@@ -2749,7 +2928,7 @@ function App() {
                         const slEntry=(d.savingsLog||[]).find(s=>s.id===entry.id);
                         reverseDepositGroup(d, slEntry);
                         upd(d);
-                      }} style={{width:26,height:26,borderRadius:6,background:C.bg,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:C.gray,fontSize:14,fontWeight:700}}>×</button>
+                      }} style={{width:26,height:26,borderRadius:6,background:C.surface,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",color:C.gray,fontSize:14,fontWeight:700}}>×</button>
                     </div>
                   );
                 })
@@ -2830,21 +3009,21 @@ function App() {
                       </defs>
                       <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
                       <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>v>=1000?"$"+Math.round(v/1000)+"k":("$"+v)} axisLine={false} tickLine={false} width={44}/>
-                      <Tooltip formatter={v=>[fmt(v),"Projected balance"]} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.bgDark,color:C.text,border:`1px solid ${C.border}`,borderRadius:8,fontSize:12}}/>
+                      <Tooltip separator=": " formatter={v=>[fmt(v),"Projected balance"]} labelStyle={{color:C.text}} itemStyle={{color:C.text}} contentStyle={{background:C.glassTooltip,color:C.text,border:"1px solid rgba(255,255,255,0.16)",borderRadius:10,fontSize:12,backdropFilter:"blur(20px)"}}/>
                       <ReferenceLine y={0} stroke={C.border} strokeDasharray="4 2"/>
                       <Area type="monotone" dataKey="balance" stroke={C.teal} fill="url(#projGrad)" strokeWidth={2}/>
                     </AreaChart>
                   </ResponsiveContainer>
                   <div style={{display:"flex",gap:12,marginTop:14,flexWrap:"wrap"}}>
-                    <div style={{flex:1,minWidth:160,background:C.bgDark,borderRadius:9,padding:"12px 14px",border:`1px solid ${C.border}`}}>
+                    <div style={{flex:1,minWidth:160,background:C.surface,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderRadius:10,padding:"12px 14px",border:`1px solid ${C.border}`}}>
                       <div style={{fontSize:11,color:C.gray,marginBottom:4}}>Projected graduation balance</div>
-                      <div style={{fontSize:20,fontWeight:700,color:gradBal>=0?C.teal:C.red}}>{gradBal>=0?"+":""}{fmt(gradBal)}</div>
+                      <div style={{fontSize:20,fontWeight:700,color:gradBal>=0?C.teal:C.red,fontFamily:"'Newsreader',Georgia,serif"}}>{gradBal>=0?"+":""}{fmt(gradBal)}</div>
                       <div style={{fontSize:10,color:C.gray,marginTop:2}}>in ~{moToGrad} months at {apy||0}% APY</div>
                     </div>
                     {totalAccumulatedBalance>500 && hysaGain>0 && (
-                      <div style={{flex:1,minWidth:160,background:C.bgDark,borderRadius:9,padding:"12px 14px",border:`1px solid ${C.border}`}}>
+                      <div style={{flex:1,minWidth:160,background:C.surface,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderRadius:10,padding:"12px 14px",border:`1px solid ${C.border}`}}>
                         <div style={{fontSize:11,color:C.gray,marginBottom:4}}>HYSA interest / year</div>
-                        <div style={{fontSize:20,fontWeight:700,color:C.green}}>+{fmt(hysaGain)}</div>
+                        <div style={{fontSize:20,fontWeight:700,color:C.green,fontFamily:"'Newsreader',Georgia,serif"}}>+{fmt(hysaGain)}</div>
                         <div style={{fontSize:10,color:C.gray,marginTop:2}}>on your {fmt(totalAccumulatedBalance)} total balance at 4.5% APY</div>
                       </div>
                     )}
@@ -2947,8 +3126,8 @@ function App() {
               const disb=Math.max(g-tf-hi,0),oth=(Number(y.otherIncome)||0)*12;
               const moD=(disb+oth)/12,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
               return (
-                <Card key={y.id} accent={y.type==="extended"?C.amber:C.red}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+                <Card key={y.id} accent={moS>=0?C.teal:C.red}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,flexWrap:"wrap",gap:8,rowGap:10}}>
                     <div>
                       <div style={{fontWeight:700,fontSize:14,color:C.text}}>{y.label}</div>
                       <div style={{display:"flex",gap:4,marginTop:6,alignItems:"center"}}>
@@ -2959,7 +3138,7 @@ function App() {
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <Pill ok={moS>=0} warn={moS<0}>{fmtS(moS)}/mo</Pill>
-                      {data.years.length>1 && <button onClick={()=>setConfirmYearRemove(y.id)} style={{width:22,height:22,borderRadius:6,border:`1px solid ${C.border}`,background:"transparent",color:C.gray,cursor:"pointer",fontSize:12,flexShrink:0}} title="Remove year">✕</button>}
+                      {data.years.length>1 && <button onClick={()=>setConfirmYearRemove(y.id)} style={{width:28,height:28,borderRadius:7,border:`1px solid ${C.border}`,background:"transparent",color:C.textMid,cursor:"pointer",fontSize:12,flexShrink:0,opacity:0.85}} title="Remove year">✕</button>}
                     </div>
                   </div>
                   {y.type==="extended" && <Banner type="warn">Extended year: tuition waived, fees only</Banner>}
@@ -2983,7 +3162,7 @@ function App() {
                       <div style={{fontSize:10,color:C.gray,marginTop:1}}>{note}</div>
                     </div>
                   ))}
-                  <div style={{marginTop:12,padding:"10px 12px",background:C.tealLight,borderRadius:8,fontSize:12}}>
+                  <div style={{marginTop:12,padding:"10px 12px",background:C.tealLight,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",border:`1px solid rgba(90,154,114,0.22)`,borderRadius:8,fontSize:12}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{color:C.textMid}}>Disbursed/yr</span><strong style={{color:C.teal}}>{fmt(disb)}</strong></div>
                     <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid}}>Monthly spendable</span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
                   </div>
@@ -3031,7 +3210,7 @@ function App() {
                 </tbody>
               </table>
             </div>
-            <div style={{marginTop:10,padding:"8px 12px",background:totDisburse-totSpend>=0?C.tealLight:C.redLight,borderRadius:8,fontSize:12,color:totDisburse-totSpend>=0?C.teal:C.red,fontWeight:600}}>
+            <div style={{marginTop:10,padding:"8px 12px",background:totDisburse-totSpend>=0?C.tealLight:C.redLight,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",border:`1px solid ${totDisburse-totSpend>=0?"rgba(90,154,114,0.28)":"rgba(180,80,80,0.25)"}`,borderRadius:8,fontSize:12,color:totDisburse-totSpend>=0?C.teal:C.red,fontWeight:600}}>
               {data.years.length}-year net: {fmtS(totDisburse-totSpend)}
             </div>
           </Card>
@@ -3053,7 +3232,7 @@ function App() {
                     ["Health insurance","$8,100","$8,100","$8,100","$8,100","$8,100"],
                     ["Total","$108,642","$112,868","$118,492","$115,518","$47,076"],
                   ].map(([l,...vals],i)=>(
-                    <tr key={l} style={{background:i===5?C.bg:"transparent"}}>
+                    <tr key={l} style={{background:i===5?C.surface:"transparent"}}>
                       <td style={{padding:"7px 8px",fontWeight:i===5?700:400,color:i===5?C.text:C.textMid}}>{l}</td>
                       {vals.map((v,j)=><td key={j} style={{padding:"7px 8px",fontWeight:i===5?700:400,color:i===5?C.red:C.text}}>{v}</td>)}
                     </tr>
@@ -3069,12 +3248,12 @@ function App() {
       {/* ══════════════ SUBSCRIPTIONS ══════════════ */}
       {tab==="subscriptions" && (
         <div style={{display:"flex",flexDirection:"column",gap:16}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,300px),1fr))",gap:16}}>
             {/* Form */}
             <Card>
               <SectionTitle>{subEdit?"Edit subscription":"Add subscription"}</SectionTitle>
               {subName && (
-                <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:C.bg,borderRadius:8,marginBottom:14,border:`1px solid ${C.border}`}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:C.surface,borderRadius:8,marginBottom:14,border:`1px solid ${C.border}`}}>
                   <BrandIcon name={subName} size={32}/>
                   <span style={{fontSize:12,color:C.textMid,fontStyle:"italic"}}>Preview</span>
                 </div>
@@ -3108,7 +3287,7 @@ function App() {
                     style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,boxSizing:"border-box"}}/>
                 </div>
                 <div style={{display:"flex",gap:8,marginTop:2}}>
-                  <button onClick={saveSub} style={{flex:1,padding:"9px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.red,color:"#fff",cursor:"pointer"}}>
+                  <button onClick={saveSub} disabled={!subName.trim()||!(parseFloat(subAmt)>0)} style={{flex:1,padding:"9px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:(!subName.trim()||!(parseFloat(subAmt)>0))?C.surface:C.teal,color:(!subName.trim()||!(parseFloat(subAmt)>0))?C.gray:C.bg,cursor:(!subName.trim()||!(parseFloat(subAmt)>0))?"not-allowed":"pointer"}}>
                     {subEdit?"Save changes":"Add subscription"}
                   </button>
                   {subEdit && <button onClick={()=>{setSubEdit(null);setSubName("");setSubAmt("");setSubCycle("monthly");setSubRenew("");}} style={{padding:"9px 14px",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,background:"transparent",cursor:"pointer",color:C.gray}}>Cancel</button>}
@@ -3127,9 +3306,9 @@ function App() {
                     return <>
                       <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
                         {[{l:"Monthly",v:fmtD(mo)},{l:"Annual",v:fmt(mo*12)},{l:"Active",v:String(subs.filter(s=>s.active!==false).length)}].map(m=>(
-                          <div key={m.l} style={{background:C.bg,borderRadius:8,padding:"10px 14px",flex:1}}>
+                          <div key={m.l} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 14px",flex:1}}>
                             <div style={{fontSize:10,color:C.gray,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:3}}>{m.l}</div>
-                            <div style={{fontSize:18,fontWeight:700,color:C.red}}>{m.v}</div>
+                            <div style={{fontSize:18,fontWeight:700,color:C.red,fontFamily:"'Newsreader',Georgia,serif"}}>{m.v}</div>
                           </div>
                         ))}
                       </div>
@@ -3191,9 +3370,9 @@ function App() {
             <SectionTitle>Spending categories</SectionTitle>
             {cats.map(cat=>(
               <div key={cat.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${C.border}`}}>
-                <div style={{width:8,height:8,borderRadius:99,background:CHART_COLORS[cats.findIndex(c=>c.id===cat.id)%CHART_COLORS.length],flexShrink:0}}/>
+                <div style={{width:8,height:8,borderRadius:99,background:CHART_COLORS[cats.findIndex(c=>c.id===cat.id)%CHART_COLORS.length],flexShrink:0,boxShadow:"0 0 0 1px rgba(255,255,255,0.28)"}}/>
                 <span style={{flex:1,fontSize:13,color:C.text}}>{cat.label}</span>
-                {cat.locked && <span style={{fontSize:11,color:C.gray,background:C.bg,padding:"2px 8px",borderRadius:5}}>Fixed</span>}
+                {cat.locked && <span style={{fontSize:11,color:C.gray,background:C.surface,border:`1px solid ${C.border}`,padding:"2px 8px",borderRadius:5}}>Fixed</span>}
                 {cat.autoCalc && <span style={{fontSize:11,color:C.blue,background:C.blueLight,padding:"2px 8px",borderRadius:5}}>Auto</span>}
                 {!cat.locked && !cat.autoCalc && <button onClick={()=>delCat(cat.id)} style={{fontSize:11,padding:"3px 10px",borderRadius:6,border:`1px solid ${C.redMid}`,background:C.redLight,color:C.red,cursor:"pointer",fontWeight:500}}>Remove</button>}
               </div>
@@ -3201,14 +3380,14 @@ function App() {
             <div style={{marginTop:14,display:"flex",gap:8,alignItems:"center"}}>
               <input placeholder="New category name" value={newCatName} onChange={e=>setNewCatName(e.target.value)}
                 style={{flex:1,fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg}}/>
-              <button onClick={addCat} style={{padding:"8px 18px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.red,color:"#fff",cursor:"pointer"}}>Add</button>
+              <button onClick={addCat} disabled={!newCatName.trim()} style={{padding:"8px 18px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:!newCatName.trim()?C.surface:C.teal,color:!newCatName.trim()?C.gray:C.bg,cursor:!newCatName.trim()?"not-allowed":"pointer"}}>Add</button>
             </div>
           </Card>
 
           <Card>
             <SectionTitle>Key notes</SectionTitle>
             {[
-              {title:"Monthly spendable", body:"Year 1: ~$1,935/mo after tuition and health insurance. Covers rent ($996), food, transport, and everything else. NYC is expensive — plan carefully."},
+              {title:"Monthly spendable", body:"What's left of your grant each month after tuition and health insurance (see the Monthly spendable tile above). It covers rent, food, transport, and everything else. NYC is expensive — plan carefully."},
               {title:"Health insurance",  body:"Covered by your WCM grant. It's deducted from the grant before disbursement, not from your living budget."},
               {title:"Extended year",     body:"Tuition waived, fees only (~$5,232). Your grant for that year is TBD — contact finaid@med.cornell.edu early."},
               {title:"USMLE exams",       body:"Steps 1 and 2 cost ~$670–950 each and aren't auto-covered. Use the exam fund budget line and start saving Year 1."},
