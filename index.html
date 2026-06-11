@@ -10,9 +10,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="Marro"/>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;500;600;700&family=Inter:wght@200;300;400;500;600;700&display=swap" rel="stylesheet"/>
+<link rel="preload" href="fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin/>
+<link rel="preload" href="fonts/newsreader-var.woff2" as="font" type="font/woff2" crossorigin/>
 <link rel="apple-touch-icon" href="icon.svg"/>
 <link rel="icon" href="icon.svg" type="image/svg+xml"/>
 <script>
@@ -28,6 +27,17 @@
 }catch(e){ document.documentElement.dataset.theme = "dark"; }})();
 </script>
 <style>
+  /* ── Self-hosted variable fonts (SIL OFL 1.1 — fonts/OFL.txt). Offline PWA: no external requests. ── */
+  @font-face {
+    font-family: 'Inter';
+    src: url('fonts/inter-var.woff2') format('woff2');
+    font-weight: 100 900; font-style: normal; font-display: swap;
+  }
+  @font-face {
+    font-family: 'Newsreader';
+    src: url('fonts/newsreader-var.woff2') format('woff2');
+    font-weight: 200 800; font-style: normal; font-display: swap;
+  }
   /* ── Theme variables (mirrored subset of the JS THEMES object — keep in sync) ── */
   :root {
     --bg: #101210;
@@ -166,11 +176,12 @@
   .tabbar { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .tabbar::-webkit-scrollbar { display: none; }
   @media (max-width: 600px) {
-    .tabbar {
+    .tabbar, .scrollx {
       -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent 100%);
               mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent 100%);
     }
   }
+  .scrollx { scrollbar-width: thin; }
 
   /* ── Ambient blob background ── */
   .blob-layer {
@@ -997,17 +1008,37 @@ const Banner = ({children, type="info", onClose}) => {
   );
 };
 
-const Modal = ({title, onClose, children, width=440}) => (
+const Modal = ({title, onClose, children, width=440}) => {
+  const panelRef = React.useRef(null);
+  useEffect(()=>{
+    const panel = panelRef.current;
+    const prevFocus = document.activeElement;
+    const focusables = () => panel ? [...panel.querySelectorAll('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])')].filter(el=>!el.disabled) : [];
+    (focusables()[0] || panel)?.focus();
+    const onKey = (e) => {
+      if(e.key==="Escape"){ e.stopPropagation(); onClose && onClose(); }
+      if(e.key==="Tab"){
+        const f = focusables(); if(!f.length) return;
+        const first=f[0], last=f[f.length-1];
+        if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
+        else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return ()=>{ document.removeEventListener("keydown", onKey); prevFocus && prevFocus.focus && prevFocus.focus(); };
+  },[]);
+  return (
   <div onClick={onClose} style={{position:"fixed",inset:0,background:C.scrim,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(14px)",WebkitBackdropFilter:"blur(14px)"}}>
-    <div onClick={e=>e.stopPropagation()} className="mm" style={{padding:"24px",maxWidth:width,width:"calc(100% - 32px)",maxHeight:"90vh",overflowY:"auto"}}>
+    <div ref={panelRef} role="dialog" aria-modal="true" aria-label={typeof title==="string"?title:undefined} tabIndex={-1} onClick={e=>e.stopPropagation()} className="mm" style={{padding:"24px",maxWidth:width,width:"calc(100% - 32px)",maxHeight:"90vh",overflowY:"auto",outline:"none"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
         <div style={{fontWeight:700,fontSize:16,color:C.text}}>{title}</div>
-        <button onClick={onClose} style={{background:"rgba(255,255,255,0.10)",border:"1px solid rgba(255,255,255,0.14)",cursor:"pointer",width:28,height:28,borderRadius:8,fontSize:18,color:C.textMid,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,transition:"background 0.15s"}}><Icon name="close" size={14}/></button>
+        <button aria-label="Close dialog" onClick={onClose} style={{background:C.surfaceMid,border:`1px solid ${C.border}`,cursor:"pointer",width:28,height:28,borderRadius:8,fontSize:18,color:C.textMid,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,transition:"background 0.15s"}}><Icon name="close" size={14}/></button>
       </div>
       {children}
     </div>
   </div>
-);
+  );
+};
 
 const InfoTip = ({text}) => {
   const [show,setShow] = useState(false);
@@ -3119,6 +3150,7 @@ function App() {
                       <div style={{display:"flex",gap:6,alignItems:"center"}}>
                         {!funded&&onTrack===true&&<Pill ok>On track</Pill>}
                         {!funded&&onTrack===false&&<Pill warn>Behind</Pill>}
+                        {!funded&&onTrack==null&&<Pill neutral>No monthly plan</Pill>}
                         <Pill ok={funded} warn={!funded&&pct<50} neutral={!funded&&pct>=50}>{pct}%</Pill>
                       </div>
                     </div>
@@ -3433,7 +3465,7 @@ function App() {
           {/* 5-year table */}
           <Card>
             <SectionTitle>{data.years.length}-year overview</SectionTitle>
-            <div style={{overflowX:"auto"}}>
+            <div className="scrollx" style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead><tr>
                   {["Year","Grant","School costs","Disbursed/yr","Spendable/mo","Budget/mo","Surplus/mo","Cumulative"].map(h=>
@@ -3471,7 +3503,7 @@ function App() {
           {/* Official COA */}
           <Card>
             <SectionTitle sub="Source: studentservices.weill.cornell.edu">Official cost of attendance 2025-26</SectionTitle>
-            <div style={{overflowX:"auto"}}>
+            <div className="scrollx" style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead><tr>
                   {["Component","Year 1","Year 2","Year 3","Year 4","Extended"].map(h=><th key={h} style={{textAlign:"left",fontSize:10,color:C.gray,padding:"5px 8px",borderBottom:`1px solid ${C.border}`,fontWeight:600}}>{h}</th>)}
