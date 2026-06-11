@@ -331,7 +331,7 @@ const gistFetch = async () => {
       // Cached ID failed — clear it and fall through to discovery
       localStorage.removeItem(GIST_ID_KEY);
     }
-    // Discovery mode: server scans gist list to find WCM gist
+    // Discovery mode: server scans gist list to find the app data gist
     const r = await fetch(`/api/sync`);
     if(!r.ok) return null;
     const j = await r.json();
@@ -793,7 +793,7 @@ const Icon = ({name, size=16, color="currentColor", strokeWidth=1.4, style}) => 
 };
 
 // ── Year configs ──────────────────────────────────────────────────────────────
-// NOTE: Grant already includes health insurance ($8,100) — WCM covers it
+// NOTE: Grant already includes health insurance ($8,100) — the school covers it
 // So grant displayed = base grant + healthIns; school deducts tuitionFees + healthIns
 const YEAR_CONFIGS = [
   { id:0, label:"Year 1 — 2026-27", type:"standard",  tuitionFees:76648, healthIns:8100, grant:109848, otherIncome:0, housing:996,  housingNote:"Olin Hall",      wcmLivingAllowance:21440, notes:"", startDate:"2026-08-01", endDate:"2027-08-15" },
@@ -837,7 +837,7 @@ const DEFAULT_STATE = {
   surplusBank: 0,
   coverMonths: {},
   monthlyDeposits: {},
-  logo: null,  // null=WCM official, 'w'=monogram, or base64 data URL
+  logo: null,  // legacy field (kept for sync compatibility)
   monthDisabled: {},  // {"0-Aug":["exams"], "0-Sep":["books"]} — yearId-month: disabled cat ids
   darkMode: false,
   stepGoals: [
@@ -2262,7 +2262,7 @@ function App() {
           <MarroLogo/>
           <div>
             <div style={{fontSize:17,fontWeight:700,color:C.text,letterSpacing:"-0.02em",fontFamily:"'Newsreader', Georgia, serif"}}>Marro</div>
-            <div style={{fontSize:11,color:C.gray,marginTop:1}}>MD Class of 2030 · Extended Curriculum</div>
+            <div style={{fontSize:11,color:C.gray,marginTop:1}}>Medical school budget companion</div>
           </div>
         </div>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
@@ -2307,7 +2307,7 @@ function App() {
       {/* ── Top metrics ── */}
       <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
         <MetricTile label="Monthly spendable"  value={fmt(moSpendable)} sub="after tuition & fees" color={C.teal}/>
-        <MetricTile label="Monthly plan"        value={fmt(moSpend)}     sub={subsMo>0?`incl. ${fmt(subsMo)} subs`:"planned spending"}/>
+        <MetricTile label="Monthly plan"        value={fmt(moSpend)}     sub={subsMo>0?`incl. ${fmtA(subsMo)} subs`:"planned spending"}/>
         <MetricTile label="Monthly surplus"    value={fmtS(moSurplus)}  sub={moSurplus>0?"available to save":moSurplus<0?"over budget":"balanced"} color={moSurplus>0?C.green:moSurplus<0?C.neg:C.gray}/>
         <MetricTile label="Year net"           value={fmtS(curYrNet)}   sub="full 12 months" color={curYrNet>=0?C.green:C.neg}/>
         <MetricTile label="Total balance"    value={fmtS(totalAccumulatedBalance)} sub={"thru "+MONTH_NAMES[selMonth]+(priorYearsCarryover!==0?" · incl. prior yrs":"")} color={totalAccumulatedBalance>=0?C.teal:C.neg}/>
@@ -2350,7 +2350,7 @@ function App() {
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:C.surface,borderRadius:8,marginBottom:10,border:`1px solid ${C.border}`}}>
               <div style={{flex:1}}>
                 <div style={{fontSize:12,fontWeight:600,color:C.text}}>Housing</div>
-                <div style={{fontSize:11,color:C.gray,marginTop:1,display:"flex",alignItems:"center",gap:4}}>Fixed by housing contract <InfoTip text="Housing is set by your WCM housing assignment. Edit the rate in the Aid & Detail tab."/></div>
+                <div style={{fontSize:11,color:C.gray,marginTop:1,display:"flex",alignItems:"center",gap:4}}>Fixed by housing contract <InfoTip text="Housing is set by your housing contract. Edit the rate in the Aid & Detail tab."/></div>
               </div>
               <div style={{fontWeight:700,fontSize:14,color:C.text}}>{fmt(yr.monthly.housing||0)}<span style={{fontSize:11,fontWeight:400,color:C.gray}}>/mo</span></div>
             </div>
@@ -2800,10 +2800,10 @@ function App() {
               return (
                 <Card>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-                    <SectionTitle style={{margin:0}}>Spending distribution</SectionTitle>
+                    <SectionTitle style={{margin:0}}>Planned breakdown</SectionTitle>
                     <div style={{position:"relative"}}>
                       <button onClick={()=>setPiePickerOpen(o=>!o)} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:8,border:`1px solid ${C.border}`,background:isRange?C.teal+"22":"transparent",color:isRange?C.teal:C.text,fontSize:12,fontWeight:600,cursor:"pointer"}}>
-                        {pieLabel} <span style={{fontSize:10,opacity:0.6}}>▾</span>
+                        {pieLabel} <Icon name="chevron" size={11} style={{opacity:0.6}}/>
                       </button>
                       {piePickerOpen && <>
                         <div onClick={()=>setPiePickerOpen(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
@@ -3368,7 +3368,7 @@ function App() {
         <div style={{display:"flex",flexDirection:"column",gap:16}}>
           {!dismissed["aidnote"] && (
             <Banner type="info" onClose={()=>dismiss("aidnote")}>
-              <strong>How your grant works:</strong> WCM Grant (including health insurance) − tuition & fees − health insurance = disbursed to you for living costs.
+              <strong>How your grant works:</strong> Your grant (including health insurance) − tuition & fees − health insurance = disbursed to you for living costs.
             </Banner>
           )}
 
@@ -3396,7 +3396,7 @@ function App() {
                   </div>
                   {y.type==="extended" && <Banner type="warn">Extended year: tuition waived, fees only</Banner>}
                   {[
-                    {label:"WCM Grant (annual)",       field:"grant",       note:"includes health insurance"},
+                    {label:"Grant (annual)",       field:"grant",       note:"includes health insurance"},
                     {label:"Tuition & fees",            field:"tuitionFees", note:"paid directly to school"},
                     {label:"Health insurance",          field:"healthIns",   note:"school-covered, deducted from grant"},
                     {label:"Housing (monthly)",         field:null,          value:y.monthly.housing||0, note:"per month", isHousing:true},
@@ -3470,7 +3470,7 @@ function App() {
 
           {/* Official COA */}
           <Card>
-            <SectionTitle sub="Source: studentservices.weill.cornell.edu">Official WCM COA 2025-26</SectionTitle>
+            <SectionTitle sub="Source: studentservices.weill.cornell.edu">Official cost of attendance 2025-26</SectionTitle>
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                 <thead><tr>
@@ -3641,8 +3641,8 @@ function App() {
             <SectionTitle>Key notes</SectionTitle>
             {[
               {title:"Monthly spendable", body:"What's left of your grant each month after tuition and health insurance (see the Monthly spendable tile above). It covers rent, food, transport, and everything else. NYC is expensive — plan carefully."},
-              {title:"Health insurance",  body:"Covered by your WCM grant. It's deducted from the grant before disbursement, not from your living budget."},
-              {title:"Extended year",     body:"Tuition waived, fees only (~$5,232). Your grant for that year is TBD — contact finaid@med.cornell.edu early."},
+              {title:"Health insurance",  body:"Covered by your grant. It's deducted from the grant before disbursement, not from your living budget."},
+              {title:"Extended year",     body:"Tuition waived, fees only (~$5,232). Your grant for that year is TBD — contact your financial aid office early."},
               {title:"USMLE exams",       body:"Steps 1 and 2 cost ~$670–950 each and aren't auto-covered. Use the exam fund budget line and start saving Year 1."},
               {title:"Weekly rollover",   body:"Unspent weekly balance rolls into the next week automatically. Unspent monthly balance rolls into the following month with a spending recommendation."},
             ].map((n,i)=>(
