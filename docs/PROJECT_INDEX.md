@@ -8,41 +8,38 @@ Budget planner for a WCM MD student (Class of 2030, extended curriculum). Tracks
 - Push to `main` → Vercel auto-deploy → https://wcm-budget.vercel.app
 - Local dev: `python3 -m http.server 3456 --directory .` (see `launch.json`)
 
-## index.html map (approximate lines, drift expected)
-| Area | ~Line |
+## index.html map — grep keys, not line numbers
+Don't scan the file; `grep -n` the key for the section you need. Keys are stable code identifiers (verify with hit count if editing nearby).
+
+| Area | Grep key |
 |---|---|
-| CSS (focus rings, tabbar fade, glass, date-field theming) | 17–185 |
-| C color tokens + CHART_COLORS | 395–450 |
-| DEFAULT_STATE years | 585 |
-| fmt / fmtS / fmtD / fmtA / fmtSA | 639–646 |
-| Pill, TabBtn, YrBtn, Banner, Card(accent), MetricTile | 700–840 |
-| RenewalDialog | 857 |
-| WeekSelectorModal | 920 |
-| ConflictModal | 945 |
-| App state hooks | ~1000–1050 |
-| saveSub / addYear / linkage logic | 1410–1620 |
-| Reset + remove-year confirmations | ~1660 |
-| Add category modal / deposit modal / add goal modal | 1700–1860 |
-| CSV import (parseCSV, doImport, modal) | 1870–2020 |
-| Header | 2007 |
-| Budget tab | 2060–2260 |
-| Weekly tab | 2270–2400 |
-| Charts tab | 2440–2830 |
-| Savings tab | 2840–3030 |
-| Aid & Detail tab | 3120–3260 |
-| Subscriptions tab | 3270–3380 |
-| Categories tab + Key notes | 3380–3430 |
+| CSS (glass, tabbar fade, focus, date-field theming) | `<style>` (first hit) |
+| Sync merge engine (diff/conflict/apply utils) | `function diffStates` |
+| Color tokens + chart palette | `const C = ` then `CHART_COLORS` |
+| Year configs / default state | `YEAR_CONFIGS` / `const DEFAULT_STATE` |
+| Money formatters (fmt/fmtS/fmtD/fmtA/fmtSA) | `const fmt ` |
+| Shared components (Pill, Card, MetricTile…) | `const Pill` / `const Card` / `MetricTile =` |
+| RenewalDialog / WeekSelectorModal / ConflictModal | `function RenewalDialog` etc. |
+| App state hooks | `function App()` |
+| Subscriptions save / weekly entry add | `const saveSub` / `const addEntry` |
+| Linkage logic (deposits ↔ weekly ↔ budget) | `reverseDeposit` |
+| Reset / remove-year confirmations | `confirmReset` |
+| Add category / deposit / goal modals | `showAddCat` (2nd hit = modal) |
+| CSV import | `parseCSV` / `doImport` |
+| Tab sections (budget, weekly, charts, savings, aid, subscriptions, customize) | `tab==="budget"` etc. |
 
 ## Docs
-- `DESIGN_SYSTEM.md` — tokens, semantic color rules, formatting rules (read before UI work)
-- `UI_AUDIT_LOG.md` — what was found/fixed, what's still open
+- `DATA_MODEL.md` — state schema, year configs, **linkage system**, sync architecture (read before data/logic work)
+- `DESIGN_SYSTEM.md` — brand, tokens, semantic color rules, formatting rules (read before UI work)
+- `MOTION_SYSTEM.md` — animation inventory + design-engineering rules (read before any animation work)
 - `COMPONENT_LIBRARY.md` — shared components & state vocabulary
-- `MOTION_SYSTEM.md` — animation rules
+- `UI_AUDIT_LOG.md` — every audit finding/fix
 - `PRODUCT_DECISIONS.md` — decisions + rationale
-- `FUTURE_WORK.md` — backlog
+- `ROADMAP.md` — phase plan and status
+- `FUTURE_WORK.md` — prioritized backlog
 
 ## Critical rules
 1. Plan first for multi-feature work; visual-verify every UI change before declaring done
-2. Credentials only in Vercel env vars
-3. Read the linkage section in memory (`project_wcm_budget.md`) before touching savings/weekly/entry logic — deposits create linked weekly entries + budget overrides bidirectionally
+2. Credentials only in Vercel env vars — never in `index.html` (public repo; scanners revoke pushed tokens)
+3. Read the linkage section in `DATA_MODEL.md` before touching savings/weekly/entry logic — deposits create linked weekly entries + budget overrides bidirectionally
 4. Offline PWA: no new external resources (fonts, images) without self-hosting

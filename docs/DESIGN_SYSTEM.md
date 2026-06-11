@@ -5,6 +5,12 @@ Single source of truth for visual decisions. Code lives in `index.html` (C token
 ## Concept
 Warm financial almanac under iOS-26-style liquid glass. "Frosted glass over candlelight." Hero detail: **serif numerals (Newsreader) for all money**; Inter for UI chrome.
 
+## Brand
+- **Name "Marro"**: from "marrow" — vital core. Medical-adjacent without clinical feel; frames budgeting as protecting what's essential. Replaced "Ration"/"WCM Budget Planner" June 2026 (repo/URL rename deferred, no functional impact).
+- **Logo — growth rings**: concentric circles (r 11/7.5/4, stroke 1.3, innermost at 0.7 opacity), marigold `#DDA528` dot at center (r 1.4), in a 26×26 viewBox. Metaphor: tree cross-section + histology slide. Header 28×28 in `currentColor`; app icon 56×56 rounded square, `#1E3A2F` bg, `#F6EFDD` strokes.
+- **Wordmark**: "Marro" in Newsreader 500, 22px, letter-spacing 0.01em, cream on dark, right of the mark.
+- **Red does not exist in this UI** as alarm: over-budget is signalled by warmth draining (low-tide `#7C8471`), never red. (Warm clay `#E08A6B` is reserved for destructive/danger affordances — see tokens.)
+
 ## Color tokens (C object)
 | Token | Value | Use |
 |---|---|---|
