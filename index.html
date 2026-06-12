@@ -1097,6 +1097,9 @@ const MonthPicker = ({value, onChange}) => {
 
 // Shared glass popover chrome for the picker family (MonthPicker / PeriodPicker / DateField).
 const popoverStyle = (width, align="left") => ({position:"absolute",top:"calc(100% + 4px)",[align==="right"?"right":"left"]:0,background:C.glassTooltip,backdropFilter:"blur(50px) saturate(200%)",WebkitBackdropFilter:"blur(50px) saturate(200%)",border:`1px solid ${C.borderDark}`,borderRadius:12,padding:12,zIndex:100,width,boxShadow:"0 8px 32px rgba(0,0,0,0.40)"});
+// Modal panels (.mm) have backdrop-filter, which makes them the containing block for
+// position:fixed descendants AND scroll-clips absolute ones — portal to body to escape both.
+const wrapPop = (fixedPos, node) => fixedPos ? ReactDOM.createPortal(node, document.body) : node;
 // Glass cards are stacking contexts, so a popover would paint UNDER the next card.
 // While open, lift the hosting card above its siblings.
 const useLiftCard = (open, ref) => {
@@ -1163,6 +1166,15 @@ const DateField = ({value, onChange, style={}, ariaLabel="Date"}) => {
   const [view, setView] = useState(()=> (value||todayIso).slice(0,7));
   useEffect(()=>{ if(open) setView((value||todayIso).slice(0,7)); },[open]);
   useLiftCard(open, btnRef);
+  // Modal panels (.mm) scroll-clip absolute popovers — anchor fixed to the button instead, flipping up when cramped.
+  const [fixedPos, setFixedPos] = useState(null);
+  useEffect(()=>{
+    if(!open || !btnRef.current || !btnRef.current.closest(".mm")) { setFixedPos(null); return; }
+    const r = btnRef.current.getBoundingClientRect(), W = 248, H = 296;
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - W - 8));
+    const top = r.bottom + 4 + H > window.innerHeight - 8 ? Math.max(8, r.top - H - 4) : r.bottom + 4;
+    setFixedPos({top, left});
+  },[open]);
   const [vy, vm] = view.split("-").map(Number);
   const startOffset = (new Date(vy, vm-1, 1).getDay()+6)%7;   // Monday-start, matches app weeks
   const daysInMonth = new Date(vy, vm, 0).getDate();
@@ -1174,9 +1186,9 @@ const DateField = ({value, onChange, style={}, ariaLabel="Date"}) => {
         <Icon name="calendar" size={14} color={C.gray}/>
         <span style={{flex:1}}>{shown}</span>
       </button>
-      {open && <>
-        <div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
-        <div style={popoverStyle(248)}>
+      {open && wrapPop(fixedPos, <>
+        <div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:fixedPos?1001:99}}/>
+        <div style={fixedPos?{...popoverStyle(248),position:"fixed",top:fixedPos.top,left:fixedPos.left,right:"auto",zIndex:1002}:popoverStyle(248)}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
             <button onClick={()=>nav(-1)} aria-label="Previous month" style={{width:26,height:26,borderRadius:8,border:"none",background:"transparent",color:C.gray,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center"}} className="xbtn"><Icon name="chevron" size={13} style={{transform:"rotate(90deg)"}}/></button>
             <span style={{fontSize:12,fontWeight:600,color:C.text}}>{new Date(vy,vm-1,1).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</span>
@@ -1201,7 +1213,7 @@ const DateField = ({value, onChange, style={}, ariaLabel="Date"}) => {
             <button onClick={()=>{onChange(todayIso);setOpen(false);}} style={{background:"none",border:"none",color:C.marigold,cursor:"pointer",fontSize:11,fontWeight:600,padding:0}}>Today</button>
           </div>
         </div>
-      </>}
+      </>)}
     </div>
   );
 };
