@@ -1385,7 +1385,7 @@ const US_MED_SCHOOLS = [
   {name:"University of California, San Diego School of Medicine"},
   {name:"University of California, San Francisco School of Medicine"},
   {name:"University of California, Los Angeles David Geffen School of Medicine"},
-  {name:"University of Colorado School of Medicine"},
+  {name:"University of Colorado School of Medicine", campuses:["Aurora (Anschutz), CO","Colorado Springs, CO","Fort Collins, CO"]},
   {name:"University of Connecticut School of Medicine"},
   {name:"Quinnipiac University Frank H. Netter MD School of Medicine"},
   {name:"Yale School of Medicine"},
@@ -2964,9 +2964,25 @@ function App() {
 
       {/* ── Header ── */}
       {(()=>{
-        const hr=new Date().getHours();
-        const salutation=hr<12?"Good morning":hr<17?"Good afternoon":"Good evening";
-        const name=data.preferredName?`, ${data.preferredName}`:"";
+        const n=data.preferredName;
+        const withName=[
+          `Back at it, ${n}.`,`Hey ${n} — let's see where things stand.`,
+          `Your money's been patient, ${n}.`,`Welcome back, ${n}.`,
+          `Ready when you are, ${n}.`,`Let's take stock, ${n}.`,
+          `Good to see you, ${n}.`,`Here's the plan, ${n}.`,
+          `Checking in, ${n}?`,`Budgets don't manage themselves, ${n}.`,
+        ];
+        const withoutName=[
+          "Back at it.","Here's where things stand.",
+          "Your money's been patient.","Let's take stock.",
+          "Ready when you are.","Good to be back.",
+          "Here's the plan.","Checking in.",
+          "Budgets don't manage themselves.","Where were we?",
+        ];
+        const pool=n?withName:withoutName;
+        // Changes daily, stable within a session
+        const dayIdx=Math.floor(Date.now()/86400000)%pool.length;
+        const greeting=pool[dayIdx];
         const initials=(data.preferredName||session?.user?.email||"?").slice(0,1).toUpperCase();
         return (
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,paddingBottom:16,borderBottom:`1px solid ${C.border}`,flexWrap:"wrap",columnGap:12,rowGap:12}}>
@@ -2974,7 +2990,7 @@ function App() {
             <MarroLogo/>
             <div>
               <div style={{fontSize:24,fontWeight:600,color:C.text,letterSpacing:"-0.02em",lineHeight:1.1,fontFamily:"'Newsreader', Georgia, serif"}}>Marro<span style={{color:C.marigold}}>.</span></div>
-              <div style={{fontSize:11,color:C.gray,marginTop:2}}>{salutation}{name}.</div>
+              <div style={{fontSize:11,color:C.gray,marginTop:2}}>{greeting}</div>
             </div>
           </div>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
