@@ -97,13 +97,13 @@
     --glass-primary-border: rgba(30,30,20,0.14);
     --glass-modal: rgba(255,255,255,0.60);
     --glass-modal-fallback: #F7F5EE;
-    --blob-opacity: 0.72;
-    --blob1-a: #D8D4C4; --blob1-b: #E8E5DB;
-    --blob2-a: #C7D1DA; --blob2-b: #E3E4E0;
-    --blob3-a: #E5CF9C; --blob3-b: #ECE8DA;
-    --blob4-a: #D5D0BE; --blob4-b: #E7E4D9;
-    --blob-over-a: #CCD1D4; --blob-over-b: #E2E4E5;
-    --blob-bloom-a: #E4C678; --blob-bloom-b: #ECE3CB;
+    --blob-opacity: 0.90;
+    --blob1-a: #C4BFA6; --blob1-b: #DAD6C8;
+    --blob2-a: #ADBFCE; --blob2-b: #CDD5DC;
+    --blob3-a: #DFBC72; --blob3-b: #E8D9A8;
+    --blob4-a: #BFBAAA; --blob4-b: #D6D2C4;
+    --blob-over-a: #B8C2C8; --blob-over-b: #D4D8DC;
+    --blob-bloom-a: #DFBC72; --blob-bloom-b: #EAD898;
     --shadow-card: 0 8px 24px rgba(60,55,40,0.10), inset 0 1px 0 rgba(255,255,255,0.85), inset 0 -1px 0 rgba(60,55,40,0.04);
     --shadow-card-hover: 0 14px 36px rgba(60,55,40,0.15), inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -1px 0 rgba(60,55,40,0.05);
     --shadow-modal: 0 20px 50px rgba(60,55,40,0.22), inset 0 1px 0 rgba(255,255,255,0.9);
@@ -915,6 +915,7 @@ const DEFAULT_STATE = {
   monthlyDeposits: {},
   logo: null,  // legacy field (kept for sync compatibility)
   monthDisabled: {},  // {"0-Aug":["exams"], "0-Sep":["books"]} — yearId-month: disabled cat ids
+  preferredName: null,
   darkMode: false,
   stepGoals: [
     { id:"step1", label:"Step 1", targetAmount:850, targetDate:"2028-06-01", saved:0, monthlyContribution:50 },
@@ -1869,6 +1870,7 @@ function App() {
   const [session, setSession] = useState(undefined); // undefined=restoring, null=logged out, obj=logged in
   const [profile, setProfile] = useState(null);      // {school} | null (no row yet → ProfileModal)
   const [editSchool, setEditSchool] = useState(false); // settings → reopen ProfileModal to change school
+  const [editName, setEditName] = useState(false); // settings → inline name editor
   const gistTimerRef = React.useRef(null);
   const dataRef = React.useRef(null);
   const lastFocusRef = React.useRef(0);
@@ -2961,51 +2963,92 @@ function App() {
       })()}
 
       {/* ── Header ── */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,paddingBottom:16,borderBottom:`1px solid ${C.border}`,flexWrap:"wrap",columnGap:12,rowGap:12}}>
-        <div style={{display:"flex",alignItems:"center",gap:12,flex:"1 1 230px",minWidth:0}}>
-          <MarroLogo/>
-          <div>
-            <div style={{fontSize:24,fontWeight:600,color:C.text,letterSpacing:"-0.02em",lineHeight:1.1,fontFamily:"'Newsreader', Georgia, serif"}}>Marro<span style={{color:C.marigold}}>.</span></div>
-            <div style={{fontSize:11,color:C.gray,marginTop:2}}>Medical school budget companion</div>
+      {(()=>{
+        const hr=new Date().getHours();
+        const salutation=hr<12?"Good morning":hr<17?"Good afternoon":"Good evening";
+        const name=data.preferredName?`, ${data.preferredName}`:"";
+        const initials=(data.preferredName||session?.user?.email||"?").slice(0,1).toUpperCase();
+        return (
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20,paddingBottom:16,borderBottom:`1px solid ${C.border}`,flexWrap:"wrap",columnGap:12,rowGap:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,flex:"1 1 230px",minWidth:0}}>
+            <MarroLogo/>
+            <div>
+              <div style={{fontSize:24,fontWeight:600,color:C.text,letterSpacing:"-0.02em",lineHeight:1.1,fontFamily:"'Newsreader', Georgia, serif"}}>Marro<span style={{color:C.marigold}}>.</span></div>
+              <div style={{fontSize:11,color:C.gray,marginTop:2}}>{salutation}{name}.</div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:10,alignItems:"center"}}>
+            {syncStatus==="syncing"  && <span style={{fontSize:11,color:C.gray,display:"flex",alignItems:"center",gap:4}}><Icon name="live" size={11} color={C.amber} style={{animation:"wcmpulse 1s infinite"}}/>Syncing…</span>}
+            {syncStatus==="synced"   && <span style={{fontSize:11,color:C.teal,display:"flex",alignItems:"center",gap:4}}><Icon name="live" size={11} color={C.teal}/>Synced</span>}
+            {syncStatus==="offline"  && <span style={{fontSize:11,color:C.amber,display:"flex",alignItems:"center",gap:4}}><Icon name="live" size={11} color={C.amber}/>Offline</span>}
+            {syncStatus==="conflict" && <span style={{fontSize:11,color:C.neg,display:"flex",alignItems:"center",gap:4}}><Icon name="live" size={11} color={C.neg}/>Conflict</span>}
+            {flash && <span style={{fontSize:12,color:C.teal,fontWeight:600}}>Saved</span>}
+            {/* Settings menu */}
+            <div style={{position:"relative"}}>
+              <button onClick={()=>setSettingsOpen(o=>!o)} aria-label="Settings" aria-haspopup="true" aria-expanded={settingsOpen} title="Settings" style={{width:32,height:32,borderRadius:8,border:`1px solid ${settingsOpen?C.sel:C.border}`,background:settingsOpen?C.selBg:"transparent",cursor:"pointer",color:C.textMid,display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .15s"}}>
+                <Icon name="settings" size={15}/>
+              </button>
+              {settingsOpen && <>
+                <div onClick={()=>setSettingsOpen(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
+                <div role="menu" style={{position:"absolute",right:0,top:"calc(100% + 6px)",zIndex:100,width:214,padding:6,background:C.glassTooltip,backdropFilter:"blur(50px) saturate(200%)",WebkitBackdropFilter:"blur(50px) saturate(200%)",border:`1px solid ${C.borderDark}`,borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.40)"}}>
+                  {/* Profile block */}
+                  <div style={{padding:"8px 10px 10px",borderBottom:`1px solid ${C.border}`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                      <div style={{width:28,height:28,borderRadius:"50%",background:C.selBg,border:`1px solid ${C.sel}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:C.text,flexShrink:0}}>{initials}</div>
+                      <div style={{minWidth:0}}>
+                        {editName ? (
+                          <form onSubmit={e=>{e.preventDefault();const val=e.target.elements.n.value.trim();const d=JSON.parse(JSON.stringify(data));d.preferredName=val||null;upd(d);setEditName(false);}} style={{display:"flex",gap:4,alignItems:"center"}}>
+                            <input name="n" autoFocus defaultValue={data.preferredName||""} placeholder="Your first name" style={{flex:1,minWidth:0,fontSize:11,padding:"2px 6px",borderRadius:6,border:`1px solid ${C.sel}`,background:C.selBg,color:C.text,outline:"none"}}/>
+                            <button type="submit" style={{border:"none",background:"transparent",color:C.teal,fontSize:11,cursor:"pointer",fontWeight:600,padding:"2px 4px"}}>Save</button>
+                            <button type="button" onClick={()=>setEditName(false)} style={{border:"none",background:"transparent",color:C.gray,fontSize:11,cursor:"pointer",padding:"2px 4px"}}>✕</button>
+                          </form>
+                        ) : (
+                          <button onClick={()=>setEditName(true)} style={{display:"flex",alignItems:"center",gap:4,border:"none",background:"transparent",cursor:"pointer",padding:0}}>
+                            <span style={{fontSize:12,fontWeight:600,color:C.text}}>{data.preferredName||"Set your name"}</span>
+                            <span style={{fontSize:10,color:C.teal}}>✎</span>
+                          </button>
+                        )}
+                        <div style={{fontSize:10.5,color:C.gray,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={session?.user?.email}>{session?.user?.email}</div>
+                      </div>
+                    </div>
+                    {profile?.school && (
+                      <button role="menuitem" className="menu-row" onClick={()=>{setSettingsOpen(false);setEditSchool(true);setEditName(false);}} title={profile.school}
+                        style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,width:"100%",padding:"5px 8px",borderRadius:6,border:"none",background:C.surfaceMid,cursor:"pointer",textAlign:"left"}}>
+                        <span style={{fontSize:10.5,color:C.gray,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{profile.school}</span>
+                        <span style={{fontSize:10.5,color:C.teal,flexShrink:0}}>Change</span>
+                      </button>
+                    )}
+                  </div>
+                  {/* Actions */}
+                  <div style={{padding:"4px 0"}}>
+                    <button role="menuitem" className="menu-row" onClick={()=>{const d=JSON.parse(JSON.stringify(data));d.darkMode=!d.darkMode;upd(d);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
+                      <span key={data.darkMode?"sun":"moon"} style={{display:"inline-flex",animation:"iconSwap 220ms cubic-bezier(0.23,1,0.32,1)"}}><Icon name={data.darkMode?"sun":"moon"} size={14}/></span>
+                      {data.darkMode?"Light mode":"Dark mode"}
+                    </button>
+                    <button role="menuitem" className="menu-row" onClick={()=>{setConfirmReset(true);setSettingsOpen(false);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.danger,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
+                      <Icon name="subs" size={14}/>
+                      Reset defaults
+                    </button>
+                  </div>
+                  {/* Footer — legal + sign out */}
+                  <div style={{borderTop:`1px solid ${C.border}`,padding:"4px 0 2px"}}>
+                    <div style={{display:"flex",gap:0,padding:"4px 10px 6px"}}>
+                      <a href="terms.html" target="_blank" rel="noopener" style={{fontSize:10.5,color:C.gray,textDecoration:"none",borderBottom:`1px solid ${C.border}`}}>Terms</a>
+                      <span style={{fontSize:10.5,color:C.border,padding:"0 5px"}}>·</span>
+                      <a href="privacy.html" target="_blank" rel="noopener" style={{fontSize:10.5,color:C.gray,textDecoration:"none",borderBottom:`1px solid ${C.border}`}}>Privacy</a>
+                    </div>
+                    <button role="menuitem" className="menu-row" onClick={()=>{setSettingsOpen(false);sb.auth.signOut();}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:600,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
+                      <Icon name="live" size={14}/>
+                      Sign out
+                    </button>
+                  </div>
+                </div>
+              </>}
+            </div>
           </div>
         </div>
-        <div style={{display:"flex",gap:10,alignItems:"center"}}>
-          {syncStatus==="syncing"  && <span style={{fontSize:11,color:C.gray,display:"flex",alignItems:"center",gap:4}}><Icon name="live" size={11} color={C.amber} style={{animation:"wcmpulse 1s infinite"}}/>Syncing…</span>}
-          {syncStatus==="synced"   && <span style={{fontSize:11,color:C.teal,display:"flex",alignItems:"center",gap:4}}><Icon name="live" size={11} color={C.teal}/>Synced</span>}
-          {syncStatus==="offline"  && <span style={{fontSize:11,color:C.amber,display:"flex",alignItems:"center",gap:4}}><Icon name="live" size={11} color={C.amber}/>Offline</span>}
-          {syncStatus==="conflict" && <span style={{fontSize:11,color:C.neg,display:"flex",alignItems:"center",gap:4}}><Icon name="live" size={11} color={C.neg}/>Conflict</span>}
-          {flash && <span style={{fontSize:12,color:C.teal,fontWeight:600}}>Saved</span>}
-          {/* Settings menu — theme, reset, future home for sync/export */}
-          <div style={{position:"relative"}}>
-            <button onClick={()=>setSettingsOpen(o=>!o)} aria-label="Settings" aria-haspopup="true" aria-expanded={settingsOpen} title="Settings" style={{width:32,height:32,borderRadius:8,border:`1px solid ${settingsOpen?C.sel:C.border}`,background:settingsOpen?C.selBg:"transparent",cursor:"pointer",color:C.textMid,display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .15s"}}>
-              <Icon name="settings" size={15}/>
-            </button>
-            {settingsOpen && <>
-              <div onClick={()=>setSettingsOpen(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
-              <div role="menu" style={{position:"absolute",right:0,top:"calc(100% + 6px)",zIndex:100,width:198,padding:6,background:C.glassTooltip,backdropFilter:"blur(50px) saturate(200%)",WebkitBackdropFilter:"blur(50px) saturate(200%)",border:`1px solid ${C.borderDark}`,borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.40)"}}>
-                <button role="menuitem" className="menu-row" onClick={()=>{const d=JSON.parse(JSON.stringify(data));d.darkMode=!d.darkMode;upd(d);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
-                  <span key={data.darkMode?"sun":"moon"} style={{display:"inline-flex",animation:"iconSwap 220ms cubic-bezier(0.23,1,0.32,1)"}}><Icon name={data.darkMode?"sun":"moon"} size={14}/></span>
-                  {data.darkMode?"Light mode":"Dark mode"}
-                </button>
-                <button role="menuitem" className="menu-row" onClick={()=>{setConfirmReset(true);setSettingsOpen(false);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.danger,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
-                  <Icon name="subs" size={14}/>
-                  Reset defaults
-                </button>
-                <div style={{height:1,background:C.border,margin:"6px 4px"}}/>
-                <div style={{padding:"6px 10px 0",fontSize:10.5,color:C.gray,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={session?.user?.email}>{session?.user?.email}</div>
-                {profile?.school && <button role="menuitem" className="menu-row" onClick={()=>{setSettingsOpen(false);setEditSchool(true);}} title={profile.school} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,width:"100%",padding:"0 10px 4px",border:"none",background:"transparent",cursor:"pointer",textAlign:"left"}}>
-                  <span style={{fontSize:10.5,color:C.gray,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{profile.school}</span>
-                  <span style={{fontSize:10.5,color:C.teal,flexShrink:0}}>Change</span>
-                </button>}
-                <button role="menuitem" className="menu-row" onClick={()=>{setSettingsOpen(false);sb.auth.signOut();}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.textMid,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
-                  <Icon name="live" size={14}/>
-                  Sign out
-                </button>
-              </div>
-            </>}
-          </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* ── Offline banner ── */}
       {syncStatus==="offline" && (
