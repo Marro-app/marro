@@ -21,7 +21,7 @@ Projected graduation balance, recommendations, comparison mode, Step 3 goal + mi
 - ✓ Step 11 — Blob health states (calm/low-tide/marigold bloom), docs rewritten
 - Deferred from this phase → FUTURE_WORK: tab-pill redesign + cross-fades, chart gradient/draw-on animations, number-roll, apple-touch-icon PNG
 
-## Phase 2.5b — Auth + Supabase ✓ COMPLETE (June 13, 2026)
+## Phase 2.5b — Auth + Supabase ✓ COMPLETE & DEPLOYED (June 13, 2026 — live at commit 8df8837)
 - ✓ Google login via Supabase Auth; hard login gate (no anonymous mode), LoginScreen
 - ✓ Supabase `app_state` table (one jsonb blob/user, RLS) replaces Gist as the sync transport; localStorage kept as offline cache + merge ancestor; 3-way merge engine reused unchanged (gistFetch/gistWrite → stateFetch/stateWrite); `api/sync.js` deleted
 - ✓ First-login migration: uploads local state to Supabase if server row empty; `wcm_uid` shared-device guard

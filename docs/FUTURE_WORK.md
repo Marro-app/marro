@@ -5,6 +5,17 @@ Prioritized backlog. Check off + move to UI_AUDIT_LOG when done.
 
 ## P1
 - [ ] **Conflict modal live test** — never triggered with real sync data; exercise once Gist sync is reachable (two devices or two tabs with forced divergence). Note: `darkMode` now actually diverges across devices, so a real conflict is easier to force.
+- [x] **Icon-picker popover clipped behind "Key Notes" for lower categories** (June 13) — FIXED: lift the Spending-categories `Card` (`zIndex:50` while `editIconCat||iconPickOpen`), same principle as `useLiftCard`. User-confirmed working on localhost. Ships with next deploy.
+
+## New backlog (user requests, June 13)
+- [ ] **Effortless expense capture (the make-or-break)** — CSV import is too much friction; nobody will do it. Two tracks: (a) **Voice / natural-language entry** — "I got a Starbucks latte today" → Claude parses merchant/amount/category → pre-fills a weekly entry for one-tap confirm. Fits **Phase 4** (Claude advisor); start here, higher leverage + cheaper. (b) **Bank connection (Plaid or similar)** — auto-import transactions. Heavier: recurring cost, OAuth/security, dedup against manual entries. Defer behind (a).
+- [ ] **Hover affordance pass** — clickable elements (✕ buttons, text actions, esp. the grayish low-contrast ones) should signal clickability on hover: shimmer / liquid-glass sheen + cursor. Currently many read as static text. Systematize in `MOTION_SYSTEM` (reuse `.mc-sh` shimmer machinery) rather than ad-hoc per element.
+
+## Admin backend (invites + analytics) — needs a server-side component
+Both items below require the **Supabase service-role key behind a server function** (small Vercel serverless fn or Supabase Edge Function — the public client can't be trusted to read all users or manage an allowlist). This reintroduces a tiny backend (different from the deleted `api/sync.js`). Gated on the OAuth verification item below.
+- [ ] **Invite / auto-add users** — NOT via Google's "test users" list (console-manual, 100 cap, no clean API — dead end). Instead: publish+verify the consent screen so any Google account *can* sign in, then gate access app-side with a Supabase `allowed_emails` (invite) table. Admin panel "Invite" = insert email → on that user's first Google login the app calls `is_email_allowed` RPC → grant or sign-out+deny. Google does identity; Supabase does gating. **SQL written & ready: `supabase/allowed_emails.sql`** (table + RLS + `is_email_allowed()` SECURITY DEFINER fn, owner seeded). NOT yet run/enforced — do not enable the app-side gate until the consent screen leaves Testing mode (lockout risk; Google test-user list already gates now). App-side hook documented in §4 of that file.
+- [ ] **Legal pages** — `privacy.html` + `terms.html` drafted (June 13), on-brand, live at `/privacy.html` `/terms.html` once deployed. DRAFT quality — have a human review before submitting for Google verification; swap contact email if a dedicated support address is created; confirm NY governing law.
+- [ ] **Admin analytics panel** — who signed up, login frequency, last-seen, feature usage. Raw data is largely free in `auth.users` (`last_sign_in_at`, `created_at`); richer usage needs lightweight event logging. Read via the Admin API behind the same server function. Same backend as invites — build together.
 
 ## P2 — quality
 - [ ] **apple-touch-icon is an SVG** — iOS ignores SVG touch icons and screenshots the page instead. Export a 180×180 PNG of the rings icon and point `<link rel="apple-touch-icon">` at it.
