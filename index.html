@@ -952,7 +952,7 @@ const DEFAULT_STATE = {
   logo: null,  // legacy field (kept for sync compatibility)
   monthDisabled: {},  // {"0-Aug":["exams"], "0-Sep":["books"]} — yearId-month: disabled cat ids
   preferredName: null,
-  avatar: null,  // {type:"google",url} | {type:"monogram",color:"<token key>"} | null
+  avatar: null,  // {type:"art",style,color} | {type:"google",url} | {type:"upload",url} | null
   darkMode: false,
   stepGoals: [
     { id:"step1", label:"Step 1", targetAmount:850, targetDate:"2028-06-01", saved:0, monthlyContribution:50 },
@@ -1692,56 +1692,242 @@ const ProfileModal = ({uid, onSaved, onClose}) => {
 };
 
 // ── Identity bits ────────────────────────────────────────────────────────────
-// The monogram avatar wears the Marro ring motif: faint concentric rings behind a
-// serif initial in the chosen accent. Themed via C tokens so it follows light/dark.
-const AVATAR_COLORS = ["marigold","teal","danger","blue","neg"];
-const RingMonogram = ({initial, color="marigold", size=56}) => {
-  const accent = C[color] || C.marigold;
-  const r = Math.max(8, Math.round(size*0.24));
-  return (
-    <div style={{width:size,height:size,borderRadius:r,background:"#14150F",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",overflow:"hidden",flexShrink:0,boxShadow:`0 0 0 1.5px rgba(246,239,221,0.14), 0 4px 18px rgba(0,0,0,0.42)`}}>
-      <svg width={size} height={size} viewBox="0 0 56 56" style={{position:"absolute",inset:0}} aria-hidden="true">
-        <g transform="translate(28,28)" fill="none" stroke={accent}>
-          <circle r="13" strokeWidth="1.2" opacity="0.50"/>
-          <circle r="20" strokeWidth="1.2" opacity="0.26"/>
-          <circle r="27" strokeWidth="1.2" opacity="0.13"/>
-        </g>
-      </svg>
-      <span style={{position:"relative",fontFamily:"'Newsreader',Georgia,serif",fontWeight:600,fontSize:Math.round(size*0.44),color:accent,lineHeight:1,letterSpacing:"-0.02em"}}>{(initial||"?").toUpperCase()}</span>
-    </div>
-  );
+// Avatars: 30 recolorable marks on a dark badge + photo (google/upload). The accent
+// palette and AVATARS registry below drive the picker, the Avatar renderer, and the
+// settings editor.
+// Accent palette for avatars. Each accent (c) pairs with a dark feature color (d)
+// for eyes/mouths so a recolored character still reads. Theme-independent (avatars
+// always sit on a dark badge), so these are fixed hexes, not C tokens.
+const AV_PALETTE = [
+  {key:"marigold",label:"Marigold",c:"#DDA528",d:"#3A2A08"},
+  {key:"blue",    label:"Blue",    c:"#82AEDB",d:"#15293B"},
+  {key:"clay",    label:"Clay",    c:"#E08A6B",d:"#3A1A0E"},
+  {key:"green",   label:"Green",   c:"#7FA86A",d:"#1E2E16"},
+  {key:"teal",    label:"Teal",    c:"#5FB3A3",d:"#123029"},
+  {key:"plum",    label:"Plum",    c:"#B07BB0",d:"#2E1A2E"},
+  {key:"rose",    label:"Rose",    c:"#E08AA8",d:"#3A1426"},
+  {key:"cream",   label:"Cream",   c:"#E9E2CF",d:"#2A2620"},
+];
+const avColor = key => AV_PALETTE.find(p=>p.key===key) || AV_PALETTE[0];
+
+// 30 recolorable avatar marks, drawn on a dark circular badge. Each svg(c,d) returns
+// a 0..68 SVG fragment using the accent (c) for the body and dark (d) for features.
+// Groups drive the picker's sections.
+const AVATARS = [
+  {id:"seal",        label:"Rings",        group:"marks", svg:(c,d)=>`<g fill="none" stroke="${c}"><circle cx="34" cy="34" r="22" stroke-width="1.6" opacity=".38"/><circle cx="34" cy="34" r="16" stroke-width="1.7" opacity=".64"/><circle cx="34" cy="34" r="10" stroke-width="1.8"/></g><circle cx="34" cy="34" r="3.4" fill="${c}"/>`},
+  {id:"constellation",label:"Constellation",group:"marks", svg:(c,d)=>`<g stroke="${c}" stroke-width="1.6" opacity=".7" fill="none"><path d="M22 24 L38 30 L30 44 L48 40 L42 22"/></g><g fill="#F6EFDD"><circle cx="22" cy="24" r="2"/><circle cx="30" cy="44" r="2"/><circle cx="48" cy="40" r="2"/><circle cx="42" cy="22" r="2"/></g><circle cx="38" cy="30" r="3.4" fill="${c}"/>`},
+  {id:"bloom",       label:"Bloom",        group:"marks", svg:(c,d)=>`<g transform="translate(34,34)"><g fill="${c}" opacity=".92"><ellipse cx="0" cy="-13" rx="4.2" ry="12"/><ellipse cx="0" cy="-13" rx="4.2" ry="12" transform="rotate(60)"/><ellipse cx="0" cy="-13" rx="4.2" ry="12" transform="rotate(120)"/><ellipse cx="0" cy="-13" rx="4.2" ry="12" transform="rotate(180)"/><ellipse cx="0" cy="-13" rx="4.2" ry="12" transform="rotate(240)"/><ellipse cx="0" cy="-13" rx="4.2" ry="12" transform="rotate(300)"/></g><circle r="5.5" fill="#F6EFDD"/></g>`},
+  {id:"phase",       label:"Phase",        group:"marks", svg:(c,d)=>`<circle cx="34" cy="34" r="20" fill="${c}"/><circle cx="26" cy="34" r="20" fill="#14150F"/><circle cx="34" cy="34" r="20" fill="none" stroke="${c}" stroke-width="1" opacity=".5"/>`},
+  {id:"orbit",       label:"Orbit",        group:"marks", svg:(c,d)=>`<ellipse cx="34" cy="34" rx="24" ry="10" fill="none" stroke="${c}" stroke-width="1.4" opacity=".55" transform="rotate(-22 34 34)"/><circle cx="34" cy="34" r="6.5" fill="${c}"/><circle cx="55" cy="27" r="3.2" fill="${c}"/>`},
+  {id:"pulse",       label:"Pulse",        group:"marks", svg:(c,d)=>`<path d="M10 34 H24 L29 22 L35 47 L40 30 H58" fill="none" stroke="${c}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`},
+  {id:"facet",       label:"Facet",        group:"marks", svg:(c,d)=>`<g stroke="${d}" stroke-width=".8"><polygon points="34,14 48,28 34,34" fill="${c}"/><polygon points="34,14 20,28 34,34" fill="${c}" opacity=".8"/><polygon points="20,28 34,34 26,50" fill="${c}" opacity=".62"/><polygon points="48,28 34,34 42,50" fill="${c}" opacity=".7"/><polygon points="26,50 34,34 42,50" fill="${c}" opacity=".5"/></g>`},
+  {id:"tide",        label:"Tide",         group:"marks", svg:(c,d)=>`<path d="M6 40 Q20 31 34 40 T62 40 V62 H6 Z" fill="${c}" opacity=".5"/><path d="M6 46 Q20 37 34 46 T62 46 V62 H6 Z" fill="${c}" opacity=".82"/>`},
+  {id:"sprout",      label:"Sprout",       group:"marks", svg:(c,d)=>`<path d="M34 50 V30" stroke="${c}" stroke-width="2.6" stroke-linecap="round"/><path d="M34 34 C26 32 22 26 22 21 C29 21 34 26 34 33 Z" fill="${c}"/><path d="M34 30 C42 28 46 22 46 17 C39 17 34 22 34 29 Z" fill="${c}" opacity=".8"/><circle cx="34" cy="52" r="2.4" fill="${c}"/>`},
+  {id:"buddy",       label:"Buddy",        group:"chars", svg:(c,d)=>`<circle cx="34" cy="34" r="24" fill="${c}"/><ellipse cx="27" cy="31" rx="2.2" ry="3.2" fill="${d}"/><ellipse cx="41" cy="31" rx="2.2" ry="3.2" fill="${d}"/><path d="M26 40 Q34 47 42 40" fill="none" stroke="${d}" stroke-width="2.6" stroke-linecap="round"/>`},
+  {id:"penny",       label:"Penny",        group:"chars", svg:(c,d)=>`<circle cx="34" cy="34" r="23" fill="${c}"/><circle cx="34" cy="34" r="19" fill="none" stroke="${d}" stroke-width="1.6" stroke-dasharray="2 3" opacity=".5"/><path d="M24 32 Q28 28 32 32" fill="none" stroke="${d}" stroke-width="2.2" stroke-linecap="round"/><circle cx="42" cy="32" r="2.4" fill="${d}"/><path d="M28 41 Q34 46 40 41" fill="none" stroke="${d}" stroke-width="2" stroke-linecap="round"/>`},
+  {id:"piggy",       label:"Piggy",        group:"chars", svg:(c,d)=>`<path d="M21 19 L27 26" stroke="${c}" stroke-width="5" stroke-linecap="round"/><path d="M47 19 L41 26" stroke="${c}" stroke-width="5" stroke-linecap="round"/><ellipse cx="34" cy="37" rx="21" ry="17" fill="${c}"/><ellipse cx="34" cy="41" rx="8" ry="6" fill="${d}" opacity=".5"/><circle cx="31" cy="41" r="1.5" fill="${d}"/><circle cx="37" cy="41" r="1.5" fill="${d}"/><circle cx="25" cy="33" r="1.7" fill="${d}"/><circle cx="43" cy="33" r="1.7" fill="${d}"/><rect x="30" y="22" width="8" height="2.4" rx="1.2" fill="${d}" opacity=".5"/>`},
+  {id:"sunny",       label:"Sunny",        group:"chars", svg:(c,d)=>`<g stroke="${c}" stroke-width="2.4" stroke-linecap="round"><path d="M34 9 V15"/><path d="M34 53 V59"/><path d="M9 34 H15"/><path d="M53 34 H59"/><path d="M16 16 L20 20"/><path d="M52 16 L48 20"/><path d="M16 52 L20 48"/><path d="M52 52 L48 48"/></g><circle cx="34" cy="34" r="14" fill="${c}"/><circle cx="30" cy="33" r="1.6" fill="${d}"/><circle cx="38" cy="33" r="1.6" fill="${d}"/><path d="M30 38 Q34 41 38 38" fill="none" stroke="${d}" stroke-width="1.8" stroke-linecap="round"/>`},
+  {id:"sleepy",      label:"Sleepy",       group:"chars", svg:(c,d)=>`<path d="M44 16 A20 20 0 1 0 44 52 A16 16 0 1 1 44 16 Z" fill="${c}"/><path d="M27 32 Q30 35 33 32" fill="none" stroke="${d}" stroke-width="1.8" stroke-linecap="round"/><path d="M22 38 Q25 41 28 38" fill="none" stroke="${d}" stroke-width="1.6" stroke-linecap="round"/><text x="48" y="25" font-family="Georgia,serif" font-size="9" fill="${c}">z</text><text x="53" y="19" font-family="Georgia,serif" font-size="7" fill="${c}">z</text>`},
+  {id:"avo",         label:"Avo",          group:"chars", svg:(c,d)=>`<path d="M34 14 C46 14 50 30 46 44 C43 54 25 54 22 44 C18 30 22 14 34 14 Z" fill="${c}"/><path d="M34 22 C42 22 45 32 42 42 C40 49 28 49 26 42 C23 32 26 22 34 22 Z" fill="#F1EBDA"/><circle cx="34" cy="40" r="7" fill="${d}"/><circle cx="31" cy="33" r="1.6" fill="${d}"/><circle cx="37" cy="33" r="1.6" fill="${d}"/><path d="M31 37 Q34 39 37 37" fill="none" stroke="${d}" stroke-width="1.6" stroke-linecap="round"/>`},
+  {id:"capsule",     label:"Capsule",      group:"chars", svg:(c,d)=>`<g transform="rotate(-25 34 34)"><rect x="22" y="14" width="24" height="40" rx="12" fill="#E9E2CF"/><path d="M22 34 v-8 a12 12 0 0 1 24 0 v8 Z" fill="${c}"/><rect x="22" y="32" width="24" height="3" fill="#14150F" opacity=".25"/></g><circle cx="30" cy="32" r="1.7" fill="${d}"/><circle cx="38" cy="32" r="1.7" fill="${d}"/><path d="M30 37 Q34 40 38 37" fill="none" stroke="${d}" stroke-width="1.7" stroke-linecap="round"/>`},
+  {id:"froggy",      label:"Froggy",       group:"chars", svg:(c,d)=>`<circle cx="34" cy="37" r="20" fill="${c}"/><circle cx="25" cy="20" r="7" fill="${c}"/><circle cx="43" cy="20" r="7" fill="${c}"/><circle cx="25" cy="20" r="4" fill="#FBF7EC"/><circle cx="43" cy="20" r="4" fill="#FBF7EC"/><circle cx="25" cy="21" r="2" fill="${d}"/><circle cx="43" cy="21" r="2" fill="${d}"/><path d="M24 41 Q34 49 44 41" fill="none" stroke="${d}" stroke-width="2.2" stroke-linecap="round"/>`},
+  {id:"boba",        label:"Boba",         group:"chars", svg:(c,d)=>`<path d="M44 16 L49 13" stroke="${c}" stroke-width="3" stroke-linecap="round"/><path d="M24 22 L44 22 L41 52 L27 52 Z" fill="#EADBC4"/><rect x="24" y="22" width="20" height="4" fill="${c}"/><g fill="${d}"><circle cx="30" cy="48" r="2.2"/><circle cx="37" cy="48" r="2.2"/><circle cx="33" cy="44" r="2.2"/></g><circle cx="30" cy="34" r="1.5" fill="${d}"/><circle cx="38" cy="34" r="1.5" fill="${d}"/><path d="M30 38 Q34 41 38 38" fill="none" stroke="${d}" stroke-width="1.5" stroke-linecap="round"/>`},
+  {id:"bear",        label:"Bear",         group:"chars", svg:(c,d)=>`<circle cx="21" cy="21" r="8" fill="${c}"/><circle cx="47" cy="21" r="8" fill="${c}"/><circle cx="21" cy="21" r="4" fill="${d}" opacity=".35"/><circle cx="47" cy="21" r="4" fill="${d}" opacity=".35"/><circle cx="34" cy="37" r="21" fill="${c}"/><ellipse cx="34" cy="43" rx="8" ry="6" fill="#F1EBDA" opacity=".5"/><circle cx="27" cy="35" r="2" fill="${d}"/><circle cx="41" cy="35" r="2" fill="${d}"/><ellipse cx="34" cy="40" rx="2.4" ry="1.8" fill="${d}"/><path d="M30 44 Q34 47 38 44" fill="none" stroke="${d}" stroke-width="1.6" stroke-linecap="round"/>`},
+  {id:"brainy",      label:"Brainy",       group:"chars", svg:(c,d)=>`<path d="M34 17 C28 13 20 17 21 24 C15 25 15 34 21 36 C19 43 27 48 34 44 C41 48 49 43 47 36 C53 34 53 25 47 24 C48 17 40 13 34 17 Z" fill="${c}"/><path d="M34 17 V44" stroke="${d}" stroke-width="1.4" fill="none" opacity=".5"/><circle cx="28" cy="31" r="1.6" fill="${d}"/><circle cx="40" cy="31" r="1.6" fill="${d}"/><path d="M30 37 Q34 40 38 37" fill="none" stroke="${d}" stroke-width="1.6" stroke-linecap="round"/>`},
+  {id:"ghostie",     label:"Ghostie",      group:"chars", svg:(c,d)=>`<path d="M18 52 V32 a16 16 0 0 1 32 0 V52 Q46 47 42 52 Q38 47 34 52 Q30 47 26 52 Q22 47 18 52 Z" fill="${c}"/><ellipse cx="28" cy="32" rx="2.2" ry="3.2" fill="${d}"/><ellipse cx="40" cy="32" rx="2.2" ry="3.2" fill="${d}"/><path d="M30 39 Q34 42 38 39" fill="none" stroke="${d}" stroke-width="1.6" stroke-linecap="round"/>`},
+  {id:"blobby",      label:"Blobby",       group:"creatures", svg:(c,d)=>`<path d="M34 11 C47 11 57 20 56 33 C55 46 46 56 34 56 C22 56 13 46 12 33 C11 20 21 11 34 11 Z" fill="${c}"/><circle cx="28" cy="31" r="2" fill="${d}"/><circle cx="40" cy="31" r="2" fill="${d}"/><path d="M28 39 Q34 45 40 39" fill="none" stroke="${d}" stroke-width="2.2" stroke-linecap="round"/>`},
+  {id:"pip",         label:"Pip",          group:"creatures", svg:(c,d)=>`<path d="M26 14 V20 M42 14 V20" stroke="${c}" stroke-width="2" stroke-linecap="round"/><circle cx="26" cy="13" r="2" fill="${c}"/><circle cx="42" cy="13" r="2" fill="${c}"/><ellipse cx="34" cy="38" rx="20" ry="21" fill="${c}"/><circle cx="34" cy="35" r="9" fill="#FBF7EC"/><circle cx="35" cy="36" r="4.2" fill="${d}"/><circle cx="37" cy="34" r="1.4" fill="#fff"/><path d="M29 48 Q34 51 39 48" fill="none" stroke="${d}" stroke-width="1.8" stroke-linecap="round"/>`},
+  {id:"mochi",       label:"Mochi",        group:"creatures", svg:(c,d)=>`<rect x="14" y="16" width="40" height="40" rx="16" fill="${c}"/><circle cx="23" cy="40" r="3.2" fill="#fff" opacity=".22"/><circle cx="45" cy="40" r="3.2" fill="#fff" opacity=".22"/><circle cx="27" cy="34" r="2" fill="${d}"/><circle cx="41" cy="34" r="2" fill="${d}"/><path d="M30 40 Q34 43 38 40" fill="none" stroke="${d}" stroke-width="1.8" stroke-linecap="round"/>`},
+  {id:"nimbus",      label:"Nimbus",       group:"creatures", svg:(c,d)=>`<g fill="${c}"><circle cx="25" cy="39" r="11"/><circle cx="43" cy="39" r="12"/><circle cx="33" cy="31" r="12"/><rect x="14" y="39" width="40" height="10" rx="5"/></g><circle cx="29" cy="37" r="1.7" fill="${d}"/><circle cx="40" cy="37" r="1.7" fill="${d}"/><path d="M31 42 Q34.5 45 38 42" fill="none" stroke="${d}" stroke-width="1.6" stroke-linecap="round"/>`},
+  {id:"sparky",      label:"Sparky",       group:"creatures", svg:(c,d)=>`<path d="M34 9 L40 27 L58 33 L40 39 L34 57 L28 39 L10 33 L28 27 Z" fill="${c}"/><circle cx="30" cy="32" r="1.7" fill="${d}"/><circle cx="38" cy="32" r="1.7" fill="${d}"/><path d="M31 37 Q34 39 37 37" fill="none" stroke="${d}" stroke-width="1.5" stroke-linecap="round"/>`},
+  {id:"drip",        label:"Drip",         group:"creatures", svg:(c,d)=>`<path d="M34 13 C44 29 49 37 49 43 a15 15 0 1 1 -30 0 C19 37 24 29 34 13 Z" fill="${c}"/><circle cx="29" cy="44" r="1.8" fill="${d}"/><circle cx="39" cy="44" r="1.8" fill="${d}"/><path d="M30 49 Q34 52 38 49" fill="none" stroke="${d}" stroke-width="1.6" stroke-linecap="round"/><path d="M40 27 a8 8 0 0 1 3 7" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".5"/>`},
+  {id:"fuzzle",      label:"Fuzzle",       group:"creatures", svg:(c,d)=>`<path d="M34 9 l4 7 8 -3 -2 8 8 2 -6 6 6 6 -8 2 2 8 -8 -3 -4 7 -4 -7 -8 3 2 -8 -8 -2 6 -6 -6 -6 8 -2 -2 -8 8 3 z" fill="${c}"/><circle cx="34" cy="34" r="13" fill="${c}"/><circle cx="29" cy="33" r="1.8" fill="${d}"/><circle cx="39" cy="33" r="1.8" fill="${d}"/><path d="M30 38 Q34 41 38 38" fill="none" stroke="${d}" stroke-width="1.6" stroke-linecap="round"/>`},
+  {id:"cosmo",       label:"Cosmo",        group:"creatures", svg:(c,d)=>`<ellipse cx="34" cy="36" rx="28" ry="9" fill="none" stroke="${c}" stroke-width="2.2" opacity=".5" transform="rotate(-18 34 36)"/><circle cx="34" cy="34" r="17" fill="${c}"/><circle cx="29" cy="33" r="1.9" fill="${d}"/><circle cx="39" cy="33" r="1.9" fill="${d}"/><path d="M30 38 Q34 41 38 38" fill="none" stroke="${d}" stroke-width="1.7" stroke-linecap="round"/>`},
+  {id:"bub",         label:"Bub",          group:"creatures", svg:(c,d)=>`<circle cx="34" cy="34" r="20" fill="${c}" opacity=".4"/><circle cx="34" cy="34" r="20" fill="none" stroke="${c}" stroke-width="1.4"/><path d="M24 26 a13 13 0 0 1 7 -5" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" opacity=".7"/><circle cx="29" cy="34" r="1.8" fill="${d}"/><circle cx="39" cy="34" r="1.8" fill="${d}"/><circle cx="34" cy="40" r="1.6" fill="${d}"/>`},
+];
+const AV_GROUPS = [{key:"marks",label:"Marks"},{key:"chars",label:"Characters"},{key:"creatures",label:"Creatures"}];
+
+// Renders one avatar mark on its dark circular badge at any size.
+const AvatarArt = ({style, color, size=40}) => {
+  const av = AVATARS.find(a=>a.id===style) || AVATARS[0];
+  const pal = avColor(color);
+  return <svg width={size} height={size} viewBox="0 0 68 68" style={{flexShrink:0,display:"block",borderRadius:"50%"}} aria-hidden="true"
+    dangerouslySetInnerHTML={{__html:`<circle cx="34" cy="34" r="34" fill="#14150F"/>`+av.svg(pal.c, pal.d)}}/>;
 };
 
-// Renders the user's chosen avatar anywhere (header, settings). Falls back to a
-// plain initial chip for users who onboarded before avatars existed.
+// Renders the user's chosen avatar anywhere (header, settings). Handles photo
+// (google/upload), an art style, and a plain initial-chip fallback (incl. legacy
+// monogram avatars from before the gallery existed).
 const Avatar = ({avatar, name, email, size=28}) => {
   const initial = (name||email||"?").slice(0,1).toUpperCase();
-  if(avatar && avatar.type==="google" && avatar.url)
-    return <img src={avatar.url} alt="" width={size} height={size} referrerPolicy="no-referrer" style={{borderRadius:"50%",objectFit:"cover",flexShrink:0,display:"block"}}/>;
-  if(avatar && avatar.type==="monogram")
-    return <RingMonogram initial={initial} color={avatar.color} size={size}/>;
+  if(avatar){
+    if((avatar.type==="google"||avatar.type==="upload") && avatar.url)
+      return <img src={avatar.url} alt="" width={size} height={size} referrerPolicy="no-referrer" style={{borderRadius:"50%",objectFit:"cover",flexShrink:0,display:"block"}}/>;
+    if(avatar.type==="art" && avatar.style)
+      return <AvatarArt style={avatar.style} color={avatar.color||"marigold"} size={size}/>;
+  }
   return <div style={{width:size,height:size,borderRadius:"50%",background:C.selBg,border:`1px solid ${C.sel}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:Math.round(size*0.42),fontWeight:700,color:C.text,flexShrink:0}}>{initial}</div>;
 };
 
-// Growth-rings that draw themselves in — the welcome/finish flourish.
-const BloomRings = ({size=108}) => {
-  const rings=[{r:11,d:200},{r:18,d:90},{r:25,d:0}];
+// Reusable avatar picker: live preview, photo (google/upload), color picker, and the
+// grouped style gallery. Used in first-run onboarding and the settings avatar editor.
+const AvatarPicker = ({value, onChange, googlePhoto}) => {
+  const [color, setColor] = useState(value && value.type==="art" ? (value.color||"marigold") : "marigold");
+  const fileRef = React.useRef(null);
+  const onUpload = e => {
+    const file = e.target.files && e.target.files[0]; if(!file) return;
+    const rd = new FileReader();
+    rd.onload = () => { const img = new Image(); img.onload = () => {
+      const s=160, cv=document.createElement("canvas"); cv.width=s; cv.height=s;
+      const ctx=cv.getContext("2d"); const scale=Math.max(s/img.width,s/img.height);
+      const w=img.width*scale, h=img.height*scale; ctx.drawImage(img,(s-w)/2,(s-h)/2,w,h);
+      onChange({type:"upload",url:cv.toDataURL("image/jpeg",0.85)});
+    }; img.src=rd.result; };
+    rd.readAsDataURL(file); e.target.value="";
+  };
   return (
-    <div style={{width:size,height:size,position:"relative",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <svg width={size} height={size} viewBox="0 0 56 56" style={{position:"absolute",inset:0}} aria-hidden="true">
-        <g transform="translate(28,28)">
-          {rings.map((ring,i)=>{const circ=2*Math.PI*ring.r;return(
-            <circle key={i} r={ring.r} fill="none" stroke={C.text} strokeWidth="1.4" strokeLinecap="round" opacity={0.9-i*0.16}
-              style={{"--circ":circ, strokeDasharray:circ, animation:`obRingDraw 900ms cubic-bezier(0.23,1,0.32,1) ${ring.d}ms both`}}/>
-          );})}
-          <circle r="2.1" fill={C.marigold} className="ob-dot-pop" style={{animationDelay:"480ms"}}/>
-        </g>
-      </svg>
-      <svg width={size} height={size} viewBox="0 0 56 56" className="ob-orbit" style={{position:"absolute",inset:0,opacity:0.9}} aria-hidden="true">
-        <circle cx="28" cy="9.5" r="1.5" fill={C.marigold}/>
-      </svg>
+    <div>
+      <div style={{display:"flex",justifyContent:"center",margin:"4px 0 14px"}}>
+        <Avatar avatar={value} size={86}/>
+      </div>
+      <div style={{display:"flex",gap:10,justifyContent:"center",alignItems:"center",marginBottom:13,flexWrap:"wrap"}}>
+        {googlePhoto && (
+          <button className="ob-swatch" onClick={()=>onChange({type:"google",url:googlePhoto})} aria-label="Use Google photo"
+            style={{padding:0,border:`2px solid ${value&&value.type==="google"?C.marigold:"transparent"}`,borderRadius:"50%",background:"transparent",cursor:"pointer",lineHeight:0}}>
+            <img src={googlePhoto} alt="" width={40} height={40} referrerPolicy="no-referrer" style={{borderRadius:"50%",objectFit:"cover",display:"block"}}/>
+          </button>
+        )}
+        <button onClick={()=>fileRef.current&&fileRef.current.click()}
+          style={{display:"inline-flex",alignItems:"center",gap:6,padding:"8px 12px",borderRadius:10,border:`1px solid ${value&&value.type==="upload"?C.sel:C.border}`,background:value&&value.type==="upload"?C.selBg:"transparent",color:C.text,fontSize:12.5,cursor:"pointer"}}>
+          <Icon name="plus" size={13}/>{value&&value.type==="upload"?"Photo added":"Upload photo"}
+        </button>
+        <input ref={fileRef} type="file" accept="image/*" onChange={onUpload} style={{display:"none"}}/>
+      </div>
+      <div style={{display:"flex",gap:8,justifyContent:"center",marginBottom:14,flexWrap:"wrap"}}>
+        {AV_PALETTE.map(p=>{
+          const sel = value && value.type==="art" && (value.color||"marigold")===p.key;
+          return <button key={p.key} aria-label={p.label}
+            onClick={()=>{setColor(p.key); onChange(value&&value.type==="art"?{...value,color:p.key}:{type:"art",style:"buddy",color:p.key});}}
+            style={{width:22,height:22,borderRadius:"50%",background:p.c,border:`2px solid ${sel?C.text:"transparent"}`,boxShadow:sel?`0 0 0 1px ${C.text}`:"none",cursor:"pointer",padding:0}}/>;
+        })}
+      </div>
+      <div style={{maxHeight:196,overflowY:"auto",margin:"0 -4px",padding:"0 4px"}}>
+        {AV_GROUPS.map(g=>(
+          <div key={g.key} style={{marginBottom:8}}>
+            <div style={{fontSize:10,color:C.gray,textTransform:"uppercase",letterSpacing:".06em",margin:"2px 2px 6px"}}>{g.label}</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(46px,1fr))",gap:7}}>
+              {AVATARS.filter(a=>a.group===g.key).map(a=>{
+                const sel = value && value.type==="art" && value.style===a.id;
+                return <button key={a.id} title={a.label} onClick={()=>onChange({type:"art",style:a.id,color})}
+                  style={{padding:2,borderRadius:"50%",border:`2px solid ${sel?C.marigold:"transparent"}`,background:"transparent",cursor:"pointer",lineHeight:0,display:"flex",justifyContent:"center"}}>
+                  <AvatarArt style={a.id} color={color} size={42}/>
+                </button>;
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
+};
+
+// Settings: change your avatar later. Saves into app state.
+const AvatarModal = ({data, upd, user, onClose}) => {
+  const [avatar, setAvatar] = useState(data.avatar || {type:"art",style:"buddy",color:"marigold"});
+  const googlePhoto = (user?.user_metadata?.avatar_url) || (user?.user_metadata?.picture) || null;
+  const save = () => { const d=JSON.parse(JSON.stringify(data)); d.avatar=avatar; upd(d); onClose(); };
+  return (
+    <Modal title="Your avatar" onClose={onClose} width={420}>
+      <AvatarPicker value={avatar} onChange={setAvatar} googlePhoto={googlePhoto}/>
+      <button onClick={save} style={{marginTop:18,width:"100%",padding:"11px 16px",borderRadius:10,border:"none",background:C.teal,color:C.bg,fontSize:14,fontWeight:600,cursor:"pointer"}}>Save</button>
+      <button onClick={onClose} style={{marginTop:10,display:"block",width:"100%",textAlign:"center",border:"none",background:"transparent",color:C.gray,fontSize:12.5,cursor:"pointer"}}>Cancel</button>
+    </Modal>
+  );
+};
+
+// Signature hero animation: a marigold dot drops in, orbits to draw the three
+// growth rings (logo weight, inner ring at 0.72), then splits — filling the logo's
+// center dot and pinching off a second blob that lands as the period in "Marro.",
+// while the wordmark rises letter-by-letter from an invisible baseline. Deterministic
+// (pure function of time) so it stays smooth; runs on its own rAF loop, scoped per
+// instance. Honors prefers-reduced-motion (renders the settled final frame).
+const MARRO_CREAM = "#F6EFDD", MARRO_GOLD = "#DDA528";
+const MarroIntro = ({size=360, loop=true, onComplete}) => {
+  const ref = React.useRef(null);
+  const doneRef = React.useRef(false);
+  useEffect(()=>{
+    const root = ref.current; if(!root) return;
+    const uid = "mi"+Math.random().toString(36).slice(2,8);
+    root.innerHTML = `
+      <svg viewBox="0 0 380 300" width="100%" style="overflow:visible;display:block" aria-hidden="true">
+        <defs><clipPath id="${uid}"><rect class="mi-wrect" x="0" y="0" width="0" height="0"/></clipPath></defs>
+        <circle class="mi-ring" cx="190" cy="116" r="16" transform="rotate(-90 190 116)" style="fill:none;stroke:${MARRO_CREAM};stroke-width:3.4;stroke-linecap:round;opacity:0"/>
+        <circle class="mi-ring" cx="190" cy="116" r="28" transform="rotate(-90 190 116)" style="fill:none;stroke:${MARRO_CREAM};stroke-width:3.4;stroke-linecap:round;opacity:0"/>
+        <circle class="mi-ring" cx="190" cy="116" r="40" transform="rotate(-90 190 116)" style="fill:none;stroke:${MARRO_CREAM};stroke-width:3.4;stroke-linecap:round;opacity:0"/>
+        <circle class="mi-comet" cx="190" cy="116" r="16" transform="rotate(-90 190 116)" style="fill:none;stroke:${MARRO_GOLD};stroke-width:3.6;stroke-linecap:round;filter:drop-shadow(0 0 5px rgba(221,165,40,.85));opacity:0"/>
+        <text class="mi-meas" x="190" y="262" text-anchor="middle" style="fill:${MARRO_CREAM};font-family:'Newsreader',Georgia,serif;font-size:50px;font-weight:600;letter-spacing:-1px;opacity:0">Marro</text>
+        <g class="mi-letters" clip-path="url(#${uid})"></g>
+        <line class="mi-neck" x1="190" y1="116" x2="190" y2="116" stroke-width="0" style="stroke:${MARRO_GOLD};stroke-linecap:round;opacity:0;filter:drop-shadow(0 0 4px rgba(221,165,40,.7))"/>
+        <circle class="mi-lead" r="4.6" cx="0" cy="0" style="fill:${MARRO_GOLD};filter:drop-shadow(0 0 8px rgba(221,165,40,.95))"/>
+        <circle class="mi-cdot" r="3.6" cx="0" cy="0" style="fill:${MARRO_GOLD};filter:drop-shadow(0 0 5px rgba(221,165,40,.9));opacity:0"/>
+        <circle class="mi-pdot" r="4.6" cx="0" cy="0" style="fill:${MARRO_GOLD};filter:drop-shadow(0 0 7px rgba(221,165,40,.95));opacity:0"/>
+      </svg>`;
+    const NS="http://www.w3.org/2000/svg", cx=190, cy=116, radii=[16,28,40], baseOp=[0.72,1,1], baseY=262;
+    const q = s => root.querySelector(s);
+    const rings=[...root.querySelectorAll(".mi-ring")];
+    const meas=q(".mi-meas"), lettersG=q(".mi-letters"), wrect=q(".mi-wrect"), comet=q(".mi-comet");
+    const lead=q(".mi-lead"), cdot=q(".mi-cdot"), pdot=q(".mi-pdot"), neck=q(".mi-neck");
+    const ringC=radii.map(r=>2*Math.PI*r);
+    rings.forEach((rg,k)=>{rg.style.strokeDasharray=ringC[k];rg.style.strokeDashoffset=ringC[k];});
+    [lead,cdot,pdot].forEach(e=>{e.style.transformBox="fill-box";e.style.transformOrigin="center";});
+    const WORD="Marro", total=meas.getComputedTextLength(), left=190-total/2, letterEls=[];
+    for(let i=0;i<WORD.length;i++){const sx=left+meas.getSubStringLength(0,i);const el=document.createElementNS(NS,"text");el.setAttribute("x",sx);el.setAttribute("y",baseY);el.setAttribute("text-anchor","start");el.setAttribute("style","fill:"+MARRO_CREAM+";font-family:'Newsreader',Georgia,serif;font-size:50px;font-weight:600;letter-spacing:-1px");el.textContent=WORD[i];letterEls.push(el);lettersG.appendChild(el);}
+    wrect.setAttribute("x",left-14);wrect.setAttribute("y",baseY-72);wrect.setAttribute("width",total+28);wrect.setAttribute("height",76);
+    const clamp=x=>x<0?0:x>1?1:x, lerp=(a,b,u)=>a+(b-a)*u;
+    const eoB=u=>{const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(u-1,3)+c1*Math.pow(u-1,2);};
+    const eoC=u=>1-Math.pow(1-u,3), eioC=u=>u<.5?4*u*u*u:1-Math.pow(-2*u+2,3)/2, eioS=u=>-(Math.cos(Math.PI*u)-1)/2;
+    const onRg=(r,p)=>{const a=(-90+360*p)*Math.PI/180;return{x:cx+r*Math.cos(a),y:cy+r*Math.sin(a)};};
+    const pp=()=>({x:190+total/2+11,y:256});
+    const ent=[0,820],hold=[820,1010],rw=[[1010,1760],[1850,2680],[2770,3640]],gap=[[1760,1850],[2680,2770]];
+    const toC=[3640,3940],split=[3940,4760],wStart=4080,wStag=80,wDur=560,pop=[4760,5240],LOOP=7000;
+    function frame(t){
+      let dx,dy,ds=1,leadOn=1;
+      neck.style.opacity=0;cdot.style.opacity=0;pdot.style.opacity=0;
+      if(t<ent[1]){const u=clamp(t/(ent[1]-ent[0]));dx=cx;dy=(cy-radii[0])-150*(1-eoB(u));ds=lerp(.55,1,eoB(u));}
+      else if(t<hold[1]){const p0=onRg(radii[0],0);dx=p0.x;dy=p0.y;}
+      else if(t<rw[0][1]){const p=eioS(clamp((t-rw[0][0])/(rw[0][1]-rw[0][0])));const qp=onRg(radii[0],p);dx=qp.x;dy=qp.y;}
+      else if(t<gap[0][1]){const u=clamp((t-gap[0][0])/(gap[0][1]-gap[0][0]));dx=cx;dy=cy-lerp(radii[0],radii[1],eioC(u));}
+      else if(t<rw[1][1]){const p=eioS(clamp((t-rw[1][0])/(rw[1][1]-rw[1][0])));const qp=onRg(radii[1],p);dx=qp.x;dy=qp.y;}
+      else if(t<gap[1][1]){const u=clamp((t-gap[1][0])/(gap[1][1]-gap[1][0]));dx=cx;dy=cy-lerp(radii[1],radii[2],eioC(u));}
+      else if(t<rw[2][1]){const p=eioS(clamp((t-rw[2][0])/(rw[2][1]-rw[2][0])));const qp=onRg(radii[2],p);dx=qp.x;dy=qp.y;}
+      else if(t<toC[1]){const u=eioC(clamp((t-toC[0])/(toC[1]-toC[0])));dx=cx;dy=lerp(cy-radii[2],cy,u);ds=lerp(1,1.3,u);}
+      else { leadOn=0;dx=cx;dy=cy; }
+      lead.style.opacity=leadOn;lead.style.transform="translate("+dx+"px,"+dy+"px) scale("+ds+")";
+      if(t>=split[0]){const P=pp();const u=clamp((t-split[0])/(split[1]-split[0])),f=eioC(u);const px=lerp(cx,P.x,f),py=lerp(cy,P.y,f);
+        cdot.style.opacity=1;cdot.setAttribute("r",lerp(5,3.6,clamp((t-split[0])/220)));cdot.style.transform="translate("+cx+"px,"+cy+"px)";
+        let psc=1;if(t>=pop[0]&&t<pop[1]){const v=(t-pop[0])/(pop[1]-pop[0]);psc=v<.4?lerp(1,1.4,eoC(v/.4)):lerp(1.4,1,eioC((v-.4)/.6));}
+        pdot.style.opacity=1;pdot.style.transform="translate("+px+"px,"+py+"px) scale("+psc+")";
+        const sep=Math.hypot(px-cx,py-cy),w=9*(1-clamp(sep/30));
+        if(w>0.3){neck.style.opacity=1;neck.setAttribute("x1",cx);neck.setAttribute("y1",cy);neck.setAttribute("x2",px);neck.setAttribute("y2",py);neck.setAttribute("stroke-width",w);}
+      }
+      for(let i=0;i<letterEls.length;i++){const li=clamp((t-(wStart+i*wStag))/wDur);letterEls[i].style.transform="translateY("+lerp(52,0,eoC(li))+"px)";}
+      const prog=[0,0,0];for(let k=0;k<3;k++){if(t>=rw[k][0])prog[k]=eioS(clamp((t-rw[k][0])/(rw[k][1]-rw[k][0])));rings[k].style.strokeDashoffset=ringC[k]*(1-prog[k]);rings[k].style.opacity=prog[k]>0?baseOp[k]:0;}
+      let act=-1;for(let k=0;k<3;k++){if(t>=rw[k][0]&&t<rw[k][1]){act=k;break;}}
+      if(act>=0){const p=prog[act],C2=ringC[act],dash=20;comet.setAttribute("r",radii[act]);comet.style.strokeDasharray=dash+" "+C2;comet.style.strokeDashoffset=(dash-C2*p);comet.style.opacity=1;}else comet.style.opacity=0;
+    }
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if(reduce){ frame(LOOP-1); if(onComplete) onComplete(); return; }
+    let start=null, raf;
+    const run=(ts)=>{ if(start===null)start=ts; let el=ts-start;
+      if(!loop && el>=LOOP){ frame(LOOP-1); if(!doneRef.current){doneRef.current=true; onComplete&&onComplete();} return; }
+      frame(loop?el%LOOP:Math.min(el,LOOP-1)); raf=requestAnimationFrame(run); };
+    raf=requestAnimationFrame(run);
+    return ()=>cancelAnimationFrame(raf);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+  return <div ref={ref} style={{width:size,maxWidth:"100%",margin:"0 auto",borderRadius:18,overflow:"hidden",
+    background:"radial-gradient(130% 120% at 50% 30%, #1c1d17 0%, #101210 72%)",
+    border:"1px solid rgba(246,239,221,0.09)",padding:"6px 0",boxSizing:"border-box"}}/>;
 };
 
 // First-run welcome — a guided, branded setup: name → avatar → school. Replaces the
@@ -1753,7 +1939,7 @@ const OnboardingFlow = ({uid, user, data, upd, onDone}) => {
   const googleFirst = (meta.full_name || meta.name || meta.given_name || "").trim().split(/\s+/)[0] || "";
   const [step, setStep] = useState(0); // 0 welcome,1 name,2 avatar,3 school,4 finishing
   const [name, setName] = useState(googleFirst);
-  const [avatar, setAvatar] = useState(googlePhoto ? {type:"google",url:googlePhoto} : {type:"monogram",color:"marigold"});
+  const [avatar, setAvatar] = useState(googlePhoto ? {type:"google",url:googlePhoto} : {type:"art",style:"buddy",color:"marigold"});
   // school picker state (mirrors ProfileModal)
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState(null);
@@ -1807,10 +1993,9 @@ const OnboardingFlow = ({uid, user, data, upd, onDone}) => {
         <div key={step} className="ob-step">
           {step===0 && (
             <div style={{textAlign:"center"}}>
-              <div style={{display:"flex",justifyContent:"center",marginBottom:22}}><BloomRings size={112}/></div>
-              <div style={{...head,fontSize:30}} className="ob-rise" >Welcome to Marro<span style={{color:C.marigold}}>.</span></div>
-              <div style={{...sub,maxWidth:300,margin:"10px auto 0"}} className="ob-rise">A calmer way to handle money through medical school. Let's make it yours — it takes about thirty seconds.</div>
-              <button className="ob-cta ob-rise" style={{...ctaPrimary(true),marginTop:28}} onClick={()=>setStep(1)}>Get started</button>
+              <div style={{marginBottom:18}}><MarroIntro size={324}/></div>
+              <div style={{...sub,maxWidth:300,margin:"2px auto 0"}} className="ob-rise">A calmer way to handle money through medical school. Let's make it yours — it takes about thirty seconds.</div>
+              <button className="ob-cta ob-rise" style={{...ctaPrimary(true),marginTop:26}} onClick={()=>setStep(1)}>Get started</button>
             </div>
           )}
 
@@ -1827,34 +2012,11 @@ const OnboardingFlow = ({uid, user, data, upd, onDone}) => {
           )}
 
           {step===2 && (
-            <div style={{textAlign:"center"}}>
-              <div style={{...head,textAlign:"left"}}>Make it yours.</div>
-              <div style={{...sub,textAlign:"left"}}>Pick a look. {googlePhoto?"Use your Google photo, or":"Choose"} a Marro monogram.</div>
-              {/* live preview */}
-              <div style={{display:"flex",justifyContent:"center",margin:"24px 0 22px"}}>
-                <div style={{position:"relative"}}>
-                  <Avatar avatar={avatar} name={name} email={user?.email} size={92}/>
-                </div>
-              </div>
-              {/* options */}
-              <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap"}}>
-                {googlePhoto && (
-                  <button className="ob-swatch" onClick={()=>setAvatar({type:"google",url:googlePhoto})}
-                    aria-label="Use Google photo" style={{padding:0,border:`2px solid ${avatar.type==="google"?C.marigold:"transparent"}`,borderRadius:"50%",background:"transparent",cursor:"pointer",lineHeight:0}}>
-                    <img src={googlePhoto} alt="" width={46} height={46} referrerPolicy="no-referrer" style={{borderRadius:"50%",objectFit:"cover",display:"block"}}/>
-                  </button>
-                )}
-                {AVATAR_COLORS.map(col=>{
-                  const sel = avatar.type==="monogram" && avatar.color===col;
-                  return (
-                    <button key={col} className="ob-swatch" onClick={()=>setAvatar({type:"monogram",color:col})}
-                      aria-label={`Monogram ${col}`} style={{padding:0,border:`2px solid ${sel?C.marigold:"transparent"}`,borderRadius:14,background:"transparent",cursor:"pointer",lineHeight:0}}>
-                      <RingMonogram initial={initial} color={col} size={46}/>
-                    </button>
-                  );
-                })}
-              </div>
-              <button className="ob-cta" style={{...ctaPrimary(true),marginTop:28}} onClick={()=>setStep(3)}>Continue</button>
+            <div>
+              <div style={head}>Make it yours.</div>
+              <div style={sub}>Pick a look, then a color — or use a photo.</div>
+              <div style={{marginTop:14}}><AvatarPicker value={avatar} onChange={setAvatar} googlePhoto={googlePhoto}/></div>
+              <button className="ob-cta" style={{...ctaPrimary(true),marginTop:16}} onClick={()=>setStep(3)}>Continue</button>
               <button onClick={()=>setStep(1)} style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.gray,fontSize:12.5,cursor:"pointer"}}>← Back</button>
             </div>
           )}
@@ -1901,9 +2063,9 @@ const OnboardingFlow = ({uid, user, data, upd, onDone}) => {
 
           {step===4 && (
             <div style={{textAlign:"center",padding:"10px 0"}}>
-              <div style={{display:"flex",justifyContent:"center",marginBottom:22}}><BloomRings size={112}/></div>
-              <div style={{...head,fontSize:27}} className="ob-rise">You're all set{name.trim()?`, ${name.trim()}`:""}<span style={{color:C.marigold}}>.</span></div>
-              <div style={{...sub,maxWidth:280,margin:"10px auto 0"}} className="ob-rise">Opening your dashboard…</div>
+              <div style={{marginBottom:16}}><MarroIntro size={300}/></div>
+              <div style={{...head,fontSize:25}} className="ob-rise">You're all set{name.trim()?`, ${name.trim()}`:""}<span style={{color:C.marigold}}>.</span></div>
+              <div style={{...sub,maxWidth:280,margin:"8px auto 0"}} className="ob-rise">Opening your dashboard…</div>
             </div>
           )}
         </div>
@@ -2129,6 +2291,7 @@ function App() {
   const [profile, setProfile] = useState(null);      // {school} | null (no row yet → ProfileModal)
   const [editSchool, setEditSchool] = useState(false); // settings → reopen ProfileModal to change school
   const [editName, setEditName] = useState(false); // settings → inline name editor
+  const [editAvatar, setEditAvatar] = useState(false); // settings → avatar editor modal
   const gistTimerRef = React.useRef(null);
   const dataRef = React.useRef(null);
   const lastFocusRef = React.useRef(0);
@@ -2448,9 +2611,10 @@ function App() {
   },[ready]);
 
 
-  if(session===undefined) return <div style={{padding:40,color:C.gray,fontSize:14,fontFamily:"'Inter',system-ui,sans-serif"}}>Loading…</div>;
+  const loadingScreen = <div style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"#101210",zIndex:2000}}><MarroIntro size={360}/></div>;
+  if(session===undefined) return loadingScreen;
   if(session===null) return <LoginScreen offline={!navigator.onLine}/>;
-  if(!ready) return <div style={{padding:40,color:C.gray,fontSize:14,fontFamily:"'Inter',system-ui,sans-serif"}}>Loading…</div>;
+  if(!ready) return loadingScreen;
 
   const yr   = data.years.find(y=>y.id===ay)||data.years[0];
   const yrStartYear = yr.startDate ? new Date(yr.startDate+"T12:00:00").getFullYear() : 2026;
@@ -3267,7 +3431,9 @@ function App() {
                   {/* Profile block */}
                   <div style={{padding:"8px 10px 10px",borderBottom:`1px solid ${C.border}`}}>
                     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-                      <Avatar avatar={data.avatar} name={data.preferredName} email={session?.user?.email} size={30}/>
+                      <button onClick={()=>{setSettingsOpen(false);setEditAvatar(true);}} title="Change avatar" style={{padding:0,border:"none",background:"transparent",cursor:"pointer",borderRadius:"50%",lineHeight:0,flexShrink:0}}>
+                        <Avatar avatar={data.avatar} name={data.preferredName} email={session?.user?.email} size={30}/>
+                      </button>
                       <div style={{minWidth:0}}>
                         {editName ? (
                           <form onSubmit={e=>{e.preventDefault();const val=e.target.elements.n.value.trim();const d=JSON.parse(JSON.stringify(data));d.preferredName=val||null;upd(d);setEditName(false);}} style={{display:"flex",gap:4,alignItems:"center"}}>
@@ -3335,6 +3501,7 @@ function App() {
       {pendingConflict && <ConflictModal pending={pendingConflict} data={data} onResolve={resolveConflict}/>}
       {profile && !profile.school && <OnboardingFlow uid={session.user.id} user={session.user} data={data} upd={upd} onDone={s=>setProfile({school:s})}/>}
       {editSchool && <ProfileModal uid={session.user.id} onSaved={s=>{setProfile({school:s});setEditSchool(false);}} onClose={()=>setEditSchool(false)}/>}
+      {editAvatar && <AvatarModal data={data} upd={upd} user={session.user} onClose={()=>setEditAvatar(false)}/>}
 
       {/* ── Renewal alerts ── */}
       {renewalsDue.map(s=>(

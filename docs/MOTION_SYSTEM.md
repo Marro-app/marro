@@ -9,6 +9,7 @@ Motion conveys state, never decoration (product register). 150–250ms, ease-out
   - *bloom* (`.blobs-bloom`, goal newly fully funded) — marigold swell for ~9s (`triggerBloom`)
   - States are stacked gradient pseudo-layers crossfaded by **opacity only** (2.4s ease-in-out); gradients are never animated.
 - Boot screen (`#loading`, pre-React, pure CSS): rings bloom in staggered (`bootRing`, 50/180/310ms delays), marigold core breathes (`bootBreathe`), a marigold dot orbits the middle ring (`bootSpin` 2.6s linear, radius ≈22px), "Marro." + sub fade up (`bootFade`). All have reduced-motion fallbacks (orbit hides entirely).
+- **`MarroIntro`** (signature hero reveal — onboarding welcome/finish + loading gate): deterministic JS animation (pure function of time `t`, own rAF loop, scoped per instance, ~7s loop). A marigold dot drops in, orbits to draw each of the three logo rings (cream, logo weight, inner at 0.72) led by a glowing comet, then **splits** — a stretching neck pinches the dot into the logo's center dot + a second blob that lands as the period — while "Marro" rises letter-by-letter from a clip-masked baseline. Reduced-motion → renders the settled final frame, no loop. Distinct from the strict in-app motion rules below: this is an intentional brand moment, not interaction feedback.
 - Logo rings: `marroRingPop` staggered entrance + `marroDotPulse`.
 - `tipIn` (InfoTip): scale+fade, origin bottom-center, after 140ms hover intent.
 - ProgressBar width .4s; RingProgress stroke-dasharray .4s ease-out.
