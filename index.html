@@ -1933,13 +1933,14 @@ const MarroIntro = ({size=360, loop=true, onComplete}) => {
 // First-run welcome — a guided, branded setup: name → avatar → school. Replaces the
 // bare school-only ProfileModal for new users. Saves name+avatar into app state (data)
 // and school into the profiles table, then hands control back via onDone(school).
-const OnboardingFlow = ({uid, user, data, upd, onDone}) => {
+const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
   const meta = user?.user_metadata || {};
   const googlePhoto = meta.avatar_url || meta.picture || null;
   const googleFirst = (meta.full_name || meta.name || meta.given_name || "").trim().split(/\s+/)[0] || "";
   const [step, setStep] = useState(0); // 0 welcome,1 name,2 avatar,3 school,4 finishing
-  const [name, setName] = useState(googleFirst);
-  const [avatar, setAvatar] = useState(googlePhoto ? {type:"google",url:googlePhoto} : {type:"art",style:"buddy",color:"marigold"});
+  // Prefill from existing identity when re-running setup; fall back to Google/defaults first-run.
+  const [name, setName] = useState(data.preferredName || googleFirst);
+  const [avatar, setAvatar] = useState(data.avatar || (googlePhoto ? {type:"google",url:googlePhoto} : {type:"art",style:"buddy",color:"marigold"}));
   // school picker state (mirrors ProfileModal)
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState(null);
@@ -1981,6 +1982,7 @@ const OnboardingFlow = ({uid, user, data, upd, onDone}) => {
   return (
     <div role="dialog" aria-modal="true" aria-label="Welcome to Marro" style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:C.scrim,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)"}}>
       <div className="mm" style={{position:"relative",width:"100%",maxWidth:420,padding:"36px 30px 30px",overflow:"hidden"}}>
+        {onCancel && step!==4 && <button onClick={onCancel} aria-label="Close setup" style={{position:"absolute",top:12,right:12,zIndex:2,width:28,height:28,borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",color:C.gray,cursor:"pointer",fontSize:14,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>}
         {/* progress dots */}
         {step>=1 && step<=3 && (
           <div style={{display:"flex",gap:6,justifyContent:"center",marginBottom:26}}>
@@ -2292,6 +2294,7 @@ function App() {
   const [editSchool, setEditSchool] = useState(false); // settings → reopen ProfileModal to change school
   const [editName, setEditName] = useState(false); // settings → inline name editor
   const [editAvatar, setEditAvatar] = useState(false); // settings → avatar editor modal
+  const [redoSetup, setRedoSetup] = useState(false); // settings → replay the onboarding flow
   const gistTimerRef = React.useRef(null);
   const dataRef = React.useRef(null);
   const lastFocusRef = React.useRef(0);
@@ -3464,6 +3467,10 @@ function App() {
                       <span key={data.darkMode?"sun":"moon"} style={{display:"inline-flex",animation:"iconSwap 220ms cubic-bezier(0.23,1,0.32,1)"}}><Icon name={data.darkMode?"sun":"moon"} size={14}/></span>
                       {data.darkMode?"Light mode":"Dark mode"}
                     </button>
+                    <button role="menuitem" className="menu-row" onClick={()=>{setRedoSetup(true);setSettingsOpen(false);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
+                      <Icon name="star" size={14}/>
+                      Re-run setup
+                    </button>
                     <button role="menuitem" className="menu-row" onClick={()=>{setConfirmReset(true);setSettingsOpen(false);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.danger,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
                       <Icon name="subs" size={14}/>
                       Reset defaults
@@ -3500,6 +3507,7 @@ function App() {
       <BlobHealth over={moSurplus<0} bloom={bloom}/>
       {pendingConflict && <ConflictModal pending={pendingConflict} data={data} onResolve={resolveConflict}/>}
       {profile && !profile.school && <OnboardingFlow uid={session.user.id} user={session.user} data={data} upd={upd} onDone={s=>setProfile({school:s})}/>}
+      {redoSetup && <OnboardingFlow uid={session.user.id} user={session.user} data={data} upd={upd} onDone={s=>{setProfile({school:s});setRedoSetup(false);}} onCancel={()=>setRedoSetup(false)}/>}
       {editSchool && <ProfileModal uid={session.user.id} onSaved={s=>{setProfile({school:s});setEditSchool(false);}} onClose={()=>setEditSchool(false)}/>}
       {editAvatar && <AvatarModal data={data} upd={upd} user={session.user} onClose={()=>setEditAvatar(false)}/>}
 
