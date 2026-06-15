@@ -77,8 +77,8 @@
   [data-theme="light"] {
     --bg: #ECEAE2;
     --text: #26251E;
-    --text-dim: rgba(38,37,30,0.5);
-    --text-faint: rgba(38,37,30,0.38);
+    --text-dim: rgba(38,37,30,0.55);
+    --text-faint: rgba(38,37,30,0.48);
     --text-soft: rgba(38,37,30,0.45);
     --input-bg: rgba(30,30,20,0.05);
     --input-border: rgba(30,30,20,0.14);
@@ -1731,7 +1731,7 @@ const AVATARS = [
   {id:"orbit",       label:"Orbit",        group:"marks", svg:(c,d)=>`<ellipse cx="34" cy="34" rx="24" ry="10" fill="none" stroke="${c}" stroke-width="1.4" opacity=".55" transform="rotate(-22 34 34)"/><circle cx="34" cy="34" r="6.5" fill="${c}"/><circle cx="55" cy="27" r="3.2" fill="${c}"/>`},
   {id:"pulse",       label:"Pulse",        group:"marks", svg:(c,d)=>`<path d="M10 34 H24 L29 22 L35 47 L40 30 H58" fill="none" stroke="${c}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>`},
   {id:"facet",       label:"Facet",        group:"marks", svg:(c,d)=>`<g stroke="${d}" stroke-width=".8"><polygon points="34,14 48,28 34,34" fill="${c}"/><polygon points="34,14 20,28 34,34" fill="${c}" opacity=".8"/><polygon points="20,28 34,34 26,50" fill="${c}" opacity=".62"/><polygon points="48,28 34,34 42,50" fill="${c}" opacity=".7"/><polygon points="26,50 34,34 42,50" fill="${c}" opacity=".5"/></g>`},
-  {id:"tide",        label:"Tide",         group:"marks", svg:(c,d)=>`<path d="M6 40 Q20 31 34 40 T62 40 V62 H6 Z" fill="${c}" opacity=".5"/><path d="M6 46 Q20 37 34 46 T62 46 V62 H6 Z" fill="${c}" opacity=".82"/>`},
+  {id:"tide",        label:"Tide",         group:"marks", svg:(c,d)=>`<path d="M0 36 Q17 27 34 36 T68 36 V68 H0 Z" fill="${c}" opacity=".45"/><path d="M0 44 Q17 35 34 44 T68 44 V68 H0 Z" fill="${c}" opacity=".88"/>`},
   {id:"sprout",      label:"Sprout",       group:"marks", svg:(c,d)=>`<path d="M34 50 V30" stroke="${c}" stroke-width="2.6" stroke-linecap="round"/><path d="M34 34 C26 32 22 26 22 21 C29 21 34 26 34 33 Z" fill="${c}"/><path d="M34 30 C42 28 46 22 46 17 C39 17 34 22 34 29 Z" fill="${c}" opacity=".8"/><circle cx="34" cy="52" r="2.4" fill="${c}"/>`},
   {id:"buddy",       label:"Buddy",        group:"chars", svg:(c,d)=>`<circle cx="34" cy="34" r="24" fill="${c}"/><ellipse cx="27" cy="31" rx="2.2" ry="3.2" fill="${d}"/><ellipse cx="41" cy="31" rx="2.2" ry="3.2" fill="${d}"/><path d="M26 40 Q34 47 42 40" fill="none" stroke="${d}" stroke-width="2.6" stroke-linecap="round"/>`},
   {id:"penny",       label:"Penny",        group:"chars", svg:(c,d)=>`<circle cx="34" cy="34" r="23" fill="${c}"/><circle cx="34" cy="34" r="19" fill="none" stroke="${d}" stroke-width="1.6" stroke-dasharray="2 3" opacity=".5"/><path d="M24 32 Q28 28 32 32" fill="none" stroke="${d}" stroke-width="2.2" stroke-linecap="round"/><circle cx="42" cy="32" r="2.4" fill="${d}"/><path d="M28 41 Q34 46 40 41" fill="none" stroke="${d}" stroke-width="2" stroke-linecap="round"/>`},
@@ -1833,7 +1833,7 @@ const AvatarPicker = ({value, onChange, googlePhoto}) => {
       <div className="av-scroll" style={{maxHeight:196,overflowY:"auto",margin:"0 -4px",padding:"0 4px"}}>
         {AV_GROUPS.map(g=>(
           <div key={g.key} style={{marginBottom:8}}>
-            <div style={{fontSize:10,color:C.gray,textTransform:"uppercase",letterSpacing:".06em",margin:"2px 2px 6px"}}>{g.label}</div>
+            <div style={{fontSize:10,color:C.textMid,textTransform:"uppercase",letterSpacing:".06em",margin:"2px 2px 6px"}}>{g.label}</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(46px,1fr))",gap:7}}>
               {AVATARS.filter(a=>a.group===g.key).map(a=>{
                 const sel = value && value.type==="art" && value.style===a.id;
@@ -1859,7 +1859,7 @@ const AvatarModal = ({data, upd, user, onClose}) => {
     <Modal title="Your avatar" onClose={onClose} width={420}>
       <AvatarPicker value={avatar} onChange={setAvatar} googlePhoto={googlePhoto}/>
       <button onClick={save} style={{marginTop:18,width:"100%",padding:"11px 16px",borderRadius:10,border:"none",background:C.teal,color:C.bg,fontSize:14,fontWeight:600,cursor:"pointer"}}>Save</button>
-      <button onClick={onClose} style={{marginTop:10,display:"block",width:"100%",textAlign:"center",border:"none",background:"transparent",color:C.gray,fontSize:12.5,cursor:"pointer"}}>Cancel</button>
+      <button onClick={onClose} style={{marginTop:10,display:"block",width:"100%",textAlign:"center",border:"none",background:"transparent",color:C.textMid,fontSize:12.5,cursor:"pointer"}}>Cancel</button>
     </Modal>
   );
 };
@@ -1998,10 +1998,10 @@ const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
   };
 
   const cta = {width:"100%",padding:"13px 16px",borderRadius:12,border:"none",fontSize:14.5,fontWeight:600,cursor:"pointer",letterSpacing:"-0.01em"};
-  const ctaPrimary = on => ({...cta,background:on?C.text:C.border,color:on?C.bg:C.gray,cursor:on?"pointer":"not-allowed"});
+  const ctaPrimary = on => ({...cta,background:on?C.text:"rgba(38,37,30,0.10)",color:on?C.bg:C.textMid,cursor:on?"pointer":"not-allowed"});
   const input = {width:"100%",padding:"13px 14px",borderRadius:12,border:`1px solid ${C.border}`,background:"transparent",color:C.text,fontSize:15,outline:"none",boxSizing:"border-box"};
   const head = {fontFamily:"'Newsreader',Georgia,serif",fontSize:25,fontWeight:600,color:C.text,letterSpacing:"-0.02em",lineHeight:1.15};
-  const sub  = {fontSize:13,color:C.gray,marginTop:8,lineHeight:1.55};
+  const sub  = {fontSize:13,color:C.textMid,marginTop:8,lineHeight:1.55};
   const dotsTotal = 3; // name, avatar, school
   const dotIdx = step-1; // welcome(0) shows none
 
@@ -2035,7 +2035,7 @@ const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
                 onKeyDown={e=>{if(e.key==="Enter"&&name.trim())setStep(2);}}
                 placeholder="Your first name" style={{...input,marginTop:22}}/>
               <button className="ob-cta" style={{...ctaPrimary(!!name.trim()),marginTop:18}} disabled={!name.trim()} onClick={()=>setStep(2)}>Continue</button>
-              <button onClick={()=>setStep(0)} style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.gray,fontSize:12.5,cursor:"pointer"}}>← Back</button>
+              <button onClick={()=>setStep(0)} style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.textMid,fontSize:12.5,cursor:"pointer"}}>← Back</button>
             </div>
           )}
 
@@ -2045,7 +2045,7 @@ const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
               <div style={sub}>Pick a look, then a color — or use a photo.</div>
               <div style={{marginTop:14}}><AvatarPicker value={avatar} onChange={setAvatar} googlePhoto={googlePhoto}/></div>
               <button className="ob-cta" style={{...ctaPrimary(true),marginTop:16}} onClick={()=>setStep(3)}>Continue</button>
-              <button onClick={()=>setStep(1)} style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.gray,fontSize:12.5,cursor:"pointer"}}>← Back</button>
+              <button onClick={()=>setStep(1)} style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.textMid,fontSize:12.5,cursor:"pointer"}}>← Back</button>
             </div>
           )}
 
@@ -2059,7 +2059,7 @@ const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
                   <button onClick={()=>{setOther(false);setOtherText("");}} style={{marginTop:12,border:"none",background:"transparent",color:C.teal,cursor:"pointer",fontSize:12.5,padding:0}}>← Back to the list</button>
                 </> : needsCampus ? <>
                   <div style={{fontSize:13,color:C.text,fontWeight:600,marginBottom:8}}>{picked.name}</div>
-                  <div style={{fontSize:12,color:C.gray,marginBottom:8}}>Which campus?</div>
+                  <div style={{fontSize:12,color:C.textMid,marginBottom:8}}>Which campus?</div>
                   <div role="listbox" style={{border:`1px solid ${C.border}`,borderRadius:12,overflow:"hidden",maxHeight:230,overflowY:"auto"}}>
                     {picked.campuses.map(c=>(
                       <button key={c} role="option" className="menu-row" onClick={()=>setCampus(c)} style={{display:"block",width:"100%",textAlign:"left",padding:"10px 13px",border:"none",borderBottom:`1px solid ${C.border}`,background:"transparent",color:C.text,fontSize:13,cursor:"pointer"}}>{c}</button>
@@ -2069,7 +2069,7 @@ const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
                 </> : picked ? <>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"12px 14px",borderRadius:12,border:`1px solid ${C.sel}`,background:C.selBg}}>
                     <span style={{fontSize:13.5,color:C.text,fontWeight:600}}>{campus?`${picked.name} — ${campus}`:picked.name}</span>
-                    <button onClick={resetSchool} style={{border:"none",background:"transparent",color:C.gray,cursor:"pointer",fontSize:12}}>Change</button>
+                    <button onClick={resetSchool} style={{border:"none",background:"transparent",color:C.textMid,cursor:"pointer",fontSize:12}}>Change</button>
                   </div>
                 </> : <>
                   <input autoFocus value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search your school…" style={input}/>
@@ -2085,7 +2085,7 @@ const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
               </div>
               {err && <div role="alert" style={{marginTop:12,fontSize:12,color:C.danger}}>{err}</div>}
               <button className="ob-cta" style={{...ctaPrimary(!!school && !saving),marginTop:err?12:20}} disabled={!school||saving} onClick={finish}>{saving?"Setting up…":"Finish"}</button>
-              <button onClick={()=>setStep(2)} style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.gray,fontSize:12.5,cursor:"pointer"}}>← Back</button>
+              <button onClick={()=>setStep(2)} style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.textMid,fontSize:12.5,cursor:"pointer"}}>← Back</button>
             </div>
           )}
 
