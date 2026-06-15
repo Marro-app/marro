@@ -28,8 +28,12 @@ Projected graduation balance, recommendations, comparison mode, Step 3 goal + mi
 - ✓ `profiles` table + one-time ProfileModal: searchable picker over full Wikipedia-sourced US MD (LCME) + DO (COCA) lists (`US_MED_SCHOOLS`); multi-campus schools (LECOM, VCOM, PCOM, RVU, Indiana, Illinois, MSU, etc.) prompt a campus step, stored as "Name — Campus"; free-text Other; school shown in settings with a "Change" action that reopens the picker (editable/cancelable)
 - Deferred to pre-public-launch (see FUTURE_WORK): custom auth domain + Google verification (consent screen currently shows raw Supabase domain + unverified warning; Testing mode capped at 100 users); remove unused `GIST_TOKEN` Vercel env var after a prod deploy.
 
-## Phase 3 — School-agnostic generalization
+## Phase 3 — School-agnostic generalization (in progress)
 First-run onboarding wizard, user-defined year configs, remove WCM hardcoding, variable program lengths. Required before any non-WCM users.
+- ✓ **De-WCM the data layer (June 14):** retired hardcoded `YEAR_CONFIGS`/`DEFAULT_MONTHLY`; added `generateYearConfigs(startYear,len,extended)` (tier-1 heuristic date provider — swappable seam for future calendar-fetch) + `BLANK_MONTHLY`/`blankYearFields()`. All financial fields default to 0 for **every** school (no special-casing). Renamed `wcmLivingAllowance`→`livingAllowance` (migrated on load). Boot migration no longer injects any school's numbers; `addYear` inherits the user's own prior year, not WCM defaults. Removed the hardcoded WCM cost-of-attendance reference table from the Aid tab.
+- ✓ **Onboarding program step (June 14):** new step 4 "How long is your program?" (3/4/5/6 yrs + extended-year toggle) generates the year configs on finish. First-run only — redo-setup never regenerates (would wipe data).
+- ✓ **Progressive setup (June 14):** `SETUP_VERSION` + `SETUP_STEPS` registry + `ProgressiveSetup` popup. New users answer everything inline; existing users behind on a newly-added question get a focused glass popup for just that step. v1 grandfathers existing users (registry currently empty — infra ready for v2+ questions like term-date confirmation / aid-letter upload).
+- Untested live (auth-gated, needs Google smoke test): new-user onboarding finish (years generation + Supabase profile save). MD/DO-from-school-name derivation deferred (no consumer until Phase 4) — see FUTURE_WORK.
 
 ## Phase 4 — Claude AI financial advisor
 Trigger-based (not a chatbot): passive monitoring, anomaly alerts, weekly digest, receipt scanning, goal-aware nudges. No autonomous writes. Cost strategy lives in memory (`project_wcm_ai_cost.md`).

@@ -5,8 +5,9 @@ State schema, linkage system, and sync architecture. Read before touching data l
 ## State shape (`DEFAULT_STATE`, localStorage `wcm_v8`)
 ```
 categories        [{id, label, locked?, autoCalc?}]
+setupVersion      number|null  (null=run onboarding; SETUP_VERSION when complete — progressive setup)
 years             [{id, label, type, grant, tuitionFees, healthIns, otherIncome,
-                    housing, housingNote, wcmLivingAllowance, notes, startDate,
+                    housing, housingNote, livingAllowance, notes, startDate,
                     endDate, monthly:{catId→amount}, monthlyOverrides:{monthName→{catId→amount}}}]
 weeklyArchive     [{weekStart, weekEnd, entries:[{id,catId,amount,note,date,depositId?}], total}]
 currentWeekEntries [{id,catId,amount,note,date,depositId?}]
@@ -24,16 +25,12 @@ _savedAt          number (timestamp on every save — drives 3-way merge)
 - `weeklyEntryId` — `"e_<ts>"` linked weekly entry (if auto-created)
 - `budgetAdded` — `{ay, monthName, catId, amount} | null` — budget delta auto-added
 
-## Year configs (`YEAR_CONFIGS`, index === y.id)
-| idx | Label | Start | End | Grant | Tuition | Housing |
-|---|---|---|---|---|---|---|
-| 0 | Year 1 2026-27 | 2026-08-01 | 2027-08-15 | $109,848 | $76,648 | $996 Olin Hall |
-| 1 | Year 2 2027-28 | 2027-08-01 | 2028-08-15 | $109,848 | $76,648 | $1,370 Lasdon |
-| 2 | Year 3 2028-29 | 2028-08-01 | 2029-08-15 | — | — | — |
-| 3 | Year 4 2029-30 | 2029-08-01 | 2030-08-15 | — | — | — |
-| 4 | Extended 2030-31 | 2030-08-01 | 2031-06-30 | $0 | $5,232 (waived) | — |
+## Year configs (school-agnostic — Phase 3, June 14)
+No school is hardcoded. Years are produced by **`generateYearConfigs(startYear, lengthYears, extendedYear)`** — a tier-1 heuristic date provider that anchors each academic year near Aug 1 (start `${y}-08-01` → end `${y+1}-08-15`; extended year ends `06-30`). All financial fields default to **0** (`blankYearFields()`); monthly budgets seed from **`BLANK_MONTHLY`** (all 0). Users fill figures in the Aid tab (or, future, via aid-letter scan). `id` === array index at generation; `addYear` inherits the user's own prior year, never any school's numbers.
 
-Default monthly budgets (`DEFAULT_MONTHLY`): Y1 housing $996, food $380, transport $110, personal $150, books $80, exams $0, savings $150, social $80. Y2: exams $50, savings $100, housing $1,370. Y3: exams $150, savings $0. Y4: exams $100. Y5(ext): exams $50.
+`generateYearConfigs` is the **swappable seam** for future date sources (user-corrected → fetched-calendar tiers) — see FUTURE_WORK Phase 3 vision. Onboarding's program step calls it on first-run only.
+
+`DEFAULT_STATE.years` = `generateYearConfigs(currentYear, 4, false)`. **Migration:** boot renames legacy `wcmLivingAllowance`→`livingAllowance`, backfills missing fields with zeros, regenerates a default if `years` is empty — and never injects any school's figures.
 
 ## Academic calendar
 ```js

@@ -468,7 +468,7 @@ function diffStates(base, cur) {
   const ylen=Math.max((base.years||[]).length,(cur.years||[]).length);
   for (let i=0;i<ylen;i++) {
     const by=(base.years||[])[i]||{}, cy=(cur.years||[])[i]||{};
-    for (const f of ['grant','tuitionFees','healthIns','otherIncome','housing','housingNote','wcmLivingAllowance','notes','startDate','endDate'])
+    for (const f of ['grant','tuitionFees','healthIns','otherIncome','housing','housingNote','livingAllowance','notes','startDate','endDate'])
       if (js(by[f])!==js(cy[f])) ch[`years[${i}].${f}`]={b:by[f],c:cy[f]};
     const bm=by.monthly||{}, cm=cy.monthly||{};
     for (const c of new Set([...Object.keys(bm),...Object.keys(cm)]))
@@ -913,13 +913,30 @@ const Icon = ({name, size=16, color="currentColor", strokeWidth=1.4, style}) => 
 // ── Year configs ──────────────────────────────────────────────────────────────
 // NOTE: Grant already includes health insurance ($8,100) — the school covers it
 // So grant displayed = base grant + healthIns; school deducts tuitionFees + healthIns
-const YEAR_CONFIGS = [
-  { id:0, label:"Year 1 — 2026-27", type:"standard",  tuitionFees:76648, healthIns:8100, grant:109848, otherIncome:0, housing:996,  housingNote:"Olin Hall",      wcmLivingAllowance:21440, notes:"", startDate:"2026-08-01", endDate:"2027-08-15" },
-  { id:1, label:"Year 2 — 2027-28", type:"standard",  tuitionFees:76648, healthIns:8100, grant:109848, otherIncome:0, housing:1370, housingNote:"Lasdon Two-Share",wcmLivingAllowance:25728, notes:"", startDate:"2027-08-01", endDate:"2028-08-15" },
-  { id:2, label:"Year 3 — 2028-29", type:"standard",  tuitionFees:76486, healthIns:8100, grant:109848, otherIncome:0, housing:1370, housingNote:"Lasdon Two-Share",wcmLivingAllowance:23584, notes:"", startDate:"2028-08-01", endDate:"2029-08-15" },
-  { id:3, label:"Year 4 — 2029-30", type:"standard",  tuitionFees:76486, healthIns:8100, grant:109848, otherIncome:0, housing:1370, housingNote:"Lasdon Two-Share",wcmLivingAllowance:23584, notes:"", startDate:"2029-08-01", endDate:"2030-08-15" },
-  { id:4, label:"Extended — 2030-31",type:"extended", tuitionFees:5232,  healthIns:8100, grant:0,      otherIncome:0, housing:1370, housingNote:"Lasdon Two-Share",wcmLivingAllowance:25728, notes:"", startDate:"2030-08-01", endDate:"2031-06-30" },
-];
+// School-agnostic year config. Financial fields default to 0 for every school
+// (no school is special-cased — see docs/FUTURE_WORK.md); users fill them in the
+// Aid tab or, later, via aid-letter scan. Blank monthly mirrors DEFAULT_CATS ids.
+const BLANK_MONTHLY = {housing:0,food:0,transport:0,personal:0,books:0,exams:0,savings:0,social:0,subs:0};
+const blankYearFields = () => ({ tuitionFees:0, healthIns:0, grant:0, otherIncome:0, housing:0, housingNote:"", livingAllowance:0, notes:"" });
+
+// Tier-1 heuristic academic-year date provider. Budgeting needs the ~12-month
+// financial boundary, not day-precision, so we anchor each year near Aug 1.
+// This is the swappable seam for the future user-corrected / fetched-calendar
+// tiers (LLM-extracted school calendars) — see docs/FUTURE_WORK.md Phase 3 vision.
+const yr2 = y => String(y % 100).padStart(2,"0");
+function generateYearConfigs(startYear, lengthYears, extendedYear){
+  const n = Math.max(1, lengthYears|0);
+  const out = [];
+  for(let i=0;i<n;i++){
+    const sy = startYear + i;
+    out.push({ id:i, label:`Year ${i+1} — ${sy}-${yr2(sy+1)}`, type:"standard", ...blankYearFields(), startDate:`${sy}-08-01`, endDate:`${sy+1}-08-15` });
+  }
+  if(extendedYear){
+    const sy = startYear + n;
+    out.push({ id:n, label:`Extended — ${sy}-${yr2(sy+1)}`, type:"extended", ...blankYearFields(), startDate:`${sy}-08-01`, endDate:`${sy+1}-06-30` });
+  }
+  return out;
+}
 
 const DEFAULT_CATS = [
   {id:"housing",  label:"Housing",        locked:true},
@@ -933,20 +950,18 @@ const DEFAULT_CATS = [
   {id:"subs",     label:"Subscriptions",  autoCalc:true},
 ];
 
-const DEFAULT_MONTHLY = [
-  {housing:996, food:380,transport:110,personal:150,books:80, exams:0,  savings:150,social:80,subs:0},
-  {housing:1370,food:380,transport:110,personal:150,books:60, exams:50, savings:100,social:80,subs:0},
-  {housing:1370,food:380,transport:132,personal:150,books:40, exams:150,savings:0,  social:80,subs:0},
-  {housing:1370,food:380,transport:121,personal:150,books:30, exams:100,savings:0,  social:80,subs:0},
-  {housing:1370,food:380,transport:132,personal:150,books:50, exams:50, savings:0,  social:80,subs:0},
-];
-
 const MONTH_NAMES = ["Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul"];
 const MONTH_FULL = ["August","September","October","November","December","January","February","March","April","May","June","July"];
 
+// Progressive setup: bump SETUP_VERSION whenever a NEW onboarding question is added.
+// New users answer everything in OnboardingFlow; existing users whose stored
+// setupVersion is behind get a focused popup for just the missing step(s).
+const SETUP_VERSION = 1;
+
 const DEFAULT_STATE = {
+  setupVersion: null,  // null = brand new (run onboarding); set to SETUP_VERSION when complete
   categories: DEFAULT_CATS,
-  years: YEAR_CONFIGS.map((cfg,i)=>({...cfg, monthly:{...DEFAULT_MONTHLY[i]}, monthlyOverrides:{}})),
+  years: generateYearConfigs(new Date().getFullYear(), 4, false).map(cfg=>({...cfg, monthly:{...BLANK_MONTHLY}, monthlyOverrides:{}})),
   weeklyArchive: [],
   currentWeekEntries: [],
   subscriptions: [],
@@ -1963,10 +1978,15 @@ const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
   const meta = user?.user_metadata || {};
   const googlePhoto = meta.avatar_url || meta.picture || null;
   const googleFirst = (meta.full_name || meta.name || meta.given_name || "").trim().split(/\s+/)[0] || "";
-  const [step, setStep] = useState(0); // 0 welcome,1 name,2 avatar,3 school,4 finishing
+  const [step, setStep] = useState(0); // 0 welcome,1 name,2 avatar,3 school,4 program,5 finishing
+  const firstRun = !data.setupVersion;  // redo-setup must not regenerate (and wipe) existing years
   // Prefill from existing identity when re-running setup; fall back to Google/defaults first-run.
   const [name, setName] = useState(data.preferredName || googleFirst);
   const [avatar, setAvatar] = useState(data.avatar || (googlePhoto ? {type:"google",url:googlePhoto} : {type:"art",style:"buddy",color:"marigold"}));
+  // program shape — prefill from existing years on redo
+  const existingStd = (data.years||[]).filter(y=>y.type!=="extended").length || 4;
+  const [progLen, setProgLen] = useState(existingStd);
+  const [extYr, setExtYr] = useState((data.years||[]).some(y=>y.type==="extended"));
   // school picker state (mirrors ProfileModal)
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState(null);
@@ -1992,8 +2012,12 @@ const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
     const d = JSON.parse(JSON.stringify(data));
     d.preferredName = name.trim() || null;
     d.avatar = avatar;
+    // First-run only: generate the year configs from the chosen program shape.
+    // On redo we never touch years (would wipe the user's budget data).
+    if(firstRun) d.years = generateYearConfigs(new Date().getFullYear(), progLen, extYr).map(cfg=>({...cfg, monthly:{...BLANK_MONTHLY}, monthlyOverrides:{}}));
+    d.setupVersion = SETUP_VERSION;
     upd(d);
-    setStep(4);
+    setStep(5);
     setTimeout(()=>onDone(school), 1500);
   };
 
@@ -2002,15 +2026,15 @@ const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
   const input = {width:"100%",padding:"13px 14px",borderRadius:12,border:`1px solid ${C.border}`,background:"transparent",color:C.text,fontSize:15,outline:"none",boxSizing:"border-box"};
   const head = {fontFamily:"'Newsreader',Georgia,serif",fontSize:25,fontWeight:600,color:C.text,letterSpacing:"-0.02em",lineHeight:1.15};
   const sub  = {fontSize:13,color:C.textMid,marginTop:8,lineHeight:1.55};
-  const dotsTotal = 3; // name, avatar, school
+  const dotsTotal = 4; // name, avatar, school, program
   const dotIdx = step-1; // welcome(0) shows none
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Welcome to Marro" style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:C.scrim,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)"}}>
       <div className="mm" style={{position:"relative",width:"100%",maxWidth:420,padding:"36px 30px 30px",overflow:"hidden"}}>
-        {onCancel && step!==4 && <button onClick={onCancel} aria-label="Close setup" style={{position:"absolute",top:12,right:12,zIndex:2,width:28,height:28,borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",color:C.gray,cursor:"pointer",fontSize:14,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>}
+        {onCancel && step!==5 && <button onClick={onCancel} aria-label="Close setup" style={{position:"absolute",top:12,right:12,zIndex:2,width:28,height:28,borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",color:C.gray,cursor:"pointer",fontSize:14,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>}
         {/* progress dots */}
-        {step>=1 && step<=3 && (
+        {step>=1 && step<=4 && (
           <div style={{display:"flex",gap:6,justifyContent:"center",marginBottom:26}}>
             {Array.from({length:dotsTotal}).map((_,i)=>(
               <div key={i} style={{height:5,borderRadius:5,transition:"all .3s cubic-bezier(0.23,1,0.32,1)",width:i===dotIdx?22:5,background:i<=dotIdx?C.marigold:C.border}}/>
@@ -2083,19 +2107,100 @@ const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
                   <button onClick={()=>{resetSchool();setOther(true);}} style={{marginTop:12,border:"none",background:"transparent",color:C.teal,cursor:"pointer",fontSize:12.5,padding:0}}>My school isn't listed →</button>
                 </>}
               </div>
-              {err && <div role="alert" style={{marginTop:12,fontSize:12,color:C.danger}}>{err}</div>}
-              <button className="ob-cta" style={{...ctaPrimary(!!school && !saving),marginTop:err?12:20}} disabled={!school||saving} onClick={finish}>{saving?"Setting up…":"Finish"}</button>
+              <button className="ob-cta" style={{...ctaPrimary(!!school),marginTop:20}} disabled={!school} onClick={()=>setStep(4)}>Continue</button>
               <button onClick={()=>setStep(2)} style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.textMid,fontSize:12.5,cursor:"pointer"}}>← Back</button>
             </div>
           )}
 
           {step===4 && (
+            <div>
+              <div style={head}>How long is your program?</div>
+              <div style={sub}>This sets up your academic years. You can fine-tune dates and add or remove years anytime.</div>
+              <div style={{display:"flex",gap:8,marginTop:20}}>
+                {[3,4,5,6].map(n=>(
+                  <button key={n} onClick={()=>setProgLen(n)} style={{flex:1,padding:"14px 0",borderRadius:12,border:`1px solid ${progLen===n?C.sel:C.border}`,background:progLen===n?C.selBg:"transparent",color:C.text,fontSize:15,fontWeight:progLen===n?700:500,cursor:"pointer",transition:"all .2s"}}>{n}</button>
+                ))}
+              </div>
+              <div style={{fontSize:11,color:C.gray,textAlign:"center",marginTop:8}}>years</div>
+              <button onClick={()=>setExtYr(v=>!v)} role="checkbox" aria-checked={extYr} style={{display:"flex",alignItems:"center",gap:10,width:"100%",marginTop:18,padding:"12px 14px",borderRadius:12,border:`1px solid ${extYr?C.sel:C.border}`,background:extYr?C.selBg:"transparent",cursor:"pointer",textAlign:"left"}}>
+                <span style={{flexShrink:0,width:18,height:18,borderRadius:5,border:`1.5px solid ${extYr?C.marigold:C.border}`,background:extYr?C.marigold:"transparent",display:"flex",alignItems:"center",justifyContent:"center",color:C.bg,fontSize:12,fontWeight:700}}>{extYr?"✓":""}</span>
+                <span style={{display:"flex",flexDirection:"column"}}>
+                  <span style={{fontSize:13.5,color:C.text,fontWeight:600}}>I have an extra / research year</span>
+                  <span style={{fontSize:11.5,color:C.textMid,marginTop:1}}>Adds a separate extended year to your plan</span>
+                </span>
+              </button>
+              {firstRun
+                ? <div style={{fontSize:11,color:C.gray,marginTop:14}}>We'll start your first year this {new Date().getFullYear()} — change it anytime in the Aid tab.</div>
+                : <div style={{fontSize:11,color:C.gray,marginTop:14}}>Your existing year data is kept — use the Aid tab to add or remove years.</div>}
+              {err && <div role="alert" style={{marginTop:12,fontSize:12,color:C.danger}}>{err}</div>}
+              <button className="ob-cta" style={{...ctaPrimary(!saving),marginTop:err?12:18}} disabled={saving} onClick={finish}>{saving?"Setting up…":"Finish"}</button>
+              <button onClick={()=>setStep(3)} style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.textMid,fontSize:12.5,cursor:"pointer"}}>← Back</button>
+            </div>
+          )}
+
+          {step===5 && (
             <div style={{textAlign:"center",padding:"10px 0"}}>
               <div style={{marginBottom:16}}><MarroIntro size={300}/></div>
               <div style={{...head,fontSize:25}} className="ob-rise">You're all set{name.trim()?`, ${name.trim()}`:""}<span style={{color:C.marigold}}>.</span></div>
               <div style={{...sub,maxWidth:280,margin:"8px auto 0"}} className="ob-rise">Opening your dashboard…</div>
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Progressive setup ─────────────────────────────────────────────────────────
+// Single source of truth for onboarding questions added AFTER launch. When you add
+// a new setup prompt: (1) append a step here with the SETUP_VERSION it ships in,
+// (2) bump SETUP_VERSION. New users answer it inline in OnboardingFlow; existing
+// users whose stored setupVersion is behind get the focused popup below for just
+// the question(s) they're missing — no full re-onboarding.
+//
+// Each step: { key, sinceVersion, isPending(data)→bool, title, sub, Body }.
+//   Body({data, commit}) renders the question UI and calls commit(patch) with a
+//   shallow state patch (merged + advances). Reuse the glass `.mm` shell + tokens.
+const SETUP_STEPS = [
+  // v1 (program shape) is collected inline in OnboardingFlow for new users and
+  // existing users are grandfathered, so nothing is pending here yet. Future
+  // questions (e.g. term-date confirmation, aid-letter upload) go here.
+];
+
+const ProgressiveSetup = ({data, upd}) => {
+  const pending = React.useMemo(() => SETUP_STEPS.filter(s => (data.setupVersion||0) < s.sinceVersion && s.isPending(data)), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [i, setI] = useState(0);
+  const bumpVersion = () => { const d = JSON.parse(JSON.stringify(data)); d.setupVersion = SETUP_VERSION; upd(d); };
+  // Nothing actually missing (e.g. empty registry / grandfathered) → silently catch up.
+  React.useEffect(() => { if(!pending.length) bumpVersion(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  if(!pending.length) return null;
+
+  const step = pending[i];
+  const commit = patch => {
+    const d = JSON.parse(JSON.stringify(data));
+    Object.assign(d, patch || {});
+    if(i+1 >= pending.length) d.setupVersion = SETUP_VERSION;  // last one → mark current
+    upd(d);
+    if(i+1 < pending.length) setI(i+1);
+  };
+  const head = {fontFamily:"'Newsreader',Georgia,serif",fontSize:25,fontWeight:600,color:C.text,letterSpacing:"-0.02em",lineHeight:1.15};
+  const sub  = {fontSize:13,color:C.textMid,marginTop:8,lineHeight:1.55};
+
+  return (
+    <div role="dialog" aria-modal="true" aria-label="Finish setting up Marro" style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:C.scrim,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)"}}>
+      <div className="mm" style={{position:"relative",width:"100%",maxWidth:420,padding:"36px 30px 30px",overflow:"hidden"}}>
+        {pending.length>1 && (
+          <div style={{display:"flex",gap:6,justifyContent:"center",marginBottom:26}}>
+            {pending.map((_,j)=>(
+              <div key={j} style={{height:5,borderRadius:5,transition:"all .3s cubic-bezier(0.23,1,0.32,1)",width:j===i?22:5,background:j<=i?C.marigold:C.border}}/>
+            ))}
+          </div>
+        )}
+        <div style={{fontSize:11,color:C.gray,marginBottom:10,fontWeight:600,letterSpacing:"0.04em",textTransform:"uppercase"}}>One more thing</div>
+        <div style={head}>{step.title}</div>
+        {step.sub && <div style={sub}>{step.sub}</div>}
+        <div key={step.key} className="ob-step" style={{marginTop:18}}>
+          <step.Body data={data} commit={commit}/>
         </div>
       </div>
     </div>
@@ -2466,12 +2571,20 @@ function App() {
         if(loaded.stepGoals && !loaded.stepGoals.find(g=>g.id==="step3")) loaded.stepGoals.push({id:"step3",label:"Step 3",targetAmount:1000,targetDate:"2031-06-01",saved:0,monthlyContribution:0});
         if(!loaded.savingsGoals) loaded.savingsGoals=[];
         if(!loaded.savingsLog) loaded.savingsLog=[];
-        loaded.years.forEach((y,i)=>{if(!y.startDate)Object.assign(y,YEAR_CONFIGS[i]);});
-        // Migration: add any year configs missing from a saved state (e.g. Extended year added post-launch)
-        YEAR_CONFIGS.forEach((cfg,i)=>{
-          if(!loaded.years.find(y=>y.id===cfg.id)){
-            loaded.years.splice(i,0,{...cfg,monthly:{...DEFAULT_MONTHLY[i]},monthlyOverrides:{}});
-          }
+        // Grandfather existing users: a saved state without setupVersion predates
+        // progressive setup — treat them as current so we don't nag them for v1 steps
+        // (their years are already configured). Brand-new states keep null → onboarding.
+        if(loaded.setupVersion===undefined) loaded.setupVersion = raw ? SETUP_VERSION : null;
+        // Year migrations (school-agnostic — never inject any school's numbers).
+        if(!Array.isArray(loaded.years) || !loaded.years.length)
+          loaded.years = generateYearConfigs(new Date().getFullYear(), 4, false).map(cfg=>({...cfg, monthly:{...BLANK_MONTHLY}, monthlyOverrides:{}}));
+        loaded.years.forEach(y=>{
+          // Rename legacy WCM-named field → generic livingAllowance
+          if(y.wcmLivingAllowance!==undefined){ if(y.livingAllowance===undefined) y.livingAllowance=y.wcmLivingAllowance; delete y.wcmLivingAllowance; }
+          // Backfill any missing fields with safe zeros (no school defaults)
+          for(const [k,v] of Object.entries(blankYearFields())) if(y[k]===undefined) y[k]=v;
+          if(!y.monthly) y.monthly={...BLANK_MONTHLY};
+          if(!y.monthlyOverrides) y.monthlyOverrides={};
         });
         setData(loaded);
         // Profile (school). No row → {school:null} triggers the one-time ProfileModal.
@@ -2992,16 +3105,17 @@ function App() {
     const newId=Math.max(...d.years.map(y=>y.id),-1)+1;
     const yrNum=d.years.filter(y=>y.type!=="extended").length+1;
     const last=d.years[d.years.length-1]||{};
-    const sy=start?new Date(start+"T12:00:00").getFullYear():2026+d.years.length;
+    const sy=start?new Date(start+"T12:00:00").getFullYear():new Date().getFullYear()+d.years.length;
     const ey=end?new Date(end+"T12:00:00").getFullYear():sy+1;
+    // Inherit the previous year's figures (the user's own data), not any school's defaults.
     d.years.push({
       id:newId, label:`Year ${yrNum} — ${sy}-${String(ey).slice(2)}`, type:"standard",
-      tuitionFees:Number(last.tuitionFees)||76486, healthIns:Number(last.healthIns)||8100,
-      grant:Number(last.grant)||109848, otherIncome:0,
-      housing:Number(last.housing)||1370, housingNote:last.housingNote||"Lasdon Two-Share",
-      wcmLivingAllowance:Number(last.wcmLivingAllowance)||23584, notes:"",
+      tuitionFees:Number(last.tuitionFees)||0, healthIns:Number(last.healthIns)||0,
+      grant:Number(last.grant)||0, otherIncome:Number(last.otherIncome)||0,
+      housing:Number(last.housing)||0, housingNote:last.housingNote||"",
+      livingAllowance:Number(last.livingAllowance)||0, notes:"",
       startDate:start||`${sy}-08-01`, endDate:end||`${ey}-08-15`,
-      monthly:{...(last.monthly||{})}, monthlyOverrides:{},
+      monthly:{...(last.monthly||BLANK_MONTHLY)}, monthlyOverrides:{},
     });
     upd(d);setShowAddYear(false);setNyStart("");setNyEnd("");
   };
@@ -3534,6 +3648,8 @@ function App() {
       {pendingConflict && <ConflictModal pending={pendingConflict} data={data} onResolve={resolveConflict}/>}
       {profile && !profile.school && <OnboardingFlow uid={session.user.id} user={session.user} data={data} upd={upd} onDone={s=>setProfile({school:s})}/>}
       {redoSetup && <OnboardingFlow uid={session.user.id} user={session.user} data={data} upd={upd} onDone={s=>{setProfile({school:s});setRedoSetup(false);}} onCancel={()=>setRedoSetup(false)}/>}
+      {/* Existing users who finished onboarding but are behind on a newer setup question */}
+      {profile && profile.school && !redoSetup && (data.setupVersion||0) < SETUP_VERSION && <ProgressiveSetup data={data} upd={upd}/>}
       {editSchool && <ProfileModal uid={session.user.id} onSaved={s=>{setProfile({school:s});setEditSchool(false);}} onClose={()=>setEditSchool(false)}/>}
       {editAvatar && <AvatarModal data={data} upd={upd} user={session.user} onClose={()=>setEditAvatar(false)}/>}
 
@@ -4752,33 +4868,6 @@ function App() {
             </div>
           </Card>
 
-          {/* Official COA */}
-          <Card>
-            <SectionTitle sub="Source: studentservices.weill.cornell.edu">Official cost of attendance 2025-26</SectionTitle>
-            <div className="scrollx" style={{overflowX:"auto"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-                <thead><tr>
-                  {["Component","Year 1","Year 2","Year 3","Year 4","Extended"].map(h=><th key={h} style={{textAlign:"left",fontSize:10,color:C.gray,padding:"5px 8px",borderBottom:`1px solid ${C.border}`,fontWeight:600}}>{h}</th>)}
-                </tr></thead>
-                <tbody>
-                  {[
-                    ["Tuition & fees","$76,486","$76,648","$76,648","$76,486","$5,232"],
-                    ["Housing & food","$17,376","$21,440","$25,728","$23,584","$25,728"],
-                    ["Personal","$5,360","$5,360","$6,432","$5,896","$6,432"],
-                    ["Transportation","$1,320","$1,320","$1,584","$1,452","$1,584"],
-                    ["Health insurance","$8,100","$8,100","$8,100","$8,100","$8,100"],
-                    ["Total","$108,642","$112,868","$118,492","$115,518","$47,076"],
-                  ].map(([l,...vals],i)=>(
-                    <tr key={l} style={{background:i===5?C.surface:"transparent"}}>
-                      <td style={{padding:"7px 8px",fontWeight:i===5?700:400,color:i===5?C.text:C.textMid}}>{l}</td>
-                      {vals.map((v,j)=><td key={j} style={{padding:"7px 8px",fontWeight:i===5?700:400,color:i===5?C.neg:C.text}}>{v}</td>)}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div style={{fontSize:11,color:C.gray,marginTop:8}}>Extended: tuition waived. Note: table shows 2025-26 figures; your plan starts 2026-27.</div>
-          </Card>
         </div>
       )}
 

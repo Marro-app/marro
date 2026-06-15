@@ -22,7 +22,9 @@ Don't scan the file; `grep -n` the key for the section you need. Keys are stable
 | Auth session state + boot effect | `const [session` / `onAuthStateChange` |
 | Sync merge engine (diff/conflict/apply utils) | `function diffStates` |
 | Color tokens + chart palette | `const C = ` then `CHART_COLORS` |
-| Year configs / default state | `YEAR_CONFIGS` / `const DEFAULT_STATE` |
+| Year config generator (school-agnostic) / blank seeds | `generateYearConfigs` / `BLANK_MONTHLY` |
+| Default state | `const DEFAULT_STATE` |
+| Progressive setup (versioned post-launch onboarding Qs) | `SETUP_VERSION` / `SETUP_STEPS` / `const ProgressiveSetup` |
 | Money formatters (fmt/fmtS/fmtD/fmtA/fmtSA) | `const fmt ` |
 | Shared components (Pill, Card, MetricTile…) | `const Pill` / `const Card` / `MetricTile =` |
 | RenewalDialog / WeekSelectorModal / ConflictModal | `function RenewalDialog` etc. |
