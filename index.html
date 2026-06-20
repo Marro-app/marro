@@ -53,6 +53,7 @@
     --focus-glow: rgba(130,174,219,0.28);
     --focus-ring: rgba(130,174,219,0.85);
     --accent: #82AEDB;
+    --shimmer-glow: #FFF6DF;
     --color-scheme: dark;
     --select-caret: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2.5 4.5L6 8l3.5-3.5' fill='none' stroke='%23F6EFDD' stroke-opacity='0.55' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
     --glass-card: rgba(246,239,221,0.07);
@@ -88,6 +89,7 @@
     --focus-glow: rgba(51,104,158,0.25);
     --focus-ring: rgba(51,104,158,0.80);
     --accent: #33689E;
+    --shimmer-glow: #C99A2E;
     --color-scheme: light;
     --select-caret: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2.5 4.5L6 8l3.5-3.5' fill='none' stroke='%2326251E' stroke-opacity='0.6' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
     --glass-card: rgba(255,255,255,0.30);
@@ -188,11 +190,6 @@
     /* Text-action buttons ("← Back", "Change", "isn't listed →" etc):
        opacity lift + cursor on hover so they read as clickable, not static text. */
     .txt-act:hover { opacity: 1; }
-    /* Inactive nav pills (tabs + year selector): brighten the lettering and add a
-       faint wash on hover so they read as clickable. Active pills carry their own
-       highlight and are unclassed, so this never touches them. !important beats the
-       inline `color` (which is non-important) while keeping the inline transition. */
-    .navpill:hover { color: var(--text) !important; background: var(--input-bg); }
   }
   .txt-act { cursor: pointer; opacity: 0.72; transition: opacity 140ms ease; }
   /* Tab bar: hide scrollbar; on narrow screens fade the right edge to hint more tabs */
@@ -392,8 +389,35 @@
     .ob-cta:hover { transform: translateY(-1px); }
   }
   .ob-cta { transition: transform 140ms cubic-bezier(0.23,1,0.32,1), background 140ms ease, opacity 140ms ease; }
+  /* ── Letter shimmer on hover ──────────────────────────────────────────────
+     A glow sweeps through the GLYPHS themselves (not an overlay): on hover the
+     text fill is clipped from a moving gradient — base text color with a bright
+     `--shimmer-glow` band that travels across the letters once. Only for text
+     controls (icons/SVGs are unaffected by background-clip:text). The element's
+     own `color` stays as the rest state; `-webkit-text-fill-color` (not `color`)
+     drives the hover fill so it cooperates with any inline color. Reduced-motion
+     below restores a plain instant brighten. */
+  .shimmer-text { transition: color 140ms ease; }
+  @media (hover: hover) and (pointer: fine) {
+    .shimmer-text:hover {
+      /* !important: the buttons carry an inline `background` shorthand (transparent),
+         which would otherwise reset background-image/clip and kill the effect. */
+      background-image: linear-gradient(100deg,
+        var(--text) 0%, var(--text) 38%, var(--shimmer-glow) 50%, var(--text) 62%, var(--text) 100%) !important;
+      background-size: 250% 100% !important; background-repeat: no-repeat !important;
+      background-position: 120% 0; background-origin: padding-box !important;
+      -webkit-background-clip: text !important; background-clip: text !important;
+      -webkit-text-fill-color: transparent;
+      animation: textShimmer 750ms ease forwards;
+    }
+  }
+  @keyframes textShimmer {
+    from { background-position: 120% 0; }
+    to   { background-position: -130% 0; }
+  }
   /* Respect user motion preferences (Emil Kowalski) */
   @media (prefers-reduced-motion: reduce) {
+    .shimmer-text:hover { animation: none !important; background-image: none; -webkit-text-fill-color: var(--text); color: var(--text); }
     .mc { transition: none; }
     .mc-e { animation: none !important; opacity: 1 !important; transform: none !important; }
     .mc-sh { display: none; }
@@ -1297,7 +1321,7 @@ const SectionTitle = ({children, sub}) => (
 );
 
 const TabBtn = ({label, active, onClick, badge}) => (
-  <button onClick={onClick} className={active?undefined:"navpill"} style={{
+  <button onClick={onClick} className={active?undefined:"shimmer-text"} style={{
     padding:"7px 16px", border:"none",
     borderRadius:28,
     background: active ? C.tabActiveBg : "transparent",
@@ -1314,7 +1338,7 @@ const TabBtn = ({label, active, onClick, badge}) => (
 );
 
 const YrBtn = ({yr, active, onClick}) => (
-  <button onClick={onClick} className={active?undefined:"navpill"} style={{
+  <button onClick={onClick} className={active?undefined:"shimmer-text"} style={{
     padding:"6px 14px", border:"none", borderRadius:28,
     background: active ? C.tabActiveBg : "transparent",
     color: active ? C.ink : C.tabMuted,
@@ -4113,7 +4137,7 @@ function App() {
               <span style={{fontSize:10,fontWeight:600,color:C.gray,textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"}}>{viewWeek?"Archived week":"This week"}</span>
               <span style={{fontSize:20,fontWeight:600,color:C.text,letterSpacing:"-0.01em",fontFamily:"'Newsreader',Georgia,serif",whiteSpace:"nowrap"}}>{fmtWeekLabel(viewWeek||currentWeekStart)}</span>
             </div>
-            <button onClick={()=>setShowWeekPicker(true)} style={{padding:"6px 14px",borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",fontSize:12,color:C.gray,fontWeight:500,display:"flex",alignItems:"center",gap:6}}>
+            <button onClick={()=>setShowWeekPicker(true)} className="shimmer-text" style={{padding:"6px 14px",borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",fontSize:12,color:C.gray,fontWeight:500,display:"flex",alignItems:"center",gap:6}}>
               Browse weeks {archives.length>0&&`(${archives.length} archived)`}
             </button>
             {viewWeek && <button onClick={()=>setViewWeek(null)} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${C.sel}`,background:C.selBg,cursor:"pointer",fontSize:12,color:C.text,fontWeight:600}}>← Back to current week</button>}
@@ -4168,7 +4192,7 @@ function App() {
                 <button onClick={addEntry} disabled={!wCat||!wAmt} style={{padding:"9px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:(!wCat||!wAmt)?C.surface:C.teal,color:(!wCat||!wAmt)?C.gray:C.bg,cursor:(!wCat||!wAmt)?"not-allowed":"pointer",marginTop:2,transition:"all .15s"}}>
                   Add entry
                 </button>
-                <button onClick={()=>{setShowCsvImport(true);setCsvText("");setCsvRows(null);}} style={{padding:"7px",fontSize:12,fontWeight:500,border:`1px solid ${C.border}`,borderRadius:8,background:"transparent",color:C.gray,cursor:"pointer",marginTop:2}}>
+                <button onClick={()=>{setShowCsvImport(true);setCsvText("");setCsvRows(null);}} className="shimmer-text" style={{padding:"7px",fontSize:12,fontWeight:500,border:`1px solid ${C.border}`,borderRadius:8,background:"transparent",color:C.gray,cursor:"pointer",marginTop:2}}>
                   Import from bank CSV
                 </button>
               </div>
