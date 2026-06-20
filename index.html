@@ -6,13 +6,14 @@
 <title>Marro</title>
 <meta name="description" content="Financial companion for medical students"/>
 <link rel="manifest" href="manifest.json"/>
-<meta name="theme-color" content="#0b1611"/>
+<meta name="theme-color" content="#ECEAE2" media="(prefers-color-scheme: light)"/>
+<meta name="theme-color" content="#101210" media="(prefers-color-scheme: dark)"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="apple-mobile-web-app-title" content="Marro"/>
 <link rel="preload" href="fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin/>
 <link rel="preload" href="fonts/newsreader-var.woff2" as="font" type="font/woff2" crossorigin/>
-<link rel="apple-touch-icon" href="icon.svg"/>
+<link rel="apple-touch-icon" href="apple-touch-icon.png"/>
 <link rel="icon" href="icon.svg" type="image/svg+xml"/>
 <script>
 // Pre-paint theme guard: set data-theme before the stylesheet is consumed so an
@@ -184,7 +185,16 @@
     .xbtn:hover { background: var(--input-bg); color: var(--text); }
     .xbtn-danger:hover { color: var(--xbtn-danger, currentColor); }
     .menu-row:hover { background: var(--input-bg); }
+    /* Text-action buttons ("← Back", "Change", "isn't listed →" etc):
+       opacity lift + cursor on hover so they read as clickable, not static text. */
+    .txt-act:hover { opacity: 1; }
+    /* Inactive nav pills (tabs + year selector): brighten the lettering and add a
+       faint wash on hover so they read as clickable. Active pills carry their own
+       highlight and are unclassed, so this never touches them. !important beats the
+       inline `color` (which is non-important) while keeping the inline transition. */
+    .navpill:hover { color: var(--text) !important; background: var(--input-bg); }
   }
+  .txt-act { cursor: pointer; opacity: 0.72; transition: opacity 140ms ease; }
   /* Tab bar: hide scrollbar; on narrow screens fade the right edge to hint more tabs */
   .tabbar { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .tabbar::-webkit-scrollbar { display: none; }
@@ -323,6 +333,9 @@
     position: absolute; inset: 0; border-radius: inherit;
     background: linear-gradient(135deg, rgba(255,255,255,0.10) 0%, transparent 50%);
     pointer-events: none; opacity: 0; transition: opacity 180ms ease;
+  }
+  [data-theme="light"] .mc-sh {
+    background: linear-gradient(135deg, rgba(255,255,255,0.45) 0%, transparent 50%);
   }
   .mc-sp {
     position: absolute; left: 8%; right: 8%; top: 0;
@@ -726,8 +739,9 @@ const applyTheme = (dark) => {
   Object.assign(C, t);
   CHART_COLORS.length = 0; CHART_COLORS.push(...t.chartColors);
   document.documentElement.dataset.theme = dark ? "dark" : "light";
-  const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = t.bg;
+  // Two media-scoped theme-color metas exist for pre-JS chrome; post-load we set
+  // both to the user's actual theme so whichever the browser picks by OS pref matches.
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => { m.content = t.bg; });
 };
 // Sync C to the FOUC guard's resolved theme at module load, so screens that render
 // before app data loads (LoginScreen) use the right tokens. The data-driven
@@ -1283,7 +1297,7 @@ const SectionTitle = ({children, sub}) => (
 );
 
 const TabBtn = ({label, active, onClick, badge}) => (
-  <button onClick={onClick} style={{
+  <button onClick={onClick} className={active?undefined:"navpill"} style={{
     padding:"7px 16px", border:"none",
     borderRadius:28,
     background: active ? C.tabActiveBg : "transparent",
@@ -1300,7 +1314,7 @@ const TabBtn = ({label, active, onClick, badge}) => (
 );
 
 const YrBtn = ({yr, active, onClick}) => (
-  <button onClick={onClick} style={{
+  <button onClick={onClick} className={active?undefined:"navpill"} style={{
     padding:"6px 14px", border:"none", borderRadius:28,
     background: active ? C.tabActiveBg : "transparent",
     color: active ? C.ink : C.tabMuted,
@@ -1377,8 +1391,13 @@ const InfoTip = ({text}) => {
   </span>;
 };
 
-const MarroLogo = ({size=54}) => (
-  <div style={{width:size,height:size,borderRadius:Math.round(size*0.24),background:"#14150F",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:"0 0 0 1.5px rgba(246,239,221,0.14), 0 4px 20px rgba(0,0,0,0.45)"}}>
+const MarroLogo = ({size=54}) => {
+  // Always-dark tile (like the avatar coins). In dark mode a faint cream hairline
+  // defines it; on a light bg that cream blends in, so swap to a dark hairline +
+  // lift shadow so the tile still reads as a distinct object.
+  const light = typeof document!=="undefined" && document.documentElement.dataset.theme==="light";
+  return (
+  <div style={{width:size,height:size,borderRadius:Math.round(size*0.24),background:"#14150F",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,boxShadow:light?"0 0 0 1px rgba(38,37,30,0.14), 0 6px 18px rgba(38,37,30,0.20)":"0 0 0 1.5px rgba(246,239,221,0.14), 0 4px 20px rgba(0,0,0,0.45)"}}>
     <svg width={size*0.72} height={size*0.72} viewBox="0 0 26 26" style={{overflow:"visible"}}>
       <g transform="translate(13,13)">
         <circle r="1.5" fill="#DDA528"
@@ -1392,7 +1411,8 @@ const MarroLogo = ({size=54}) => (
       </g>
     </svg>
   </div>
-);
+  );
+};
 
 // ── Login gate ──────────────────────────────────────────────────────────────
 // Shown when there is no Supabase session. Hard gate: no anonymous/local mode.
@@ -1799,7 +1819,7 @@ const ProfileModal = ({uid, onSaved, onClose}) => {
       </> : picked ? <>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"10px 12px",borderRadius:10,border:`1px solid ${C.sel}`,background:C.selBg}}>
           <span style={{fontSize:13,color:C.text,fontWeight:600}}>{campus ? `${picked.name} — ${campus}` : picked.name}</span>
-          <button onClick={reset} style={{border:"none",background:"transparent",color:C.gray,cursor:"pointer",fontSize:12}}>Change</button>
+          <button onClick={reset} className="txt-act" style={{border:"none",background:"transparent",color:C.gray,fontSize:12}}>Change</button>
         </div>
       </> : <>
         <input autoFocus value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search your school…" style={inputStyle}/>
@@ -2188,7 +2208,7 @@ const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
                 onKeyDown={e=>{if(e.key==="Enter"&&name.trim())setStep(2);}}
                 placeholder="Your first name" style={{...input,marginTop:22}}/>
               <button className="ob-cta" style={{...ctaPrimary(!!name.trim()),marginTop:18}} disabled={!name.trim()} onClick={()=>setStep(2)}>Continue</button>
-              <button onClick={()=>setStep(0)} style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.textMid,fontSize:12.5,cursor:"pointer"}}>← Back</button>
+              <button onClick={()=>setStep(0)} className="txt-act" style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.textMid,fontSize:12.5}}>← Back</button>
             </div>
           )}
 
@@ -2198,7 +2218,7 @@ const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
               <div style={sub}>Pick a look, then a color — or use a photo.</div>
               <div style={{marginTop:14}}><AvatarPicker value={avatar} onChange={setAvatar} googlePhoto={googlePhoto}/></div>
               <button className="ob-cta" style={{...ctaPrimary(true),marginTop:16}} onClick={()=>setStep(3)}>Continue</button>
-              <button onClick={()=>setStep(1)} style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.textMid,fontSize:12.5,cursor:"pointer"}}>← Back</button>
+              <button onClick={()=>setStep(1)} className="txt-act" style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.textMid,fontSize:12.5}}>← Back</button>
             </div>
           )}
 
@@ -2222,7 +2242,7 @@ const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
                 </> : picked ? <>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"12px 14px",borderRadius:12,border:`1px solid ${C.sel}`,background:C.selBg}}>
                     <span style={{fontSize:13.5,color:C.text,fontWeight:600}}>{campus?`${picked.name} — ${campus}`:picked.name}</span>
-                    <button onClick={resetSchool} style={{border:"none",background:"transparent",color:C.textMid,cursor:"pointer",fontSize:12}}>Change</button>
+                    <button onClick={resetSchool} className="txt-act" style={{border:"none",background:"transparent",color:C.textMid,fontSize:12}}>Change</button>
                   </div>
                 </> : <>
                   <input autoFocus value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search your school…" style={input}/>
@@ -2237,7 +2257,7 @@ const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
                 </>}
               </div>
               <button className="ob-cta" style={{...ctaPrimary(!!school),marginTop:20}} disabled={!school} onClick={()=>setStep(4)}>Continue</button>
-              <button onClick={()=>setStep(2)} style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.textMid,fontSize:12.5,cursor:"pointer"}}>← Back</button>
+              <button onClick={()=>setStep(2)} className="txt-act" style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.textMid,fontSize:12.5}}>← Back</button>
             </div>
           )}
 
@@ -2309,7 +2329,7 @@ const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
                 : <div style={{fontSize:11,color:C.gray,marginTop:10}}>Your existing year data is kept — use the Aid tab to add or remove years.</div>}
               {err && <div role="alert" style={{marginTop:12,fontSize:12,color:C.danger}}>{err}</div>}
               <button className="ob-cta" style={{...ctaPrimary(!saving),marginTop:err?12:18}} disabled={saving} onClick={finish}>{saving?"Setting up…":"Finish"}</button>
-              <button onClick={()=>setStep(3)} style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.textMid,fontSize:12.5,cursor:"pointer"}}>← Back</button>
+              <button onClick={()=>setStep(3)} className="txt-act" style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.textMid,fontSize:12.5}}>← Back</button>
             </div>
             );
           })()}
@@ -2602,7 +2622,6 @@ function App() {
   const [editProgram, setEditProgram] = useState(false); // settings → edit program track (ProgramModal)
   const [editName, setEditName] = useState(false); // settings → inline name editor
   const [editAvatar, setEditAvatar] = useState(false); // settings → avatar editor modal
-  const [redoSetup, setRedoSetup] = useState(false); // settings → replay the onboarding flow
   const gistTimerRef = React.useRef(null);
   const dataRef = React.useRef(null);
   const lastFocusRef = React.useRef(0);
@@ -3816,10 +3835,6 @@ function App() {
                       <span key={data.darkMode?"sun":"moon"} style={{display:"inline-flex",animation:"iconSwap 220ms cubic-bezier(0.23,1,0.32,1)"}}><Icon name={data.darkMode?"sun":"moon"} size={14}/></span>
                       {data.darkMode?"Light mode":"Dark mode"}
                     </button>
-                    <button role="menuitem" className="menu-row" onClick={()=>{setRedoSetup(true);setSettingsOpen(false);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
-                      <Icon name="star" size={14}/>
-                      Re-run setup
-                    </button>
                     <button role="menuitem" className="menu-row" onClick={()=>{setConfirmReset(true);setSettingsOpen(false);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.danger,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
                       <Icon name="subs" size={14}/>
                       Reset defaults
@@ -3856,9 +3871,8 @@ function App() {
       <BlobHealth over={moSurplus<0} bloom={bloom}/>
       {pendingConflict && <ConflictModal pending={pendingConflict} data={data} onResolve={resolveConflict}/>}
       {profile && !profile.school && <OnboardingFlow uid={session.user.id} user={session.user} data={data} upd={upd} onDone={s=>setProfile({school:s})}/>}
-      {redoSetup && <OnboardingFlow uid={session.user.id} user={session.user} data={data} upd={upd} onDone={s=>{setProfile({school:s});setRedoSetup(false);}} onCancel={()=>setRedoSetup(false)}/>}
       {/* Existing users who finished onboarding but are behind on a newer setup question */}
-      {profile && profile.school && !redoSetup && (data.setupVersion||0) < SETUP_VERSION && <ProgressiveSetup data={data} upd={upd}/>}
+      {profile && profile.school && (data.setupVersion||0) < SETUP_VERSION && <ProgressiveSetup data={data} upd={upd}/>}
       {editSchool && <ProfileModal uid={session.user.id} onSaved={s=>{setProfile({school:s});setEditSchool(false);}} onClose={()=>setEditSchool(false)}/>}
       {editProgram && <ProgramModal data={data} upd={upd} school={profile.school} onClose={()=>setEditProgram(false)}/>}
       {editAvatar && <AvatarModal data={data} upd={upd} user={session.user} onClose={()=>setEditAvatar(false)}/>}
@@ -4102,7 +4116,7 @@ function App() {
             <button onClick={()=>setShowWeekPicker(true)} style={{padding:"6px 14px",borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",fontSize:12,color:C.gray,fontWeight:500,display:"flex",alignItems:"center",gap:6}}>
               Browse weeks {archives.length>0&&`(${archives.length} archived)`}
             </button>
-            {viewWeek && <button onClick={()=>setViewWeek(null)} style={{padding:"6px 12px",borderRadius:8,border:`1px solid rgba(246,239,221,0.45)`,background:"rgba(246,239,221,0.10)",cursor:"pointer",fontSize:12,color:C.text,fontWeight:600}}>← Back to current week</button>}
+            {viewWeek && <button onClick={()=>setViewWeek(null)} style={{padding:"6px 12px",borderRadius:8,border:`1px solid ${C.sel}`,background:C.selBg,cursor:"pointer",fontSize:12,color:C.text,fontWeight:600}}>← Back to current week</button>}
           </div>
 
           {/* Week metrics */}
