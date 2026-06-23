@@ -5,6 +5,17 @@ Single source of truth for visual decisions. Code lives in `index.html`: `const 
 ## Concept
 Neutral warm canvas under liquid glass — near-black dark theme, warm off-white light theme — with the growth-rings motif, marigold, and serif numerals carrying the brand. The green "candlelight" identity was retired June 2026 (colorblind-safety + scaling). Hero details: **serif numerals (Newsreader) for display money** and **ring-derived iconography**.
 
+## North star: Apple Human Interface Guidelines (user directive, June 20 2026)
+**Every UI decision follows Apple's HIG and mirrors how Apple's own software behaves.** When unsure, do what Apple does. This sits alongside the ADA/WCAG AA gate (CLAUDE.md rule 7) — Apple's own guidance is accessibility-first, so they reinforce each other.
+- **Three pillars:** *Clarity* (legible type, precise icons, content-first), *Deference* (translucent chrome defers to content — no heavy ornament competing with data), *Depth* (layering/materials + motion convey hierarchy). Our Liquid Glass already embodies deference + depth; keep ornament subordinate to the numbers.
+- **Materials over flat fills:** translucency + blur (vibrancy) for chrome, as we do. Match Apple's restraint — glass is the surface, not decoration.
+- **Typography:** SF-equivalent sans for UI (Inter), New-York-equivalent serif for display numerals (Newsreader) — already an Apple-style pairing. Respect Dynamic Type intent: never block text scaling; prefer rem/clamp over fixed px where feasible.
+- **Controls behave like system controls:** iOS-style toggles, card-sheet modals, segmented pickers, inline validation. Don't invent idioms Apple has a standard for.
+- **Hit targets ≥ 44×44 pt** (Apple's minimum — stricter than WCAG's 24px; use Apple's). ⚠️ current ✕ buttons are 28px → below spec; bump toward 44 in the a11y/HIG pass.
+- **Motion:** subtle, spring/physics-based, purposeful; always honor Reduce Motion. Apple is *restrained* — motion communicates, never decorates. ⚠️ **Tension to revisit:** the hover **letter-shimmer** is a brand flourish Apple wouldn't apply to nav/tab text (Apple uses a quiet highlight/press state). Kept by explicit user request — flag it in the HIG conformance pass; if strict Apple fidelity wins, swap to a subtle highlight.
+- **Restraint:** Apple avoids gratuitous effects, heavy borders, decorative gradients on chrome. Prefer the quietest treatment that still reads as interactive.
+- **System affordances:** standard `:focus-visible` rings, hover/press states; respect `prefers-color-scheme`, Reduce Motion, Increase Contrast.
+
 ## Theme mechanism (hybrid — keep both halves in sync)
 - `const C = {...THEMES.dark}` feeds ~400 inline style refs. `applyTheme(dark)` does `Object.assign(C, THEMES[t])`, swaps `CHART_COLORS` in place, sets `<html data-theme>`, updates the `theme-color` meta. A `themeTick` state forces the post-swap render.
 - The `<style>` block consumes ~30 CSS custom properties (`--bg`, blobs, glass, inputs, focus). `[data-theme="light"]` overrides them. **Any token used in both worlds must be edited in both places.**
