@@ -9,6 +9,7 @@ Budget planner for med students (started WCM-specific; generalizing). Single-fil
 - `docs/DATA_MODEL.md` — state schema, **savings↔weekly↔budget linkage (read before touching that logic)**, Supabase sync + auth
 - `docs/DESIGN_SYSTEM.md` + `docs/MOTION_SYSTEM.md` — read before any UI/animation work
 - `docs/ROADMAP.md` — phase status · `docs/FUTURE_WORK.md` — backlog
+- `docs/STRATEGY.md` — company/business/AI vision, monetization, equity, legal, infra, two-founder collaboration model (the *why* behind the roadmap)
 
 ## Workflow rules
 1. **Plan first** for multi-feature work — present the plan, wait for approval. Single obvious bug fixes: just do it.

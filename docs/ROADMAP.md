@@ -1,6 +1,6 @@
 # Roadmap
 
-Phase order and rationale. Backlog items live in `FUTURE_WORK.md`. Mark items ✓ here the moment they ship.
+Phase order and rationale. Backlog items live in `FUTURE_WORK.md`. Mark items ✓ here the moment they ship. **Company/business/AI vision + monetization + people/legal/infra lives in `STRATEGY.md`** — this file is build phases only.
 
 > **Vision:** grow beyond Cornell to all med students nationally.
 > **Sequencing rationale:** 2.5 (UI) moved up from Phase 7 — polish before building more features. 2.5b (Auth) pulled forward from Phase 6 because Phase 3 needs real user profiles; building school-generalization on localStorage then migrating would be risky for existing users.
@@ -36,8 +36,20 @@ First-run onboarding wizard, user-defined year configs, remove WCM hardcoding, v
 - ✓ **Progressive setup (June 14):** `SETUP_VERSION` + `SETUP_STEPS` registry + `ProgressiveSetup` popup. New users answer everything inline; existing users behind on a newly-added question get a focused glass popup for just that step. v1 grandfathers existing users (registry currently empty — infra ready for v2+ questions like term-date confirmation / aid-letter upload).
 - Untested live (auth-gated, needs Google smoke test): new-user onboarding finish (years generation + Supabase profile save). MD/DO-from-school-name derivation deferred (no consumer until Phase 4) — see FUTURE_WORK.
 
-## Phase 4 — Claude AI financial advisor
-Trigger-based (not a chatbot): passive monitoring, anomaly alerts, weekly digest, receipt scanning, goal-aware nudges. No autonomous writes. Cost strategy lives in memory (`project_wcm_ai_cost.md`).
+## Phase 3.5 — Foundation (DECIDED: migrate before AI) — NOT STARTED
+Reinforce the lightweight single-file foundation *before* the multi-surface AI work lands on it. See `STRATEGY.md` §2.
+- **Build-system migration** — single `index.html` → Vite + components, incrementally (get existing file building first, then split out). Its own phase, nothing riding on it; prove the app behaves identically after.
+- **Service-worker / cache fix** — version + force-update (auto-refresh at a safe moment, never mid-edit); fingerprinting makes it near-free during the migration.
+- **Test harness + error monitoring** (Sentry) — prioritize sync/merge engine, money math, AI guardrails.
+- **Minimal admin/observability dashboard (EARLY)** — errors, AI calls, costs, engagement. Start minimal; later becomes the webhook aggregator.
+- **Company account hygiene** (can run in parallel, mostly non-engineering) — Marro-owned GitHub org / Vercel team / Supabase / domain / business email; Bitwarden shared vault; `.env.example`. See `STRATEGY.md` §6.
+
+## Phase 4 — Claude AI financial advisor — NOT STARTED
+Trigger-based (not a chatbot): passive monitoring, anomaly alerts, weekly digest, receipt scanning, goal-aware nudges. No autonomous writes. **Full capability menu + hard guardrails + cost controls + monetization tie-in: see `STRATEGY.md` §1–2, §4.** Cost strategy also in memory (`project_wcm_ai_cost.md`). Sub-phased:
+- **4a — Backend seed + first feature:** Vercel AI proxy (holds key, model routing) + soft usage pool + BYOK; ship **anomaly-check + good-habit** end-to-end with the "Suggested" UI (CLAUDE.md rule 9); **retire the hard-coded suggestions it replaces**. Validates cost/UX/usage machinery on the smallest surface. → friends' hands.
+- **4b — Data-quality & trust layer:** easier entry (voice/receipt), proactive check-ins, lite-APY savings projections, off-switch + voice guide + communication budget. Makes downstream features *work* (smart suggestions need real data).
+- **4c — Backend-heavy intelligence:** scheduler-driven digests + disbursement-gap warnings, web-search local pricing/calendars/scholarships, forecasting, true-cost reframing (opt-in).
+- **Still-open product decisions (defer to 4a start):** usage-pool size + reset period; BYOK transport (proxy vs client-direct); anomaly sensitivity; card placement (Budget vs Weekly).
 
 ## Phase 5 — Student loans tab
 Loan entry by type, repayment simulator (Standard/IBR/PAYE/SAVE/Extended), PSLF modeling, residency projections. **Research before implementing — do not build from memory.**
@@ -49,10 +61,10 @@ Cost planner by type (flights/hotels/clothes), specialty-aware estimates, integr
 Specialty pick → residency pay, fellowship likelihood, attending salary range, repayment trajectory, PSLF viability.
 
 ## Phase 6 — Multi-user backend & school benchmarking
-School benchmarking (10+ users/school min), opt-in anonymized sharing, peer tips. Feeds Phase 4 quality.
+School benchmarking (10+ users/school min), opt-in anonymized sharing, peer tips. Feeds Phase 4 quality. Also: cohort/group-buying (needs per-school density), bank-linking via **Plaid**, monetization (referrals + licensed financial-product partner). **Anonymized-data must be consent-first / true-aggregation / separate aggregate layer — see `STRATEGY.md` §6.** Each item = a real go/no-go.
 
 ## Phase 7 — Mobile & polish
-Installable offline PWA, push notifications, PDF/CSV export, year-end summary, session timeout. (Deferred: terrarium mascot world — needs art pipeline.)
+Installable offline PWA, push notifications, PDF/CSV export, year-end summary, session timeout. **Native via Capacitor wrapper** (one codebase → App/Play Store + reliable push + Siri/voice path) + Jarvis voice control — see `STRATEGY.md` §3. (Deferred: terrarium mascot world — needs art pipeline.)
 
 ## Backlog
 Residency transition planner, referral program, tax-relevant expense flagging.

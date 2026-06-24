@@ -44,6 +44,7 @@ Don't scan the file; `grep -n` the key for the section you need. Keys are stable
 - `UI_AUDIT_LOG.md` — every audit finding/fix
 - `PRODUCT_DECISIONS.md` — decisions + rationale
 - `ROADMAP.md` — phase plan and status
+- `STRATEGY.md` — company/business/AI vision, monetization, people & equity, legal, infra hygiene, two-founder collaboration model
 - `FUTURE_WORK.md` — prioritized backlog
 
 ## Critical rules
