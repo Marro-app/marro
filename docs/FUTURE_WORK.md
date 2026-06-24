@@ -48,6 +48,7 @@ Both items below require the **Supabase service-role key behind a server functio
 - [x] Dual `<meta name="theme-color">` with `media="(prefers-color-scheme)"` (June 20) — DONE. Two media-scoped metas (light #ECEAE2 / dark #101210) for pre-JS chrome; `applyTheme` now sets `content` on *all* theme-color metas so whichever the browser picks by OS pref shows the user's actual chosen theme. (Still open: revisit `apple-mobile-web-app-status-bar-style` for light theme.)
 - [x] Light-theme `.mc-sh` shimmer (June 20) — DONE. Added `[data-theme="light"] .mc-sh` override (white 0.10 → 0.45) so the corner sheen is visible on light surfaces. `.mc-sp` specular hairline left as-is (still faint white-on-white; harmless — revisit only if it bothers).
 - [x] Sweep hardcoded cream rgba stragglers (June 20) — DONE. Week-pill "← Back to current week" border/fill (was `rgba(246,239,221,0.45)` / `.10`) → theme tokens `C.sel` / `C.selBg`. MarroLogo tile shadow already theme-aware (light hairline + lift). No other JSX cream stragglers found via grep.
+- [ ] **Spacing-grid retrofit** (logged June 23) — `index.html` has many one-off padding/gap values (11px, 9px, 7px, 5px, 3px, 13px, etc.) that predate the 4/8/12/16/24/32 spacing scale now in `DESIGN_SYSTEM.md` → "Spacing." Not urgent (visually fine as-is) but worth a dedicated sweep — every value should land on the scale. Do as its own pass, not piecemeal inside unrelated changes.
 
 ## P3 — opportunities (incl. deferred from Phase 2.5)
 - [ ] Tab bar redesign: floating glass pill detached from content, cross-fade tab transitions.

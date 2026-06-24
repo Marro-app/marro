@@ -72,6 +72,33 @@ Scrims stay blur(14px) + `C.scrim`. Shadows are themed (`--shadow-card`, `--shad
 - Page-level grids: `repeat(auto-fit, minmax(min(100%,300px),1fr))` — never hard `1fr 1fr`
 - Card header rows that hold pills/buttons: `flexWrap:"wrap"`
 - Scrollable tables get `className="scrollx"` (right-edge fade < 600px, like `.tabbar`)
+- Structural hierarchy: Page → tab content area → Card(s) (G1 `.mc`) → card header row (title + actions) → content. Modals/dropdowns are always G2 (`.mm`) via the shared `Modal` component — never hand-rolled. One Card = one concern; a new feature area (e.g. a future AI-advisor panel) is its own Card in the existing grid, not a new full-width strip.
+
+## Spacing (locked in June 23, pre-Phase-4)
+**Scale: 4 / 8 / 12 / 16 / 24 / 32px.** This is the industry-standard 8pt grid (Material Design, IBM Carbon, most major systems are built on it) — it removes one-off micro-decisions ("13px or 15px?") and gives a consistent rhythm. 4px is for the tightest internal gaps (icon-to-label); 8px is the base unit everywhere else (gaps, small padding); 16/24/32 for card/section-level spacing.
+- **New code must use a value from this scale.** No new arbitrary odd values (11px, 9px, 7px, 5px, 3px, 13px) — these exist throughout the current codebase as a known pre-existing gap (it predates this rule), not something to retrofit opportunistically. See `FUTURE_WORK.md` P2 for the retrofit item.
+- Source: [8pt Grid System](https://www.rejuvenate.digital/news/designing-rhythm-power-8pt-grid-ui-design), [Cieden spacing best practices](https://cieden.com/book/sub-atomic/spacing/spacing-best-practices).
+
+## Buttons (locked in June 23, pre-Phase-4)
+Three-tier hierarchy, matching Material Design's emphasis model:
+1. **Primary / high-emphasis (`.btn-fill`)** — one per screen/modal max (unless multiple actions are genuinely equal weight). Filled, dark text on color (`C.bg`, never `#fff` — existing rule). The one obvious next step.
+2. **Secondary / medium-emphasis (`.btn-pop`)** — outlined/transparent. Alternative actions (Cancel, Back) that stand out without competing with the primary.
+3. **Tertiary / low-emphasis (`.shimmer-text`, `.txt-act`)** — text-only. Already used for nav tabs, "Browse weeks," "← Back."
+
+**Destructive actions** use the primary-danger fill (`C.danger` filled) *only* when delete/remove is the one required choice in that dialog (a confirmation whose only job is "do it or cancel"). If destructive is just one of several options on a screen, it gets the lower-emphasis ghost/clay treatment instead (per existing semantic rule: clay is destructive-affordance only, filled for low-stakes removes, ghost in confirmations).
+
+**Placement — secondary/Cancel always left, primary or destructive always right.** This is the dominant industry convention (NN/g, most major design systems) and removes a decision that would otherwise get made ad hoc per modal — a user who learns "the right button commits" in one dialog shouldn't get the opposite in another. Audited June 23: this was inconsistent in three places (`ProgramModal` Save/Cancel, the category-remove confirm, the subscription-form Save/Cancel) — all three fixed to the left-Cancel/right-primary convention.
+
+**Hit targets** — every button needs a real 44×44pt clickable area (Apple HIG; stricter than WCAG 2.2's 24×24px floor, which most serious products exceed anyway). Where the visible control must stay small for density (`.xbtn` icon-only ✕ buttons render at 26-30px to stay visually quiet in tight rows), the fix is to expand the *invisible hit area* via a pseudo-element (`.xbtn::after { inset:-8px }`) rather than growing the icon itself — same visual footprint, real 44px target underneath.
+- Sources: [Carbon Design System — Button usage](https://v10.carbondesignsystem.com/components/button/usage/), [Cieden — button hierarchy](https://cieden.com/book/atoms/button/how-to-create-button-hierarchy), [WCAG 2.2 SC 2.5.8](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html).
+
+## AI-generated content (Phase 4 and beyond)
+NN/g's research on human-AI interaction identifies uncertainty about what the system did as the central UX failure mode in AI products — the prescribed fix is to expose status, show confidence, and keep a human-in-the-loop with review/edit/rollback before anything AI-suggested becomes real data.
+- Anything the AI infers (a voice-parsed expense, an extracted calendar date, a scanned aid-letter field) renders in a visibly **pending/unconfirmed** state: reuse the existing `blue` info token + a "Suggested" chip/label — never silently written as confirmed data.
+- The user must be able to **edit before confirming**, not just accept/reject — correction is part of the pattern, not an afterthought.
+- **No new color tokens for AI states.** Map every new state (suggested, confirmed, failed) onto the existing six semantic tokens (`pos`/`neg`/`danger`/`blue`/`amber`/`sel`). AI call failures use the same `role="alert"` clay treatment as existing form errors (rule 7) — not a new error pattern.
+- If no existing token fits a new AI-UI state, that's a stop-and-ask, not a unilateral new pattern.
+- Source: [NN/g — AI as a UX Assistant](https://www.nngroup.com/articles/ai-roles-ux/).
 
 ## UX copy
 - Sentence case; em-dash asides; second person ("your grant")
