@@ -1,4 +1,4 @@
-# Marro (wcm-budget)
+# Marro
 
 Budget planner for med students (started WCM-specific; generalizing). Single-file app: `index.html` (~3.5k lines, React 18 + Babel standalone + Recharts + supabase-js, no build step). Live at https://wcm-budget.vercel.app — **push to `main` deploys immediately; always ask before pushing.**
 

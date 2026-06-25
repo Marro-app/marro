@@ -4,7 +4,7 @@
     {
       "name": "marro",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "3456", "--directory", "/Users/mohijazi/Desktop/wcm-budget"],
+      "runtimeArgs": ["-m", "http.server", "3456", "--directory", "/Users/mohijazi/Desktop/marro"],
       "port": 3456
     }
   ]
