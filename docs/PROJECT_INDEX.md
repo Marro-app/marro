@@ -1,6 +1,6 @@
 # Marro — Project Index
 
-Budget planner for a WCM MD student (Class of 2030, extended curriculum). Tracks grant disbursement vs planned vs actual spending across 5 academic years.
+Budget planner for medical students (any US MD/DO program; started WCM-specific, now school-agnostic). Tracks grant disbursement vs planned vs actual spending across each user's academic years.
 
 ## Stack & deploy
 - Single file: `index.html` (~3.5k lines) — React 18 + Babel standalone + Recharts 2.5 + supabase-js 2 (all CDN), no build step

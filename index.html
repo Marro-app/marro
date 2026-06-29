@@ -7,12 +7,12 @@
 <meta name="description" content="Financial companion for medical students"/>
 <meta property="og:title" content="Marro"/>
 <meta property="og:description" content="Financial companion for medical students"/>
-<meta property="og:image" content="https://wcm-budget.vercel.app/og-image.png"/>
+<meta property="og:image" content="https://joinmarro.com/og-image.png"/>
 <meta property="og:type" content="website"/>
 <meta name="twitter:card" content="summary_large_image"/>
 <meta name="twitter:title" content="Marro"/>
 <meta name="twitter:description" content="Financial companion for medical students"/>
-<meta name="twitter:image" content="https://wcm-budget.vercel.app/og-image.png"/>
+<meta name="twitter:image" content="https://joinmarro.com/og-image.png"/>
 <link rel="manifest" href="manifest.json"/>
 <meta name="theme-color" content="#ECEAE2" media="(prefers-color-scheme: light)"/>
 <meta name="theme-color" content="#101210" media="(prefers-color-scheme: dark)"/>
@@ -1120,19 +1120,6 @@ const subMonthlyTotal = (subs=[]) => subs.filter(s=>s.active!==false).reduce((a,
   return a;
 },0);
 
-const currentYearIdx = (years) => {
-  const now = new Date();
-  const yr = now.getFullYear();
-  const mo = now.getMonth(); // 0-indexed
-  // Academic year starts ~August. Map calendar year to academic year index.
-  // Yr1 = 2026-27, starts Aug 2026
-  const starts = [2026, 2027, 2028, 2029, 2030];
-  for(let i=0;i<starts.length;i++){
-    const start = starts[i];
-    if((yr===start && mo>=7)||(yr===start+1 && mo<7)) return i;
-  }
-  return 0;
-};
 
 const getYearMonthStr = (date) => {
   const d = new Date(date+"T12:00:00");
@@ -2980,6 +2967,8 @@ function App() {
         if(loaded.stepGoals && !loaded.stepGoals.find(g=>g.id==="step3")) loaded.stepGoals.push({id:"step3",label:"Step 3",targetAmount:1000,targetDate:"2031-06-01",saved:0,monthlyContribution:0});
         if(!loaded.savingsGoals) loaded.savingsGoals=[];
         if(!loaded.savingsLog) loaded.savingsLog=[];
+        // Defensive: a row missing categories would crash render (cats.forEach) — reseed defaults.
+        if(!Array.isArray(loaded.categories) || !loaded.categories.length) loaded.categories = JSON.parse(JSON.stringify(DEFAULT_CATS));
         // Grandfather existing users: a saved state without setupVersion predates
         // progressive setup — treat them as current so we don't nag them for v1 steps
         // (their years are already configured). Brand-new states keep null → onboarding.
@@ -3615,7 +3604,7 @@ function App() {
   return (
     <div style={{fontFamily:"'Inter',system-ui,sans-serif",maxWidth:940,margin:"0 auto",padding:"24px 20px",minHeight:"100vh",background:"transparent",color:C.text,transition:"color .3s"}}>
       <style>{`
-        @keyframes wcmpulse{0%,100%{opacity:1}50%{opacity:0.3}}
+        @keyframes marroPulse{0%,100%{opacity:1}50%{opacity:0.3}}
         @keyframes marroRingPop{
           0%  {transform:scale(0);opacity:0}
           15% {opacity:1}
@@ -4028,7 +4017,7 @@ function App() {
             </div>
           </div>
           <div style={{display:"flex",gap:10,alignItems:"center"}}>
-            {syncStatus==="syncing"  && <span style={{fontSize:11,color:C.gray,display:"flex",alignItems:"center",gap:4}}><Icon name="live" size={11} color={C.amber} style={{animation:"wcmpulse 1s infinite"}}/>Syncing…</span>}
+            {syncStatus==="syncing"  && <span style={{fontSize:11,color:C.gray,display:"flex",alignItems:"center",gap:4}}><Icon name="live" size={11} color={C.amber} style={{animation:"marroPulse 1s infinite"}}/>Syncing…</span>}
             {syncStatus==="synced"   && <span style={{fontSize:11,color:C.teal,display:"flex",alignItems:"center",gap:4}}><Icon name="live" size={11} color={C.teal}/>Synced</span>}
             {syncStatus==="offline"  && <span style={{fontSize:11,color:C.amber,display:"flex",alignItems:"center",gap:4}}><Icon name="live" size={11} color={C.amber}/>Offline</span>}
             {syncStatus==="conflict" && <span style={{fontSize:11,color:C.neg,display:"flex",alignItems:"center",gap:4}}><Icon name="live" size={11} color={C.neg}/>Conflict</span>}
@@ -4276,7 +4265,7 @@ function App() {
             <Card>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
                 <SectionTitle>Cash flow</SectionTitle>
-                <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,color:C.gray}}><Icon name="live" size={11} color={C.green} style={{animation:"wcmpulse 2s infinite"}}/>Live</span>
+                <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,color:C.gray}}><Icon name="live" size={11} color={C.green} style={{animation:"marroPulse 2s infinite"}}/>Live</span>
               </div>
               
               {[
