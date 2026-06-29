@@ -10,6 +10,7 @@ Budget planner for med students (started WCM-specific; generalizing). Single-fil
 - `docs/DESIGN_SYSTEM.md` + `docs/MOTION_SYSTEM.md` — read before any UI/animation work
 - `docs/ROADMAP.md` — phase status · `docs/FUTURE_WORK.md` — backlog
 - `docs/STRATEGY.md` — company/business/AI vision, monetization, equity, legal, infra, two-founder collaboration model (the *why* behind the roadmap)
+- `docs/DATA_ETHICS.md` — **source of truth for sell-vs-don't-sell, aggregate data, partner offers, consent, and all privacy copy (read before any data/monetization/privacy-copy work — see rule 10)**
 
 ## Workflow rules
 1. **Plan first** for multi-feature work — present the plan, wait for approval. Single obvious bug fixes: just do it.
@@ -25,6 +26,7 @@ Budget planner for med students (started WCM-specific; generalizing). Single-fil
    - **Hit targets**: every interactive control needs a real 44×44pt clickable area (Apple/industry best practice, stricter than WCAG's 24px floor). Where the visible icon must stay small for density (e.g. `.xbtn` ✕ buttons), expand the *hit area* invisibly (pseudo-element hit-slop) rather than growing the visual footprint — see `.xbtn::after` in `index.html`.
    - **Spacing**: new layout code uses the 4/8/12/16/24/32px scale in `docs/DESIGN_SYSTEM.md` → "Spacing" — no one-off odd values (11px, 7px, etc.) in new code. Existing odd values are a known pre-existing gap, not something to chase down opportunistically — see `FUTURE_WORK.md`.
    - **AI-generated content (Phase 4 and beyond)**: anything the AI infers/suggests (parsed expense, extracted calendar date, scanned aid-letter field) renders as a visibly *pending/unconfirmed* state — reuse the existing `blue` info token + a "Suggested" label, never silently written as confirmed data — until the user explicitly confirms or edits it. No new color tokens for AI states; map onto the existing six. This is the documented fix for AI UX's most common failure (uncertainty about what the system did) per NN/g, not just a style preference.
+10. **Data ethics & monetization — `docs/DATA_ETHICS.md` is the source of truth; check it on EVERY change touching data collection, storage, sharing, monetization, or user-facing privacy copy.** Core: individual records are never sold/shared (Lane A, RLS-enforced); only true aggregates may be used (Lane B) — silent in the UX but disclosed in `privacy.html`. Never write "never sold" (say "never sell your **personal info**"); never put mechanism words ("aggregate"/"group stats"/"de-identified") in user-facing copy — use **benefit** language. Partner offers are always shown + clearly labeled "Partner/Sponsored," never framed as Marro's advice. **UI copy must match `privacy.html`.**
 
 ## Local dev
 `python3 -m http.server 3456 --directory .` then http://localhost:3456
