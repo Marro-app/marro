@@ -2,7 +2,7 @@
 
 State schema, linkage system, and sync architecture. Read before touching data logic, and **always** read the linkage section before editing savings/weekly/entry code.
 
-## State shape (`DEFAULT_STATE`, localStorage `wcm_v8`)
+## State shape (`DEFAULT_STATE`, localStorage `marro_v8`)
 ```
 categories        [{id, label, locked?, autoCalc?}]
 setupVersion      number|null  (null=run onboarding; SETUP_VERSION when complete — progressive setup)
@@ -84,7 +84,7 @@ Shows when `yr.monthly.exams > 0` AND any Step goal has `saved < targetAmount &&
 
 ### Auth (Phase 2.5b)
 - supabase-js v2 UMD via CDN; client `const sb` (the UMD global is `supabase` — don't shadow it). URL + **publishable** key hardcoded in `index.html` (safe; RLS-gated). PKCE flow.
-- Hard login gate. `session` state: `undefined`=restoring → Loading; `null`=signed out → `LoginScreen`; object → app. `getSession()` on boot + `onAuthStateChange`; `SIGNED_OUT` clears `wcm_v8`/`wcm_v8_base`/`wcm_uid`.
+- Hard login gate. `session` state: `undefined`=restoring → Loading; `null`=signed out → `LoginScreen`; object → app. `getSession()` on boot + `onAuthStateChange`; `SIGNED_OUT` clears `marro_v8`/`marro_v8_base`/`marro_uid`.
 - `applyTheme(dataset!=="light")` runs at module load so pre-login screens (LoginScreen) theme correctly before app data loads.
 
 ### Supabase tables (RLS: each user reads/writes only their own row, `auth.uid() = user_id`)
@@ -96,12 +96,12 @@ Shows when `yr.monthly.exams > 0` AND any Step goal has `saved < targetAmount &&
 ### Storage keys (localStorage = offline cache + merge ancestor; Supabase = source of truth)
 | Key | Purpose |
 |---|---|
-| `wcm_v8` | Current local state (cache) |
-| `wcm_v8_base` | Last synced state (3-way-merge ancestor) |
-| `wcm_uid` | Last signed-in user id (shared-device guard: clears cache if a different user signs in) |
+| `marro_v8` | Current local state (cache) |
+| `marro_v8_base` | Last synced state (3-way-merge ancestor) |
+| `marro_uid` | Last signed-in user id (shared-device guard: clears cache if a different user signs in) |
 
 ### Flow
-- Every save stamps `_savedAt` (the merge clock, inside the blob). Load (gated on `session`): `stateFetch()` → server row becomes `wcm_v8` + `wcm_v8_base`. No row + online → **first-login migration**: upload local `wcm_v8`/`wcm_v7` (or DEFAULT_STATE) via `stateWrite`. Offline → local cache, `syncStatus:"offline"`.
+- Every save stamps `_savedAt` (the merge clock, inside the blob). Load (gated on `session`): `stateFetch()` → server row becomes `marro_v8` + `marro_v8_base`. No row + online → **first-login migration**: upload local `marro_v8`/`marro_v7` (or DEFAULT_STATE) via `stateWrite`. Offline → local cache, `syncStatus:"offline"`.
 - On save (debounced 2s): fetch server, compare `_savedAt` vs base — server not newer → write; newer without overlap → silent auto-merge; same field changed both sides → **ConflictModal**.
 - `window online` → immediate save. `visibilitychange` + every 30s visible → `checkAndPull`.
 
@@ -113,4 +113,4 @@ Shows when `yr.monthly.exams > 0` AND any Step goal has `saved < targetAmount &&
 - `stateWrite(json)` → upsert `{user_id, state}` → boolean. Same string-in/string-out contract the old `gistFetch`/`gistWrite` had, so `save`/`checkAndPull`/`resolveConflict` only needed a name swap. (Old `api/sync.js` Gist proxy deleted.)
 
 ### Service worker (`sw.js`)
-Cache `wcm-budget-v8`. Never caches `index.html` (navigations always network) — OAuth redirects safe. Caches `/manifest.json`, `/icon.svg`, fonts; network-first/cache-fallback otherwise (covers the supabase-js CDN script for offline). Registration: `updateViaCache:'none'`, `reg.update()` on load, auto-reload on `controllerchange`.
+Cache `marro-v8`. Never caches `index.html` (navigations always network) — OAuth redirects safe. Caches `/manifest.json`, `/icon.svg`, fonts; network-first/cache-fallback otherwise (covers the supabase-js CDN script for offline). Registration: `updateViaCache:'none'`, `reg.update()` on load, auto-reload on `controllerchange`.

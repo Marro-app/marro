@@ -24,13 +24,20 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png"/>
 <link rel="icon" href="icon.svg" type="image/svg+xml"/>
 <script>
+// One-time rename of legacy WCM-named localStorage keys → marro_* (runs before the
+// pre-paint read below so there's no theme flash). Carries each value over, then
+// drops the old key. No-op once migrated. Safe: Supabase is the source of truth.
+(function(){try{
+  var map={marro_v8:"wcm_v8",marro_v8_base:"wcm_v8_base",marro_v7:"wcm_v7",marro_uid:"wcm_uid",marro_theme_v2:"wcm_theme_v2"};
+  for(var nk in map){var ok=map[nk],ov=localStorage.getItem(ok);if(ov!==null){if(localStorage.getItem(nk)===null)localStorage.setItem(nk,ov);localStorage.removeItem(ok);}}
+}catch(e){}})();
 // Pre-paint theme guard: set data-theme before the stylesheet is consumed so an
 // offline PWA cold start never flashes the wrong theme. Mirrors the app logic:
-// legacy states (no wcm_theme_v2 marker) stay dark; fresh visitors follow the OS.
+// legacy states (no marro_theme_v2 marker) stay dark; fresh visitors follow the OS.
 (function(){try{
   var dark = true;
-  var raw = localStorage.getItem("wcm_v8");
-  if (raw && localStorage.getItem("wcm_theme_v2")) dark = JSON.parse(raw).darkMode !== false;
+  var raw = localStorage.getItem("marro_v8");
+  if (raw && localStorage.getItem("marro_theme_v2")) dark = JSON.parse(raw).darkMode !== false;
   else if (!raw) dark = !window.matchMedia("(prefers-color-scheme: light)").matches;
   document.documentElement.dataset.theme = dark ? "dark" : "light";
 }catch(e){ document.documentElement.dataset.theme = "dark"; }})();
@@ -538,7 +545,7 @@ const stateWrite = async (content) => {    // → boolean (true = persisted)
 };
 
 // ── 3-way merge engine ─────────────────────────────────────────────────────────
-const SYNC_BASE_KEY = "wcm_v8_base";
+const SYNC_BASE_KEY = "marro_v8_base";
 
 function diffStates(base, cur) {
   const ch = {}, js = JSON.stringify;
@@ -2899,9 +2906,9 @@ function App() {
     const {data:{subscription}} = sb.auth.onAuthStateChange((evt, s)=>{
       setSession(s ?? null);
       if(evt==="SIGNED_OUT"){
-        localStorage.removeItem("wcm_v8");
+        localStorage.removeItem("marro_v8");
         localStorage.removeItem(SYNC_BASE_KEY);
-        localStorage.removeItem("wcm_uid");
+        localStorage.removeItem("marro_uid");
         setData(null); setProfile(null); setReady(false); setSyncStatus(null);
       }
     });
@@ -2918,12 +2925,12 @@ function App() {
         const uid = session.user.id;
         // Shared-device guard: if a different user's data is cached locally, drop it
         // before loading so the migration rule can't upload user A's data to user B.
-        const storedUid = localStorage.getItem("wcm_uid");
+        const storedUid = localStorage.getItem("marro_uid");
         if(storedUid && storedUid !== uid){
-          localStorage.removeItem("wcm_v8");
+          localStorage.removeItem("marro_v8");
           localStorage.removeItem(SYNC_BASE_KEY);
         }
-        localStorage.setItem("wcm_uid", uid);
+        localStorage.setItem("marro_uid", uid);
 
         let raw = null;
         // Supabase is the source of truth across devices.
@@ -2933,21 +2940,21 @@ function App() {
           raw = serverContent;
           // Store as the agreed-upon base for 3-way merge
           localStorage.setItem(SYNC_BASE_KEY, raw);
-          await window.storage.set("wcm_v8", raw);
+          await window.storage.set("marro_v8", raw);
           setSyncStatus("synced");
         } else if(navigator.onLine){
           // No server row yet → first login. Migrate any local state up (or seed defaults).
-          let r = await window.storage.get("wcm_v8");
-          if(!r?.value) r = await window.storage.get("wcm_v7");
+          let r = await window.storage.get("marro_v8");
+          if(!r?.value) r = await window.storage.get("marro_v7");
           raw = r?.value || JSON.stringify(DEFAULT_STATE);
           const ok = await stateWrite(raw);
           localStorage.setItem(SYNC_BASE_KEY, raw);
-          await window.storage.set("wcm_v8", raw);
+          await window.storage.set("marro_v8", raw);
           setSyncStatus(ok ? "synced" : "offline");
         } else {
           // Offline with a cached session → load local cache, sync on reconnect.
-          let r = await window.storage.get("wcm_v8");
-          if(!r?.value) r = await window.storage.get("wcm_v7");
+          let r = await window.storage.get("marro_v8");
+          if(!r?.value) r = await window.storage.get("marro_v7");
           raw = r?.value || null;
           setSyncStatus(raw ? "offline" : null);
         }
@@ -2958,8 +2965,8 @@ function App() {
         if(loaded.darkMode===undefined) loaded.darkMode=!window.matchMedia("(prefers-color-scheme: light)").matches;
         // One-time migration: before the theme system existed the toggle was inert and
         // darkMode:false still rendered dark — preserve that experience for legacy states.
-        if(raw && !localStorage.getItem("wcm_theme_v2")) loaded.darkMode=true;
-        localStorage.setItem("wcm_theme_v2","1");
+        if(raw && !localStorage.getItem("marro_theme_v2")) loaded.darkMode=true;
+        localStorage.setItem("marro_theme_v2","1");
         if(loaded.logo===undefined) loaded.logo=null;
         if(!loaded.coverMonths) loaded.coverMonths={};
         if(!loaded.monthlyDeposits) loaded.monthlyDeposits={};
@@ -3053,7 +3060,7 @@ function App() {
   const save = useCallback(async d => {
     const ts = Date.now();
     const json = JSON.stringify({...d, _savedAt: ts});
-    try{await window.storage.set("wcm_v8",json);setFlash(true);setTimeout(()=>setFlash(false),1400);}catch{}
+    try{await window.storage.set("marro_v8",json);setFlash(true);setTimeout(()=>setFlash(false),1400);}catch{}
     // If a conflict is awaiting resolution, don't overwrite cloud until resolved
     if(syncStatus==="conflict") return;
     clearTimeout(gistTimerRef.current);
@@ -3079,7 +3086,7 @@ function App() {
             let merged=applyChanges(serverClean,mergeLocal);
             const mergedJson=JSON.stringify({...merged,_savedAt:Date.now()});
             const ok=await stateWrite(mergedJson);
-            if(ok){localStorage.setItem(SYNC_BASE_KEY,mergedJson);await window.storage.set("wcm_v8",mergedJson);setData(merged);setSyncStatus("synced");}
+            if(ok){localStorage.setItem(SYNC_BASE_KEY,mergedJson);await window.storage.set("marro_v8",mergedJson);setData(merged);setSyncStatus("synced");}
             else setSyncStatus("offline");
             return;
           }
@@ -3097,7 +3104,7 @@ function App() {
     merged=applyChanges(merged,resolvedChanges);
     const mergedJson=JSON.stringify({...merged,_savedAt:Date.now()});
     const ok=await stateWrite(mergedJson);
-    if(ok){localStorage.setItem(SYNC_BASE_KEY,mergedJson);await window.storage.set("wcm_v8",mergedJson);setData(merged);setSyncStatus("synced");}
+    if(ok){localStorage.setItem(SYNC_BASE_KEY,mergedJson);await window.storage.set("marro_v8",mergedJson);setData(merged);setSyncStatus("synced");}
     else setSyncStatus("offline");
     setPendingConflict(null);
   },[]);
@@ -3120,7 +3127,7 @@ function App() {
     if(Object.keys(localCh).length===0){
       const sJson=JSON.stringify(server);
       localStorage.setItem(SYNC_BASE_KEY,sJson);
-      await window.storage.set("wcm_v8",sJson);
+      await window.storage.set("marro_v8",sJson);
       setData(serverClean);
       setSyncStatus("synced");
     }

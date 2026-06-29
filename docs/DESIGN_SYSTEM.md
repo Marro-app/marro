@@ -19,7 +19,7 @@ Neutral warm canvas under liquid glass — near-black dark theme, warm off-white
 ## Theme mechanism (hybrid — keep both halves in sync)
 - `const C = {...THEMES.dark}` feeds ~400 inline style refs. `applyTheme(dark)` does `Object.assign(C, THEMES[t])`, swaps `CHART_COLORS` in place, sets `<html data-theme>`, updates the `theme-color` meta. A `themeTick` state forces the post-swap render.
 - The `<style>` block consumes ~30 CSS custom properties (`--bg`, blobs, glass, inputs, focus). `[data-theme="light"]` overrides them. **Any token used in both worlds must be edited in both places.**
-- Persisted in `data.darkMode` (synced). A pre-paint script in `<head>` prevents theme flash. Legacy states were migrated to dark once (`wcm_theme_v2` localStorage marker); fresh users follow `prefers-color-scheme`.
+- Persisted in `data.darkMode` (synced). A pre-paint script in `<head>` prevents theme flash. Legacy states were migrated to dark once (`marro_theme_v2` localStorage marker); fresh users follow `prefers-color-scheme`.
 
 ## Color tokens (C object)
 | Token | Dark | Light | Use |

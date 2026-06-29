@@ -4,7 +4,7 @@ Budget planner for medical students (any US MD/DO program; started WCM-specific,
 
 ## Stack & deploy
 - Single file: `index.html` (~3.5k lines) — React 18 + Babel standalone + Recharts 2.5 + supabase-js 2 (all CDN), no build step
-- Offline PWA (`sw.js`, `manifest.json`); **Supabase auth (Google) + per-user `app_state`/`profiles` tables** are the source of truth; `localStorage wcm_v8` is the offline cache + merge ancestor. (Old Gist sync `api/sync.js` deleted in Phase 2.5b.) See `DATA_MODEL.md`.
+- Offline PWA (`sw.js`, `manifest.json`); **Supabase auth (Google) + per-user `app_state`/`profiles` tables** are the source of truth; `localStorage marro_v8` is the offline cache + merge ancestor. (Old Gist sync `api/sync.js` deleted in Phase 2.5b.) See `DATA_MODEL.md`.
 - Push to `main` → Vercel auto-deploy → https://joinmarro.com
 - Local dev: `python3 -m http.server 3456 --directory .` (see `launch.json`)
 

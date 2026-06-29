@@ -1,4 +1,4 @@
-const CACHE = 'wcm-budget-v8';
+const CACHE = 'marro-v8';
 // Never cache index.html — always fetch fresh so JS updates land immediately
 const ASSETS = ['/manifest.json', '/icon.svg', '/fonts/inter-var.woff2', '/fonts/newsreader-var.woff2'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS))); self.skipWaiting(); });
