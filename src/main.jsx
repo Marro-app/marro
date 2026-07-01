@@ -1,5 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import * as Recharts from 'recharts';
 import { createClient } from '@supabase/supabase-js';
 import { useRegisterSW } from 'virtual:pwa-register/react';
@@ -724,7 +725,7 @@ const MonthPicker = ({value, onChange}) => {
 const popoverStyle = (width, align="left") => ({position:"absolute",top:"calc(100% + 4px)",[align==="right"?"right":"left"]:0,background:C.glassTooltip,backdropFilter:"blur(50px) saturate(200%)",WebkitBackdropFilter:"blur(50px) saturate(200%)",border:`1px solid ${C.borderDark}`,borderRadius:12,padding:12,zIndex:100,width,boxShadow:"0 8px 32px rgba(0,0,0,0.40)"});
 // Modal panels (.mm) have backdrop-filter, which makes them the containing block for
 // position:fixed descendants AND scroll-clips absolute ones — portal to body to escape both.
-const wrapPop = (fixedPos, node) => fixedPos ? ReactDOM.createPortal(node, document.body) : node;
+const wrapPop = (fixedPos, node) => fixedPos ? createPortal(node, document.body) : node;
 // Glass cards are stacking contexts, so a popover would paint UNDER the next card.
 // While open, lift the hosting card above its siblings.
 const useLiftCard = (open, ref) => {
