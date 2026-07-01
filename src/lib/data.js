@@ -1,0 +1,159 @@
+import { createClient } from '@supabase/supabase-js';
+
+export const SUPABASE_URL      = "https://rjowpekykqlounnaegwn.supabase.co";
+export const SUPABASE_ANON_KEY = "sb_publishable_Kp89EOIm88PDospinCz-eA_wDs09kjq"; // publishable key — safe in client (RLS-gated)
+export const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {auth:{flowType:"pkce"}});
+
+// ── Supabase sync (per-user row in app_state, RLS-gated) ─────────────────────────
+// Transport-only replacement for the old Gist proxy: same string-in / string-out,
+// null-on-failure contract, so the 3-way merge engine below is untouched.
+export const stateFetch = async () => {           // → JSON string | null  (null = no row OR error/offline)
+  try {
+    const {data, error} = await sb.from("app_state").select("state").maybeSingle();
+    if(error || !data) return null;
+    return JSON.stringify(data.state);
+  } catch { return null; }
+};
+
+export const stateWrite = async (content) => {    // → boolean (true = persisted)
+  try {
+    const {data:{user}} = await sb.auth.getUser();
+    if(!user) return false;
+    const {error} = await sb.from("app_state").upsert({user_id:user.id, state:JSON.parse(content)});
+    return !error;
+  } catch { return false; }
+};
+
+// ── 3-way merge engine ─────────────────────────────────────────────────────────
+export const SYNC_BASE_KEY = "marro_v8_base";
+
+export function diffStates(base, cur) {
+  const ch = {}, js = JSON.stringify;
+  for (const k of ['darkMode','logo','surplusBank']) {
+    if (js(base[k]) !== js(cur[k])) ch[k] = {b:base[k], c:cur[k]};
+  }
+  for (const k of ['monthlyRollover','monthlyDeposits','monthDisabled','coverMonths','weeklyRollover']) {
+    const bk=base[k]||{}, ck=cur[k]||{};
+    for (const sk of new Set([...Object.keys(bk),...Object.keys(ck)]))
+      if (js(bk[sk])!==js(ck[sk])) ch[`${k}.${sk}`]={b:bk[sk],c:ck[sk]};
+  }
+  const ylen=Math.max((base.years||[]).length,(cur.years||[]).length);
+  for (let i=0;i<ylen;i++) {
+    const by=(base.years||[])[i]||{}, cy=(cur.years||[])[i]||{};
+    for (const f of ['grant','tuitionFees','healthIns','otherIncome','housing','housingNote','livingAllowance','notes','startDate','endDate'])
+      if (js(by[f])!==js(cy[f])) ch[`years[${i}].${f}`]={b:by[f],c:cy[f]};
+    const bm=by.monthly||{}, cm=cy.monthly||{};
+    for (const c of new Set([...Object.keys(bm),...Object.keys(cm)]))
+      if (js(bm[c])!==js(cm[c])) ch[`years[${i}].monthly.${c}`]={b:bm[c],c:cm[c]};
+    const bo=by.monthlyOverrides||{}, co=cy.monthlyOverrides||{};
+    for (const mn of new Set([...Object.keys(bo),...Object.keys(co)])) {
+      const bmo=bo[mn]||{}, cmo=co[mn]||{};
+      for (const c of new Set([...Object.keys(bmo),...Object.keys(cmo)]))
+        if (js(bmo[c])!==js(cmo[c])) ch[`years[${i}].monthlyOverrides.${mn}.${c}`]={b:bmo[c],c:cmo[c]};
+    }
+  }
+  for (const k of ['categories','subscriptions','stepGoals','savingsGoals','savingsLog','currentWeekEntries']) {
+    const ba=base[k]||[], ca=cur[k]||[];
+    const bById=Object.fromEntries(ba.map(x=>[x.id,x])), cById=Object.fromEntries(ca.map(x=>[x.id,x]));
+    for (const id of new Set([...ba.map(x=>x.id),...ca.map(x=>x.id)]))
+      if (js(bById[id])!==js(cById[id])) ch[`${k}[${id}]`]={b:bById[id],c:cById[id]};
+  }
+  const bwa=base.weeklyArchive||[], cwa=cur.weeklyArchive||[];
+  const bwaMap=Object.fromEntries(bwa.map(w=>[w.weekStart,w])), cwaMap=Object.fromEntries(cwa.map(w=>[w.weekStart,w]));
+  for (const ws of new Set([...bwa.map(w=>w.weekStart),...cwa.map(w=>w.weekStart)])) {
+    const bw=bwaMap[ws], cw=cwaMap[ws];
+    if (!bw||!cw) { ch[`weeklyArchive[${ws}]`]={b:bw,c:cw}; continue; }
+    const beMap=Object.fromEntries((bw.entries||[]).map(e=>[e.id,e])), ceMap=Object.fromEntries((cw.entries||[]).map(e=>[e.id,e]));
+    for (const eid of new Set([...Object.keys(beMap),...Object.keys(ceMap)]))
+      if (js(beMap[eid])!==js(ceMap[eid])) ch[`weeklyArchive[${ws}].entries[${eid}]`]={b:beMap[eid],c:ceMap[eid]};
+  }
+  return ch;
+}
+
+export function findConflicts(localCh, serverCh) {
+  const conflicts=[], mergeLocal={}, mergeServer={};
+  for (const k of Object.keys(localCh)) {
+    if (serverCh[k]) conflicts.push({key:k, local:localCh[k].c, server:serverCh[k].c});
+    else mergeLocal[k]=localCh[k];
+  }
+  for (const k of Object.keys(serverCh)) if (!localCh[k]) mergeServer[k]=serverCh[k];
+  return {conflicts, mergeLocal, mergeServer};
+}
+
+export function applyChanges(state, changes) {
+  const s=JSON.parse(JSON.stringify(state));
+  for (const [key, ch] of Object.entries(changes)) {
+    const val=ch.c;
+    let m;
+    m=key.match(/^years\[(\d+)\]\.(.+)$/);
+    if (m) {
+      const idx=+m[1], rest=m[2];
+      if (!s.years[idx]) continue;
+      if (rest.startsWith('monthly.')) {
+        const cid=rest.slice(8); s.years[idx].monthly=s.years[idx].monthly||{};
+        if (val==null) delete s.years[idx].monthly[cid]; else s.years[idx].monthly[cid]=val;
+      } else if (rest.startsWith('monthlyOverrides.')) {
+        const [mn,cid]=rest.slice(17).split('.');
+        s.years[idx].monthlyOverrides=s.years[idx].monthlyOverrides||{};
+        s.years[idx].monthlyOverrides[mn]=s.years[idx].monthlyOverrides[mn]||{};
+        if (val==null) delete s.years[idx].monthlyOverrides[mn][cid]; else s.years[idx].monthlyOverrides[mn][cid]=val;
+      } else { s.years[idx][rest]=val; }
+      continue;
+    }
+    m=key.match(/^(monthlyRollover|monthlyDeposits|monthDisabled|coverMonths|weeklyRollover)\.(.+)$/);
+    if (m) { s[m[1]]=s[m[1]]||{}; if (val==null) delete s[m[1]][m[2]]; else s[m[1]][m[2]]=val; continue; }
+    m=key.match(/^(categories|subscriptions|stepGoals|savingsGoals|savingsLog|currentWeekEntries)\[(.+)\]$/);
+    if (m) {
+      const [,arrKey,id]=m; s[arrKey]=s[arrKey]||[];
+      const idx=s[arrKey].findIndex(x=>x.id===id);
+      if (val==null) { if (idx>=0) s[arrKey].splice(idx,1); }
+      else { if (idx>=0) s[arrKey][idx]=val; else s[arrKey].push(val); }
+      continue;
+    }
+    m=key.match(/^weeklyArchive\[(.+)\]\.entries\[(.+)\]$/);
+    if (m) {
+      const wi=s.weeklyArchive.findIndex(w=>w.weekStart===m[1]); if (wi<0) continue;
+      const ei=s.weeklyArchive[wi].entries.findIndex(e=>e.id===m[2]);
+      if (val==null) { if (ei>=0) s.weeklyArchive[wi].entries.splice(ei,1); }
+      else { if (ei>=0) s.weeklyArchive[wi].entries[ei]=val; else s.weeklyArchive[wi].entries.push(val); }
+      continue;
+    }
+    m=key.match(/^weeklyArchive\[(.+)\]$/);
+    if (m) {
+      const wi=s.weeklyArchive.findIndex(w=>w.weekStart===m[1]);
+      if (val==null) { if (wi>=0) s.weeklyArchive.splice(wi,1); }
+      else { if (wi>=0) s.weeklyArchive[wi]=val; else s.weeklyArchive.push(val); }
+      continue;
+    }
+    if (val==null) delete s[key]; else s[key]=val;
+  }
+  return s;
+}
+
+export const MONEY_KEYS=['monthly','budget','housing','amount','grant','tuition','health','income','allowance','target','saved','surplusBank','fee'];
+export function fmtConflictVal(key, val, data) {
+  if (val==null) return '(removed)';
+  if (typeof val==='boolean') return val?'On':'Off';
+  if (typeof val==='number') return MONEY_KEYS.some(mk=>key.toLowerCase().includes(mk))?`$${val.toLocaleString()}`:String(val);
+  if (typeof val==='object') {
+    if (val.name) return val.name+(val.amount?` — $${val.amount}`:'');
+    if (val.label) return val.label+(val.targetAmount?` — $${val.targetAmount}`:'');
+    if (val.catId&&val.amount) { const cat=(data?.categories||[]).find(c=>c.id===val.catId); return `${cat?.label||val.catId}: $${val.amount}`; }
+    return JSON.stringify(val);
+  }
+  return String(val);
+}
+export function conflictLabel(key, data) {
+  const cats=data?.categories||[], catLabel=id=>cats.find(c=>c.id===id)?.label||id;
+  const YN=['Year 1','Year 2','Year 3','Year 4'];  // beyond this, the +1 fallback labels "Year N"
+  let m;
+  m=key.match(/^years\[(\d+)\]\.monthly\.(.+)$/);         if (m) return `${YN[+m[1]]||'Year '+(+m[1]+1)} — ${catLabel(m[2])} budget`;
+  m=key.match(/^years\[(\d+)\]\.monthlyOverrides\.(\w+)\.(.+)$/); if (m) return `${YN[+m[1]]||'Year '+(+m[1]+1)} — ${catLabel(m[3])} override (${m[2]})`;
+  m=key.match(/^years\[(\d+)\]\.(.+)$/);                  if (m) return `${YN[+m[1]]||'Year '+(+m[1]+1)} — ${({grant:'Grant',tuitionFees:'Tuition',healthIns:'Health ins.',otherIncome:'Other income',housing:'Housing',housingNote:'Housing note',notes:'Notes',startDate:'Start date',endDate:'End date'})[m[2]]||m[2]}`;
+  m=key.match(/^stepGoals\[(.+)\]$/);                      if (m) { const g=(data?.stepGoals||[]).find(g=>g.id===m[1]); return `Step goal: ${g?.label||m[1]}`; }
+  m=key.match(/^savingsGoals\[(.+)\]$/);                   if (m) { const g=(data?.savingsGoals||[]).find(g=>g.id===m[1]); return `Savings goal: ${g?.label||m[1]}`; }
+  m=key.match(/^subscriptions\[(.+)\]$/);                  if (m) { const s=(data?.subscriptions||[]).find(s=>s.id===m[1]); return `Subscription: ${s?.name||m[1]}`; }
+  m=key.match(/^categories\[(.+)\]$/);                     if (m) return `Category: ${catLabel(m[1])}`;
+  return ({darkMode:'Dark mode',logo:'App logo',surplusBank:'Surplus bank'})[key]||key;
+}
+(function(){setInterval(()=>{const now=new Date();if(now.getDay()===0&&now.getHours()===23&&now.getMinutes()===59)window._triggerArchive&&window._triggerArchive()},60000)})();
