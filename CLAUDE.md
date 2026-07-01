@@ -1,6 +1,6 @@
 # Marro
 
-Budget planner for med students (started WCM-specific; generalizing). Single-file app: `index.html` (~3.5k lines, React 18 + Babel standalone + Recharts + supabase-js, no build step). Live at https://joinmarro.com — **push to `main` deploys immediately; always ask before pushing.**
+Budget planner for med students (started WCM-specific; generalizing). **Vite app** (Phase 3.5): the React 18 + Recharts + supabase-js code lives in `src/main.jsx` (~5k lines, still one file — component split is the next 3.5 step); `index.html` is the thin entry; static assets in `public/`. Offline via `vite-plugin-pwa` (Workbox precache + in-app "Update ready" toast). Live at https://joinmarro.com — **push to `main` deploys immediately; always ask before pushing.**
 
 **Auth + data (Phase 2.5b):** Google login via Supabase; per-user state in the `app_state` table (one jsonb blob/user, RLS-gated); `profiles` table holds school. App requires sign-in (hard gate). The transport-agnostic 3-way merge engine is unchanged — Supabase just replaced the old Gist transport. Supabase URL + publishable key are hardcoded in `index.html` (safe — RLS-gated). Project ref `rjowpekykqlounnaegwn`.
 
@@ -30,4 +30,4 @@ Budget planner for med students (started WCM-specific; generalizing). Single-fil
 10. **Data ethics & monetization — `docs/DATA_ETHICS.md` is the source of truth; check it on EVERY change touching data collection, storage, sharing, monetization, or user-facing privacy copy.** Core: individual records are never sold/shared (Lane A, RLS-enforced); only true aggregates may be used (Lane B) — silent in the UX but disclosed in `privacy.html`. Never write "never sold" (say "never sell your **personal info**"); never put mechanism words ("aggregate"/"group stats"/"de-identified") in user-facing copy — use **benefit** language. Partner offers are always shown + clearly labeled "Partner/Sponsored," never framed as Marro's advice. **UI copy must match `privacy.html`.**
 
 ## Local dev
-`python3 -m http.server 3456 --directory .` then http://localhost:3456
+`npm run dev` → http://localhost:3456 (Vite; port pinned to match the Google OAuth redirect). `npm run build` → `dist/` · `npm run preview` serves the built output. **Node is via nvm — a fresh shell needs `nvm use --lts` first (or the preview launcher wraps `zsh -l -c`).** The service worker only runs in the production build (`devOptions.enabled:false`), so dev is HMR-clean.

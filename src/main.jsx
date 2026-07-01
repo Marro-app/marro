@@ -2,6 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import * as Recharts from 'recharts';
 import { createClient } from '@supabase/supabase-js';
+import { useRegisterSW } from 'virtual:pwa-register/react';
 
 window.storage={get:async(key)=>{try{const v=localStorage.getItem(key);return v?{key,value:v}:null}catch{return null}},set:async(key,value)=>{try{localStorage.setItem(key,value);return{key,value}}catch{return null}},delete:async(key)=>{try{localStorage.removeItem(key);return{key,deleted:true}}catch{return null}},list:async(prefix)=>{try{return{keys:Object.keys(localStorage).filter(k=>!prefix||k.startsWith(prefix))}}catch{return{keys:[]}}}};
 const{PieChart,Pie,Cell,BarChart,Bar,XAxis,YAxis,Tooltip,ResponsiveContainer,LineChart,Line,AreaChart,Area,Legend,ReferenceLine,ComposedChart}=Recharts;
@@ -5055,5 +5056,25 @@ function App() {
   );
 }
 
+// ── PWA update prompt ─────────────────────────────────────────────────────────
+// vite-plugin-pwa precaches the fingerprinted build; when a new deploy is detected
+// the service worker installs and *waits*. Rather than force-reload (which could
+// wipe an in-progress edit), we surface a calm, dismissible toast — the reload
+// only happens the moment the user taps it, so it's provably never mid-edit.
+// Mirrors the yearUndo toast for visual + a11y consistency (role="status", glass).
+function UpdateToast(){
+  const { needRefresh:[needRefresh,setNeedRefresh], updateServiceWorker } = useRegisterSW({
+    onRegisterError(err){ console.error('SW registration error', err); },
+  });
+  if(!needRefresh) return null;
+  return (
+    <div role="status" style={{position:"fixed",left:"50%",bottom:24,transform:"translateX(-50%)",zIndex:1300,display:"flex",alignItems:"center",gap:16,maxWidth:"calc(100vw - 32px)",padding:"11px 12px 11px 16px",borderRadius:12,background:C.surface,border:`1px solid ${C.border}`,boxShadow:"0 8px 30px rgba(0,0,0,0.28)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)"}}>
+      <span style={{fontSize:13,color:C.text}}>A new version of Marro is ready.</span>
+      <button onClick={()=>setNeedRefresh(false)} style={{flexShrink:0,padding:"7px 12px",fontSize:13,fontWeight:500,border:"none",borderRadius:9,background:"transparent",color:C.gray,cursor:"pointer"}}>Later</button>
+      <button onClick={()=>updateServiceWorker(true)} style={{flexShrink:0,padding:"7px 14px",fontSize:13,fontWeight:600,border:`1px solid ${C.border}`,borderRadius:9,background:"transparent",color:C.teal,cursor:"pointer"}}>Reload</button>
+    </div>
+  );
+}
+
 const root=createRoot(document.getElementById('root'));
-root.render(React.createElement(App));
+root.render(<React.Fragment><App/><UpdateToast/></React.Fragment>);

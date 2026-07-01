@@ -3,10 +3,10 @@
 Budget planner for medical students (any US MD/DO program; started WCM-specific, now school-agnostic). Tracks grant disbursement vs planned vs actual spending across each user's academic years.
 
 ## Stack & deploy
-- Single file: `index.html` (~3.5k lines) — React 18 + Babel standalone + Recharts 2.5 + supabase-js 2 (all CDN), no build step
-- Offline PWA (`sw.js`, `manifest.json`); **Supabase auth (Google) + per-user `app_state`/`profiles` tables** are the source of truth; `localStorage marro_v8` is the offline cache + merge ancestor. (Old Gist sync `api/sync.js` deleted in Phase 2.5b.) See `DATA_MODEL.md`.
-- Push to `main` → Vercel auto-deploy → https://joinmarro.com
-- Local dev: `python3 -m http.server 3456 --directory .` (see `launch.json`)
+- **Vite app** (Phase 3.5): app code in `src/main.jsx` (~5k lines, React 18 + Recharts 2.5 + supabase-js 2 as npm deps — versions pinned to what the old CDN served); `index.html` = thin entry; static assets in `public/`. Component split from the monolith is the next 3.5 step. **Node via nvm (`nvm use --lts`).**
+- Offline PWA via `vite-plugin-pwa` (Workbox generates `sw.js` + precache from the fingerprinted build; update surfaces as an in-app "Update ready" toast, `registerType:'prompt'` — never force-reloads mid-edit). `manifest.json` is hand-authored in `public/`. **Supabase auth (Google) + per-user `app_state`/`profiles` tables** are the source of truth; `localStorage marro_v8` is the offline cache + merge ancestor. (Old Gist sync `api/sync.js` deleted in Phase 2.5b.) See `DATA_MODEL.md`.
+- Push to `main` → Vercel auto-deploy → https://joinmarro.com. **⚠️ Before the first Vite deploy, Vercel must be set to Framework=Vite (build `npm run build`, output `dist/`) — it previously served the repo as static files. Untested against prod yet.**
+- Local dev: `npm run dev` → http://localhost:3456 (`npm run build` / `npm run preview` for the production bundle). See `launch.json`.
 
 ## index.html map — grep keys, not line numbers
 Don't scan the file; `grep -n` the key for the section you need. Keys are stable code identifiers (verify with hit count if editing nearby).

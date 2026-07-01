@@ -500,19 +500,8 @@
   <div class="boot-name">Marro<span style="color:#DDA528">.</span></div>
   <div class="boot-sub">Counting the rings…</div>
 </div></div>
+<!-- Service worker is registered from src/main.jsx via vite-plugin-pwa's
+     useRegisterSW hook, which drives the in-app "Update ready" toast. -->
 <script type="module" src="/src/main.jsx"></script>
-<script>
-if('serviceWorker' in navigator){
-  // Reload once when a new service worker takes control, so fresh code lands without manual cache clearing
-  let reloaded=false;
-  navigator.serviceWorker.addEventListener('controllerchange',()=>{
-    if(reloaded)return; reloaded=true; window.location.reload();
-  });
-  navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'}).then(reg=>{
-    reg.update();                       // force an update check on every load
-    setInterval(()=>reg.update(),60*60*1000); // and hourly while open
-  }).catch(()=>{});
-}
-</script>
 </body>
 </html>
