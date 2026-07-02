@@ -1,91 +1,80 @@
 # Roadmap
 
-Phase order and rationale. Backlog items live in `FUTURE_WORK.md`. Mark items ✓ here the moment they ship. **Company/business/AI vision + monetization + people/legal/infra lives in `STRATEGY.md`** — this file is build phases only.
+**Revised 2026-07-01** after a full strategic/technical audit (decision log: `PRODUCT_DECISIONS.md` 2026-07-01). Build phases only — vision/monetization/company layer lives in `STRATEGY.md`; backlog in `FUTURE_WORK.md`; **completed-phase detail + the old roadmap moved to `docs/HISTORY.md`** (archive — grep it, don't read it whole).
 
-> **Vision:** grow beyond Cornell to all med students nationally.
-> **Sequencing rationale:** 2.5 (UI) moved up from Phase 7 — polish before building more features. 2.5b (Auth) pulled forward from Phase 6 because Phase 3 needs real user profiles; building school-generalization on localStorage then migrating would be risky for existing users.
+> **Product target (one line):** a 3-tab app a med student sets up in 5 minutes and touches ~1 minute a month, answering: *how long will my money last* and *what will my degree really cost me*.
+>
+> **Operating principle:** phases are ordered by what we **learn about real users soonest**, not by what's technically next. Ship to strangers, measure, respond. Hide features rather than delete them — everything hidden stays on the shelf.
 
-## Phase 1 ✓ — Core app
-## Phase 2 ✓ — Savings & Charts (June 2026)
-Projected graduation balance, recommendations, comparison mode, Step 3 goal + migration, pie chart month/range picker, CSV import (auto-detect columns, keyword categorization, review + bulk import).
+## Done (detail in HISTORY.md)
+✓ Phase 1 core app · ✓ Phase 2 savings & charts · ✓ Phase 2.5 Marro UI overhaul · ✓ Phase 2.5b auth + Supabase · ✓ Phase 3 school-agnostic generalization · ✓ Phase 3.5 foundation (Vite migration, component split, PWA cache fix, Vitest 62 tests, Sentry)
 
-## Phase 2.5 — Marro UI overhaul ✓ COMPLETE (June 11, 2026)
-- ✓ Steps 1–3: palette/fonts/rename, growth-rings logo, glass cards site-wide + full UI audit
-- ✓ Step 4 — Theme-ready tokens, neg/danger split, 3-tier glass, radius scale
-- ✓ Step 5 — Neutral near-black dark theme; colorblind-safe blue/amber data pair
-- ✓ Step 6 — Light theme + working toggle (prefers-color-scheme default, FOUC guard, sync-aware)
-- ✓ Step 7 — Ring-derived custom icon system (categories + UI chrome)
-- ✓ Step 8 — Identity embedding: rings app icon/favicon/manifest, ring loading screen, ring sync states, RingProgress goals, ring EmptyState
-- ✓ Step 9 — De-Cornell visible copy + manifest (YEAR_CONFIGS data kept)
-- ✓ Step 10 — Modal a11y (focus trap/Esc/aria), self-hosted fonts (offline-safe), mobile table edge fade, Step-fund chip states
-- ✓ Step 11 — Blob health states (calm/low-tide/marigold bloom), docs rewritten
-- Deferred from this phase → FUTURE_WORK: tab-pill redesign + cross-fades, chart gradient/draw-on animations, number-roll, apple-touch-icon PNG
+---
 
-## Phase 2.5b — Auth + Supabase ✓ COMPLETE & DEPLOYED (June 13, 2026 — live at commit 8df8837)
-- ✓ Google login via Supabase Auth; hard login gate (no anonymous mode), LoginScreen
-- ✓ Supabase `app_state` table (one jsonb blob/user, RLS) replaces Gist as the sync transport; localStorage kept as offline cache + merge ancestor; 3-way merge engine reused unchanged (gistFetch/gistWrite → stateFetch/stateWrite); `api/sync.js` deleted
-- ✓ First-login migration: uploads local state to Supabase if server row empty; `marro_uid` shared-device guard
-- ✓ `profiles` table + one-time ProfileModal: searchable picker over full Wikipedia-sourced US MD (LCME) + DO (COCA) lists (`US_MED_SCHOOLS`); multi-campus schools (LECOM, VCOM, PCOM, RVU, Indiana, Illinois, MSU, etc.) prompt a campus step, stored as "Name — Campus"; free-text Other; school shown in settings with a "Change" action that reopens the picker (editable/cancelable)
-- Deferred to pre-public-launch (see FUTURE_WORK): custom auth domain + Google verification (consent screen currently shows raw Supabase domain + unverified warning; Testing mode capped at 100 users); remove unused `GIST_TOKEN` Vercel env var after a prod deploy.
+## Phase 1 — Simplify + open the doors (NOW, ~2–3 wks, two parallel tracks)
 
-## Phase 3 — School-agnostic generalization (in progress)
-First-run onboarding wizard, user-defined year configs, remove WCM hardcoding, variable program lengths. Required before any non-WCM users.
-- ✓ **De-WCM the data layer (June 14):** retired hardcoded `YEAR_CONFIGS`/`DEFAULT_MONTHLY`; added `generateYearConfigs(startYear,len,extended)` (tier-1 heuristic date provider — swappable seam for future calendar-fetch) + `BLANK_MONTHLY`/`blankYearFields()`. All financial fields default to 0 for **every** school (no special-casing). Renamed `wcmLivingAllowance`→`livingAllowance` (migrated on load). Boot migration no longer injects any school's numbers; `addYear` inherits the user's own prior year, not WCM defaults. Removed the hardcoded WCM cost-of-attendance reference table from the Aid tab.
-- ✓ **Onboarding program step (June 14):** new step 4 "How long is your program?" (3/4/5/6 yrs + extended-year toggle) generates the year configs on finish. First-run only — redo-setup never regenerates (would wipe data).
-- ✓ **Program model rework (June 15):** removed the "extended year" special-case (years are now plain numbered; legacy extended years migrate to numbered, data preserved). Added dual-degree support — step 4 "Your program" asks track (`MD/DO only` · `-PhD` · `+ Master's` · `Other`) with optional PhD/Master's field + granting institution; length widened to 3–8 yrs. Degree (MD/DO) derived from school name; DO duals gated by curated `DO_DUAL` map (free-text fallback). Stored in `data.program`; editable in **Settings → Program** (`ProgramModal`). See PRODUCT_DECISIONS 2026-06-15.
-- ✓ **Progressive setup (June 14):** `SETUP_VERSION` + `SETUP_STEPS` registry + `ProgressiveSetup` popup. New users answer everything inline; existing users behind on a newly-added question get a focused glass popup for just that step. v1 grandfathers existing users (registry currently empty — infra ready for v2+ questions like term-date confirmation / aid-letter upload).
-- Untested live (auth-gated, needs Google smoke test): new-user onboarding finish (years generation + Supabase profile save). MD/DO-from-school-name derivation deferred (no consumer until Phase 4) — see FUTURE_WORK.
-- **Smoke-test status (2026-06-28):** **profile-save → Supabase verified LIVE** (earlier session). **Year generation NOW verified LIVE (2026-06-28)** — ran the approved fresh-run on the owner's own account (`jawadhijazi7@gmail.com`) via Chrome console against the deployed new code: backed up `app_state`+`profiles`+local cache to a `FRESHRUN_BACKUP` localStorage key (round-trip verified), forced first-run (RLS denies `DELETE` on `app_state`, and a stripped `{setupVersion:null}` row CRASHES boot because the load-migration never backfills `categories` — so the working clear was **upsert the real state with `setupVersion` forced to null + `profiles.school=null` + clear local cache**), drove onboarding with a deliberately off-default **start year 2024 / length 5**, and confirmed Supabase received exactly `generateYearConfigs(2024,5)` (`Year 1 — 2024-25` @ `2024-08-01` … `Year 5 — 2028-29`, byte-exact match) — proving the new start-year picker feeds generation live. Then restored from backup **byte-identical** (`stateByteIdentical:true`, school + 1-year data back, dashboard renders "Welcome back, Mo") and removed the backup key. **Latent robustness note found during the test:** the boot load-migration backfills years/program/etc. but NOT `categories`, so any `app_state` row missing `categories` crashes render (`Cannot read properties of undefined (reading 'forEach')`). A real user can't hit this via normal flow (new users seed full `DEFAULT_STATE`), but a one-line defensive `if(!loaded.categories) loaded.categories = DEFAULT_CATS` would harden it — logged for separate cleanup.
-- ✓ **Phase 3 polish (build-now, agreed 2026-06-28 — small, low-risk, on the current single-file app before the Vite migration) — BUILT + verified-local 2026-06-28, NOT yet deployed:** (1) ✓ MD-PhD suggested length **8 → 7** (`suggestLen`); (2) ✓ **year-count → stepper** — new reusable `Stepper` component (− / editable spinbutton / +, range 1–8, HIG idiom, 44px hit targets, roving-free `role=group`) replaced the `3–8` button row; (3) ✓ **"When did you start? → Fall [year]" stepper** (default current fall, range thisYear−10…+1) now feeds `generateYearConfigs(startYear,len)` — wired the picked year (was hardcoded `new Date().getFullYear()`); (4) ✓ **removed the dead `!firstRun` redo copy** in the program step (now a single first-run helper line "Your years run from Fall X to Y"); (5) ✓ **Aid-year delete → soft delete** — `removeYear` archives the year to `data.archivedYears` (deduped by `startDate`); restore paths: an immediate **Undo toast** (`role=status`), a **"Reinstate a removed year"** list in the Add-year modal, and **date-match auto-restore** when Add-year's start year equals an archived one. Round-trip is byte-identical (10/10 logic assertions pass). Remove-year modal copy de-"permanent"-ed. **Audit done:** the only date-driven current-year consumers (boot active-year auto-select effect ~line 3044, `addYear`) are all `startDate`-based → start-year picker is safe. **`currentYearIdx` (~line 1123) is DEAD CODE** that still hardcodes `[2026…2030]` — flagged for separate cleanup (no live consumer). **Still pending: the live fresh-run smoke test (below) + a prod deploy.**
+**Track A — simplification pass (build):**
+- Hide 4 tabs — **Weekly, Savings, Subscriptions, Charts** — behind a single revivable flag (hide, never delete; code + data stay). Fold subscription totals into Budget as "fixed monthly costs"; keep ONE plan-vs-actual chart on Home; move category editing into settings.
+- Slim the header to ≤3 numbers (runway placeholder · month plan · debt placeholder until Phase 2 fills them).
+- Add a **"quick add"** affordance for one-off big expenses (a button, not a tab) — keeps surprises explainable under the monthly model.
 
-## Phase 3.5 — Foundation (DECIDED: migrate before AI) — IN PROGRESS
-Reinforce the lightweight single-file foundation *before* the multi-surface AI work lands on it. See `STRATEGY.md` §2.
-- ✓ **Build-system migration — Step 1 (2026-06-30, branch `phase-3.5-vite`):** single `index.html` → Vite. App body moved verbatim to `src/main.jsx` (4 CDN globals → ESM imports; **proved byte-identical** by diff — only 4 lines changed, all intentional); static assets → `public/`; deps pinned to the CDN versions. `npm run dev`/`build`/`preview` all verified, login screen renders identically.
-- ✓ **Component split — Step 2, DONE (2026-06-30):**
-  - **Stage 1:** broke the ~5,090-line `src/main.jsx` monolith into a **thin entry** (`main.jsx` = `window.storage` shim + `createRoot`), **`App.jsx`** (`App()` + `SilentUpdater`, tabs still inline), a pure **`src/lib/`** tree (`data` [supabase+sync], `theme`, `brands`, `format`, `schools`, `avatars`, `ui-helpers`, `hooks`) and a **`src/components/`** tree (`icons`, `primitives`, `pickers`, `avatars`, `LoginScreen`, `onboarding`, `modals` — each exports only components). Purely mechanical (also fixed a `ReactDOM.createPortal` regression the migration left in `wrapPop`). Verified: build byte-parity, ESLint `no-undef` clean, 1:1 identifier completeness, and — the point of the split — **editing a component now Fast-Refresh hot-updates instead of full-reloading** (the `multiple GoTrueClient` / `createRoot already passed` / `Fast-Refresh incompatible` warnings are gone).
-  - **Stage 2:** added `src/context/AppContext.js` (a Provider in `App.jsx` exposing the shared surface — `data`/`upd`/`save`, `ay`/`selMonth`, the derived financial memos, and the mutation helpers that don't close over a tab's private state — via `useApp()`) and extracted all **7 tab panels into `src/tabs/{Budget,Weekly,Charts,Savings,Aid,Subscriptions,Customize}Tab.jsx`**, one per commit. Each tab's private form/UI `useState` (and the helpers/modals that close over it — e.g. the add-subscription form, the log-deposit + add-goal modals, the CSV importer, the add/remove-category modals) moved into the tab; shared state comes from `useApp()`. **`App.jsx` went 2820 → 1036 lines** (now the shared shell: auth/sync/save, header, year selector, top metrics, App-level modals + the Provider). **Verified per tab:** build parity (~945 kB), ESLint `no-undef` clean, login renders, and Fast Refresh confirmed on a tab boundary (`[vite] hot updated: /src/tabs/AidTab.jsx`, not a full reload). Remaining ESLint errors are all pre-existing stylistic ones (unescaped entities, CSV-regex escapes, empty sync catches, the `MutationObserver` browser-global) — no new structural errors. **Signed-in behavior verified in the owner's Chrome (2026-06-30, via Chrome MCP):** all 7 tabs render live with real data and zero runtime exceptions across every tab switch; the modals that moved into their tabs open correctly (Budget add/remove-category, Savings log-deposit + add-goal, Weekly CSV import + week selector); and the shared-state calls hold — changing Budget's month updates the App header metric (`selMonth` shared), and browsing an archived week survives a tab switch (`viewWeek` shared). See `PRODUCT_DECISIONS.md` for the per-tab form-state-reset decisions.
-- ✓ **Service-worker / cache fix (2026-06-30):** replaced the hand-rolled `sw.js` with `vite-plugin-pwa` (Workbox). Precache is auto-generated from the fingerprinted build (14 entries) so a new deploy = new hashes = clean atomic update. New builds apply **silently** via `SilentUpdater` (`registerType:'prompt'` hands control to the app) — the swap only happens when the tab is backgrounded AND nothing is mid-flow (no `role="dialog"` open, no focused text field); if that moment never comes, the waiting worker activates on the next cold start. So it's **provably never mid-edit**, with no user-facing prompt (per user preference 2026-06-30). SW disabled in dev (HMR-clean). **⚠️ Pre-deploy gate: set Vercel Framework=Vite (build `npm run build`, output `dist/`) before this branch goes live — not yet tested against prod.**
-- **Test harness — Vitest ✓ (2026-07-01):** added `vitest` + `jsdom` (jsdom env needed because importing `src/lib/data.js` runs a bare `setInterval` IIFE that touches `window`); `test` block in `vite.config.js`; `npm test` runs `vitest run`. **62 tests, all green, build parity kept.** Coverage on the two CLAUDE.md-priority surfaces: **`src/lib/data.test.js`** — the 3-way merge engine (`diffStates`/`findConflicts`/`applyChanges` round-trip across every diff family: scalars, nested maps, `years[].monthly`/`monthlyOverrides`, id-keyed arrays, `weeklyArchive` + entries; deletes; no-input-mutation; conflict vs auto-merge; the conflict-display helpers). **`src/lib/format.test.js`** — money formatting (rounding/sign/cents), `subMonthlyTotal` cycle math, `generateYearConfigs` boundaries, DST-safe date helpers. **Bug caught + fixed by the harness:** `daysUntil` overcounted every future date by 1 (target anchored at noon vs `now` floored to midnight → +0.5 rounded up), so subscription "due" detection fired a day late and countdowns read "+1 day" — fixed by anchoring `now` at noon too (see PRODUCT_DECISIONS 2026-07-01). **Error monitoring ✓ (2026-07-01):** `@sentry/react` wired in `src/main.jsx` — production-build-only (dev stays clean), 10% perf trace sampling, **Session Replay off** (no user financial data recorded, per data-ethics call). `Sentry.ErrorBoundary` wraps the app with an on-brand crash fallback (ring mark, themed, "Reload" button, contrast-checked 4.79:1). DSN in `VITE_SENTRY_DSN` (Vercel env var, set on Production) + `.env.example` placeholder committed. **Still pending:** AI-guardrail tests come with Phase 4a.
-- **Minimal admin/observability dashboard (EARLY)** — errors, AI calls, costs, engagement. Start minimal; later becomes the webhook aggregator.
-- **Company account hygiene** (can run in parallel, mostly non-engineering) — Marro-owned GitHub org / Vercel team / Supabase / domain / business email; Bitwarden shared vault (✅ done 2026-06-27); `.env.example`. See `STRATEGY.md` §6.
+**Track B — doors + trust (paperwork; start day 1, the queues are long):**
+- **Submit Google OAuth verification** (custom auth domain, logo, out of Testing mode). Everything downstream waits on this review.
+- Enable the **`allowed_emails` invite gate** at publish time (SQL ready: `supabase/allowed_emails.sql`).
+- **Usage/event logging:** an `events` table (RLS write-own — policies or it reads empty, CLAUDE.md rule 4) + ~10 key events (login, setup finish, check-in done, tab views). No dashboard UI — SQL views only.
+- **Account deletion + data export** (first serverless fn; also the privacy.html promise + GDPR/CCPA).
+- Send `privacy.html`/`terms.html` to the **UCI clinic** for human review.
 
-## Sequencing decision (2026-06-28) — loan DATA before loan-aware AI
-Run-through outcome: "loans before AI" is half-right. Split each: **loan DATA layer** (capture/store) vs **loan FEATURES** (repayment simulator); and **4a** (budget-only AI machinery validation) vs **loan-aware AI advice**. The only hard dependency is **loan data layer → loan-aware AI** — NOT all-of-5 → all-of-4. So: **3.5 (Vite) first**, then the **loan data layer** built clean on the new foundation *with tests* (the loan snapshot is its front door — do NOT build the snapshot/Estimate-badge standalone before 3.5: nothing consumes loan numbers yet so the badge has nothing to guard, and it bloats the file we're about to migrate). **4a stays early** (budget-only, de-risks AI cost/UX cheaply; independent — can run parallel to the loan data layer). Loan-aware AI + the heavy repayment simulator come after both exist.
+**Done when:** 3 visible tabs + settings; a stranger can join unaided (pending Google); usage is visible; users can leave with their data.
 
-## Phase 4a — Budget-only AI (machinery validation) — NOT STARTED
-Trigger-based (not a chatbot): passive monitoring, anomaly alerts, weekly digest, receipt scanning, goal-aware nudges — **all on existing budget/spending data, no loans needed.** Vercel AI proxy (holds key, model routing) + soft usage pool + BYOK; ship **anomaly-check + good-habit** end-to-end with the "Suggested" UI (CLAUDE.md rule 9); **retire the hard-coded suggestions it replaces**. Validates cost/UX/usage machinery on the smallest surface → friends' hands. **Still-open (defer to 4a start):** usage-pool size + reset period; BYOK transport (proxy vs client-direct); anomaly sensitivity; card placement. **Full guardrails/cost/monetization: `STRATEGY.md` §1–2,§4; cost strategy in memory `project_wcm_ai_cost.md`. Data rules: `docs/DATA_ETHICS.md`.**
+## Phase 2 — Money core: loans, runway, new onboarding (~2–3 wks)
 
-## Loan data layer — NOT STARTED (built on the post-Vite foundation, with tests; before loan-aware AI)
-The structured loan data the AI and the repayment simulator both consume. Design it **AI-ready from day one.**
-- **Loan snapshot** (the onboarding ask, fused here — NOT a standalone pre-3.5 step): asked at setup, **skippable**. Total borrowed + a single toggle **"anything besides standard federal (Direct) loans?"** (catches school / institutional / private — the real line is "a rate we can look up" vs "a rate you give us"). Federal rates inferred from public per-year tables + the structured Unsub→Grad PLUS borrowing pattern; only non-federal needs balance + rate. One blended non-federal bucket by default, optional "+ add another."
-- **Honesty system:** if the snapshot is incomplete, loan-dependent numbers carry a calm **"Estimate — add your loans to make this exact"** badge (NOT an alarming "inaccurate" warning — rule 9 + ADA). Post-first-run reminder with snooze (later / next time / never), persisted per-user in `app_state`. One-tap to open the snapshot anytime. Complete snapshot → no badge, no reminders. Accuracy tiers: total-only = *estimate*; +federal/private split = *good*; full per-loan = *precise* — always labeled honestly.
-- **Loans tab:** lists every loan, **user-named**, editable; **feeds the Aid/Detail tab** (add/update a loan → flows to the Aid page).
-- **Offered ≠ Accepted ≠ Disbursed (field in the model from v1):** an aid award letter lists *offered* amounts (eligibility), the student *accepts* some/all/none, only *disbursed* is real debt. Aid-letter scan (Phase 4) must treat every loan line as **offered** and confirm acceptance — never auto-add an offer to debt. Aid letter = plans one year's budget; loan snapshot / StudentAid.gov = the running real debt. Build the status field now so the scanner drops in cleanly.
-- Loan math (federal-rate inference, offered/accepted/disbursed, projections) = money-math → **tests mandatory** (CLAUDE.md), which is why this waits for 3.5's test harness.
+One integrated build. Specs already locked — build as designed: loan-capture model + snapshot + Offered≠Accepted≠Disbursed (`PRODUCT_DECISIONS.md` 2026-06-28 entries).
+- **Onboarding money step (5 questions):** total borrowed so far (skippable; the one federal/non-federal toggle) · next disbursement amount + rough date · rent + fixed monthly costs · **family/partner support (monthly)** · other income (monthly).
+- **Payoff screen immediately after:** projected **debt at graduation with interest** + rough post-residency monthly payment + **runway** ("$X to last until ~date"). Loan math = money math → **tests mandatory**.
+- **Loans tab:** editable, user-named loans; calm "Estimate — add your loans to make this exact" badge when incomplete; offered/accepted/disbursed status field in the model from v1.
+- **Home centers on the runway line** (counts down by calendar — the app looks alive without input) + **"upcoming big costs"** (Step fees, interview season — replaces the Step savings-goal rings).
 
-## Phase 4 (rest) — loan-aware AI + deeper intelligence — NOT STARTED
-**Depends on the loan data layer above.** True-cost reframing, "should you take Grad PLUS," repayment strategy, disbursement-gap warnings, scheduler-driven digests, web-search local pricing/calendars/scholarships, forecasting. Also 4b data-quality (easier entry via voice/receipt, proactive check-ins, lite-APY projections, off-switch + voice guide).
-**Full capability menu + hard guardrails + cost controls + monetization tie-in: see `STRATEGY.md` §1–2, §4. Data rules: `docs/DATA_ETHICS.md`.** No autonomous writes.
+**Done when:** fresh account → debt + runway on screen in <5 min; numbers hand-checked against studentaid.gov examples.
 
-## Phase 5 — Student loans: repayment simulator + deeper tools
-**The loan DATA layer is pulled forward (see above) — this phase is the heavy FEATURE work on top of it.** Repayment simulator (Standard/IBR/PAYE/SAVE/Extended), PSLF modeling, residency projections. **Research before implementing — do not build from memory.**
+## Phase 3 — The rhythm: monthly check-in + weekly digest (~1–2 wks)
 
-## Phase 5b — Interview season budget
-Cost planner by type (flights/hotels/clothes), specialty-aware estimates, integrates with main budget.
+Presence weekly, work monthly:
+- **Weekly digest email — zero work required** (computed numbers, no AI yet; the future AI rides this exact rail): runway, plan position, upcoming costs.
+- **Monthly check-in — one number:** "what's your checking balance right now?" → derive actual burn vs plan, update runway + projection. Optional "where did it go?" chips, skippable forever. **Ask the balance, not the expenses.**
+- **Forgiving by design:** a missed month = the next reading covers a longer span, math unchanged. One nudge 3 days after the 1st, then silence (communication budget, STRATEGY §1).
+- Product copy embraces it: *"Marro doesn't need you every day."*
 
-## Phase 5c — Specialty-specific financial outlook
-Specialty pick → residency pay, fellowship likelihood, attending salary range, repayment trajectory, PSLF viability.
+**Done when:** the full loop survives one real month-end on the founder's account.
 
-## Phase 6 — Multi-user backend & school benchmarking
-School benchmarking (10+ users/school min), peer tips. Feeds Phase 4 quality. Also: cohort/group-buying (needs per-school density), bank-linking via **Plaid**, monetization (partner offers — always shown + clearly labeled per `DATA_ETHICS.md` rule 3). **Benchmarking = reciprocity unlock ("add your numbers to see how you compare"), not a consent wall; only true aggregates leave the individual layer — see `docs/DATA_ETHICS.md` (the binding rules) + `STRATEGY.md` §6.** Each item = a real go/no-go.
+## Phase 4 — Closed beta: strangers + a verdict (~4 wks, mostly watching) 🚦
 
-## Pre-launch — legal / trust must-dos (gate public launch)
-- **Account deletion + data export** (right-to-be-forgotten + portability): self-serve "delete everything" and "download my data." Legally expected (GDPR/CCPA) + an app-store requirement + the single biggest trust lever for skeptical med students. Build once the data model is stable.
-- **`privacy.html` ↔ `docs/DATA_ETHICS.md` alignment:** the policy must match the in-app promises exactly (mismatch = the real exposure) and must disclose: sub-processors (Supabase, Vercel, Google, + Anthropic at Phase 4), aggregate/de-identified data use (in general terms), and retention. Clinic reviews the de-identification line before any data-sharing/partner feature ships.
-- **Google OAuth consent verification** (already tracked) — leave Testing mode, custom auth domain, real logo, submit for verification.
+- **20–30 med students, 3+ schools, ≥half strangers-of-friends** (friends are too polite to churn honestly). Watch the event log weekly.
+- Interview ~10. Pricing fake-door **as a statement**: "Marro will eventually be ~$5/mo; beta users stay free forever" — watch reactions.
+- Fix only what they trip over; keep a written "not now" list and honor it.
+- **The gate (written down now, before results exist):** if fewer than ~1/3 of non-friends complete the 2nd monthly check-in (or return in week 4) after two fix cycles → **STOP adding features** and rethink the core loop. Above ~40% → proceed.
 
-## Phase 7 — Mobile & polish
-Installable offline PWA, push notifications, PDF/CSV export, year-end summary, session timeout. **Native via Capacitor wrapper** (one codebase → App/Play Store + reliable push + Siri/voice path) + Jarvis voice control — see `STRATEGY.md` §3. (Deferred: terrarium mascot world — needs art pipeline.)
+## Phase 5 — First AI: the digest gets smart (~3–4 wks, only after the Phase-4 gate passes)
 
-## Backlog
-Residency transition planner, referral program, tax-relevant expense flagging.
+- **Safety rails FIRST, non-negotiable** (`AI_COST_MODEL.md` §7): account spending cap + billing alerts + per-user rate limits before the first AI call.
+- AI writes the weekly digest (Haiku-default routing per `AI_COST_MODEL.md`); **thumbs up/down on every digest**; "Suggested" UI rule 9 applies to anything it proposes.
+- **Answer key:** 20–30 fixed example situations with known-good outputs, re-run before any prompt/model change — the "never swap untested" rule as an actual tool.
+- Measure 4 wks: cost/user vs the model doc, helpfulness ratio → keep/kill/reshape.
+- *Demoted from old Phase 4a:* anomaly detection (needs data density monthly check-ins won't produce — later a digest ingredient, not a flagship), BYOK (cut), chat (still avoided).
+
+## Phase 6 — Effortless capture (when users ask for detail)
+Receipt photo → Haiku parse → "Suggested" one-tap confirm (rule 9) → voice entry later → Plaid only if the data demands it.
+
+## Phase 7 — Grow school by school
+Ambassador/founding-member per school → invite waves per school → benchmarking at ~10+ users/school (reciprocity unlock, `DATA_ETHICS.md` rule 4) → public r/medicalschool launch **only after the Phase-4 gate passes**. One public debut.
+
+## Phase 8 — Heavy features, ordered by real user demand (no committed order today)
+Repayment simulator + PSLF (research first — never build loan policy from memory) · interview-season budget · specialty financial outlook · reviving hidden tabs (Savings, Charts, Weekly detail) · native via Capacitor · admin dashboard UI (SQL views suffice until then).
+
+---
+
+## Parked / cut
+Jarvis voice-operator mode (**cut**) · terrarium mascot (**cut**) · group-buying (parked — needs per-school density) · BYOK (cut from early AI scope) · polish-only projects (a11y rule 7 still gates all *new* work) · incorporation/equity machinery **until the cofounder commitment is real** (then execute STRATEGY §5–6 as written).
+
+## Pre-launch legal/trust gates (all folded into Phase 1)
+Account deletion + export · privacy.html ↔ DATA_ETHICS alignment + clinic review · Google OAuth verification.
