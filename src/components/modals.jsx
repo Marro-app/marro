@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { C } from '../lib/theme.js';
-import { fmt, fmtA, fmtD, fmtDay, fmtWeekLabel, daysUntil, subMonthlyTotal } from '../lib/format.js';
+import { fmt, fmtA, fmtD, fmtDay, fmtWeekLabel, daysUntil, subMonthlyTotal, todayStr } from '../lib/format.js';
 import { conflictLabel, fmtConflictVal, MONEY_KEYS } from '../lib/data.js';
 import { Icon, BrandIcon } from './icons.jsx';
 import { Pill, Card, Modal, Banner } from './primitives.jsx';
 import { DateField } from './pickers.jsx';
+import { useApp } from '../context/AppContext.js';
 
 export function RenewalDialog({sub, onClose, onConfirm}) {
   const [renewed, setRenewed] = useState(null);
@@ -63,6 +64,62 @@ export function RenewalDialog({sub, onClose, onConfirm}) {
           {renewed ? "Save subscription" : "Remove subscription"}
         </button>
       )}
+    </Modal>
+  );
+}
+
+// ── Quick add — log a one-off expense from anywhere, no tab required ──────────
+// Phase 1 simplification: the Weekly tab is hidden from the tabbar, so this is
+// now the primary entry point for logging actual spending. Writes through the
+// same addWeeklyEntry mutator the (still-present, just hidden) Weekly tab uses.
+export function QuickAddModal({onClose}) {
+  const { cats, addWeeklyEntry } = useApp();
+  const spendCats = cats.filter(c=>!c.locked && !c.autoCalc);
+  const [catId, setCatId] = useState(spendCats[0]?.id||"");
+  const [amt, setAmt]     = useState("");
+  const [date, setDate]   = useState(todayStr());
+  const [note, setNote]   = useState("");
+  const [notice, setNotice] = useState(null);
+  const canSave = catId && parseFloat(amt)>0;
+  const save = () => {
+    if(!canSave) return;
+    const info = addWeeklyEntry(catId, amt, note, date);
+    if(info && (info.deficit>0 || info.isUnbudgeted)){
+      setNotice(info.isUnbudgeted ? `Added — ${info.catLabel} isn't in this month's budget.` : `Added — this puts you over budget for the month.`);
+      setTimeout(onClose, 900);
+    } else {
+      onClose();
+    }
+  };
+  return (
+    <Modal title="Quick add" onClose={onClose} width={380}>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div>
+          <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Category</div>
+          <select value={catId} onChange={e=>setCatId(e.target.value)} aria-label="Category" autoFocus
+            style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}>
+            {spendCats.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div>
+            <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Amount ($)</div>
+            <input type="number" placeholder="0.00" value={amt} onChange={e=>setAmt(e.target.value)} aria-label="Amount"
+              style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Date</div>
+            <DateField value={date} onChange={setDate} ariaLabel="Expense date"/>
+          </div>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Note (optional)</div>
+          <input placeholder="e.g. Textbook, flight" value={note} onChange={e=>setNote(e.target.value)} aria-label="Note"
+            style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
+        </div>
+        {notice && <Banner type="info">{notice}</Banner>}
+        <button className="btn-fill" onClick={save} disabled={!canSave} style={{padding:"11px",fontSize:14,fontWeight:700,border:"none",borderRadius:8,background:canSave?C.teal:C.surface,color:canSave?C.bg:C.gray,cursor:canSave?"pointer":"not-allowed"}}>Add expense</button>
+      </div>
     </Modal>
   );
 }

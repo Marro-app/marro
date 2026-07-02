@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { C, CHART_COLORS } from '../lib/theme.js';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { C, CHART_COLORS, tipProps } from '../lib/theme.js';
 import { fmt, fmtS, MONTH_NAMES, MONTH_FULL } from '../lib/format.js';
 import { Card, SectionTitle, Divider, InfoTip, Pill, XBtn, Modal } from '../components/primitives.jsx';
 import { Icon, CatIcon, CatIconPicker } from '../components/icons.jsx';
 import { MonthPicker } from '../components/pickers.jsx';
+import { SubscriptionsTab } from './SubscriptionsTab.jsx';
 import { useApp } from '../context/AppContext.js';
 
 // Budget — the monthly plan (per-category budgets for the selected month), cash
@@ -13,9 +15,9 @@ import { useApp } from '../context/AppContext.js';
 // header metrics) and the add-category form fields (newCat*) are shared with the
 // Categories tab — both come from useApp().
 export function BudgetTab(){
-  const { cats, ay, yr, selMonth, setSelMonth, subs, subsMo, disabledCats,
+  const { data, cats, ay, yr, yrStartYear, selMonth, setSelMonth, subs, subsMo, disabledCats,
           moSpend, moSpendable, moSurplus, runningBalance, totalAccumulatedBalance,
-          priorYearsCarryover, annDisburse, annOther, lastMonthRollover,
+          priorYearsCarryover, annDisburse, annOther, lastMonthRollover, allEntriesFlat,
           getMonthVal, spentInMonth, unbudgetedCats, unbudgetedTotal, promoteToBudget,
           toggleMonthCat, setMo, setYrF, reorderCats, rolloverReco, addCat,
           newCatName, setNewCatName, newCatIcon, setNewCatIcon, iconPickOpen, setIconPickOpen } = useApp();
@@ -23,8 +25,30 @@ export function BudgetTab(){
   const [dragOverCat, setDragOverCat] = useState(null);
   const [showAddCat, setShowAddCat] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(null);
+  const [showSubscriptions, setShowSubscriptions] = useState(false);
+  const [barHover, setBarHover] = useState(null);
+  const barDim = i => barHover!=null && barHover!==i ? 0.35 : 1;
+  const barMove = s => setBarHover(s && s.isTooltipActive && s.activeTooltipIndex!=null ? s.activeTooltipIndex : null);
+
+  // Plan vs actual — the one chart Phase 1 keeps on Home (ported from the hidden Charts tab)
+  const budgetVsActual = MONTH_NAMES.map((m,mi)=>{
+    const mk=ay+"-"+m;
+    const disM=data.monthDisabled?.[mk]||[];
+    let budgeted=0;
+    cats.forEach(c=>{
+      if(disM.includes(c.id)) return;
+      if(c.id==="subs"){budgeted+=subsMo;return;}
+      const ov=yr.monthlyOverrides?.[m]?.[c.id];
+      budgeted+=(ov!==undefined?ov:(Number(yr.monthly[c.id])||0));
+    });
+    const calMo=(mi+7)%12;
+    const calYr=yrStartYear+(mi>=5?1:0);
+    const actual=allEntriesFlat.filter(e=>{const dt=new Date(e.date+"T12:00:00");return dt.getMonth()===calMo&&dt.getFullYear()===calYr;}).reduce((a,e)=>a+Number(e.amount),0);
+    return {name:m, Budgeted:Math.round(budgeted), Actual:Math.round(actual)};
+  }).filter(d=>d.Actual>0);
   return (
     <>
+      {showSubscriptions && <Modal title="Fixed monthly costs" onClose={()=>setShowSubscriptions(false)} width={640}><SubscriptionsTab/></Modal>}
       {confirmRemove && <Modal title="Remove category" onClose={()=>setConfirmRemove(null)} width={340}>
         <div style={{fontSize:13,color:C.textMid,marginBottom:16}}>Remove <strong>{cats.find(c=>c.id===confirmRemove)?.label}</strong> from {MONTH_FULL[selMonth]}? You can add it back anytime.</div>
         <div style={{display:"flex",gap:8}}>
@@ -57,7 +81,7 @@ export function BudgetTab(){
               <SectionTitle>Monthly plan</SectionTitle>
               <MonthPicker value={selMonth} onChange={setSelMonth}/>
             </div>
-            <div style={{fontSize:11,color:C.gray,marginBottom:12}}>Set how much you <em>intend</em> to spend each month — actual spending is tracked in the <strong>Weekly</strong> tab.</div>
+            <div style={{fontSize:11,color:C.gray,marginBottom:12}}>Set how much you <em>intend</em> to spend each month — log actual spending with <strong>Quick add</strong>.</div>
 
             {/* Housing — read-only */}
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:C.surface,borderRadius:8,marginBottom:10,border:`1px solid ${C.border}`}}>
@@ -82,7 +106,15 @@ export function BudgetTab(){
                   style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`,opacity:dragCat===cat.id?0.4:1,borderTop:dragOverCat===cat.id?`2px solid ${C.sel}`:"2px solid transparent",cursor:isAuto?"default":"grab",background:dragOverCat===cat.id?C.bgDark:"transparent"}}>
                   {!isAuto && <span style={{color:C.gray,fontSize:12,cursor:"grab",userSelect:"none"}} title="Drag to reorder">⠿</span>}
                   <CatIcon name={cat.icon||cat.id} color={CHART_COLORS[i%CHART_COLORS.length]}/>
-                  <span style={{flex:1,fontSize:13,color:C.text}}>{cat.label}</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <span style={{fontSize:13,color:C.text}}>{cat.id==="subs"?"Fixed monthly costs":cat.label}</span>
+                    {cat.id==="subs" && (
+                      <div style={{fontSize:11,color:C.gray,marginTop:1}}>
+                        {subs.filter(s=>s.active!==false).length} active subscription{subs.filter(s=>s.active!==false).length!==1?"s":""}{" · "}
+                        <button className="txt-act" onClick={()=>setShowSubscriptions(true)} style={{border:"none",background:"transparent",color:C.teal,fontSize:11,fontWeight:600,cursor:"pointer",padding:0}}>Manage</button>
+                      </div>
+                    )}
+                  </div>
                   {isAuto
                     ? <span style={{fontSize:13,fontWeight:600,color:C.blue,minWidth:72,textAlign:"right"}}>{fmt(amt)}<span style={{fontSize:10,color:C.gray,fontWeight:400}}> auto</span></span>
                     : <input type="number" value={getMonthVal(cat.id)} onChange={e=>setMo(ay,cat.id,e.target.value)}
@@ -105,8 +137,6 @@ export function BudgetTab(){
               </div>
               <span style={{color:moSpend>moSpendable?C.neg:C.text}}>{fmt(moSpend)}/mo</span>
             </div>
-            {subsMo>0 && <div style={{fontSize:11,color:C.blue,marginTop:6}}>{subs.filter(s=>s.active!==false).length} active subscription{subs.length!==1?"s":""} totalling {fmt(subsMo)}/mo — auto-calculated</div>}
-
             {unbudgetedCats.length>0 && <div style={{marginTop:16,paddingTop:14,borderTop:`2px dashed ${C.border}`}}>
               <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
                 <span style={{fontSize:12,fontWeight:700,color:C.amber}}>Unbudgeted spending</span>
@@ -159,6 +189,33 @@ export function BudgetTab(){
                     : `${fmt(Math.abs(moSurplus))} over budget this month — this draws down your running balance and lowers your year-end net.`}
                 </div>
               )}
+            </Card>
+
+            {/* Plan vs actual — Phase 1's one chart, ported from the hidden Charts tab */}
+            <Card>
+              <SectionTitle>Plan vs actual</SectionTitle>
+              <div style={{display:"flex",gap:20,marginBottom:10}}>
+                {[["Budgeted",C.teal],["Actual",C.neg]].map(([l,c])=>(
+                  <div key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:C.gray}}>
+                    <div style={{width:10,height:10,borderRadius:3,background:c}}/>{l}
+                  </div>
+                ))}
+              </div>
+              {budgetVsActual.length===0
+                ? <div style={{textAlign:"center",padding:"28px 16px",fontSize:12,color:C.textMid,border:`1px dashed ${C.borderDark}`,borderRadius:12,background:C.surface}}>No spending logged yet — use <strong>Quick add</strong> to log an expense and it'll show up here.</div>
+                : <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={budgetVsActual} barGap={3} barCategoryGap="32%" onMouseMove={barMove} onMouseLeave={()=>setBarHover(null)}>
+                  <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
+                  <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
+                  <Tooltip separator=": " formatter={v=>fmt(v)} {...tipProps()} cursor={false}/>
+                  <Bar dataKey="Budgeted" fill={C.teal} radius={[6,6,0,0]} maxBarSize={26}>
+                    {budgetVsActual.map((d,i)=><Cell key={i} fill={C.teal} opacity={0.85*barDim(i)} style={{transition:"opacity 150ms ease"}}/>)}
+                  </Bar>
+                  <Bar dataKey="Actual" fill={C.neg} radius={[6,6,0,0]} maxBarSize={26}>
+                    {budgetVsActual.map((d,i)=><Cell key={i} fill={C.neg} opacity={barDim(i)} style={{transition:"opacity 150ms ease"}}/>)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>}
             </Card>
 
             {lastMonthRollover>0 && (

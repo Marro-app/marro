@@ -1,45 +1,102 @@
 import { useState } from 'react';
 import { C } from '../lib/theme.js';
 import { fmt, fmtD, subMonthlyTotal, daysUntil } from '../lib/format.js';
-import { Card, SectionTitle, EmptyState, Divider, Pill } from '../components/primitives.jsx';
+import { Card, SectionTitle, EmptyState, Divider, Pill, Modal } from '../components/primitives.jsx';
 import { BrandIcon } from '../components/icons.jsx';
 import { DateField } from '../components/pickers.jsx';
+import { RenewalDialog } from '../components/modals.jsx';
 import { useApp } from '../context/AppContext.js';
 
-// Subscriptions — add/edit form + summary + full list. The add/edit form state is
-// private to this tab (it resets when you leave Subscriptions — an in-progress add
-// or edit doesn't survive a tab switch, which is the expected/cleaner behavior).
-// The renewal dialog (renewDlg) is App-level chrome shared with the header alert,
-// so "Handle" just sets it via context.
+// Dedicated edit modal — makes "you're editing X" unmistakable (vs. the old
+// repopulate-the-add-form pattern, which users missed). Owns its own field state
+// seeded from the subscription; Save/Delete/Cancel all close it.
+function SubEditModal({sub, onSave, onDelete, onClose}) {
+  const [name, setName]   = useState(sub.name);
+  const [amt, setAmt]     = useState(String(sub.amount));
+  const [cycle, setCycle] = useState(sub.cycle);
+  const [renew, setRenew] = useState(sub.renewal||"");
+  const canSave = name.trim() && parseFloat(amt)>0;
+  return (
+    <Modal title="Edit subscription" onClose={onClose} width={380}>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:C.surface,borderRadius:8,marginBottom:14,border:`1px solid ${C.border}`}}>
+        <BrandIcon name={name} size={32}/>
+        <span style={{fontSize:13,fontWeight:600,color:C.text}}>{name||"Subscription"}</span>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        <div>
+          <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Service name</div>
+          <input value={name} onChange={e=>setName(e.target.value)} aria-label="Service name"
+            style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div>
+            <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Amount ($)</div>
+            <input type="number" value={amt} onChange={e=>setAmt(e.target.value)} aria-label="Amount"
+              style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Billing cycle</div>
+            <select value={cycle} onChange={e=>setCycle(e.target.value)} aria-label="Billing cycle"
+              style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}>
+              <option value="monthly">Monthly</option>
+              <option value="annual">Annual</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="one-time">One-time</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Next renewal date</div>
+          <DateField value={renew} onChange={setRenew} ariaLabel="Next renewal date"/>
+        </div>
+        {/* Secondary/destructive left, primary right (CLAUDE.md rule 9) */}
+        <div style={{display:"flex",gap:8,marginTop:2}}>
+          <button className="btn-fill" onClick={()=>{onDelete(sub.id);onClose();}} style={{padding:"9px 14px",fontSize:13,fontWeight:600,border:`1px solid ${C.dangerMid}`,borderRadius:8,background:C.dangerLight,color:C.danger,cursor:"pointer"}}>Delete</button>
+          <button className="btn-fill" onClick={()=>{if(canSave){onSave(sub.id,{name:name.trim(),amount:parseFloat(amt)||0,cycle,renewal:renew});onClose();}}} disabled={!canSave} style={{flex:1,padding:"9px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:canSave?C.teal:C.surface,color:canSave?C.bg:C.gray,cursor:canSave?"pointer":"not-allowed"}}>Save changes</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// Subscriptions — an add-only inline form, summary, and full list. Editing and
+// renewal both happen in dedicated modals rendered locally (so they stack above
+// the "Fixed monthly costs" modal this tab is shown inside — an App-level dialog
+// would paint behind it at equal z-index). Renewal state mutation is shared via
+// applyRenewal() in context; the local dialog just drives it.
 export function SubscriptionsTab(){
-  const { data, subs, syncSubs, upd, setRenewDlg } = useApp();
+  const { data, subs, syncSubs, upd, applyRenewal } = useApp();
   const [subName, setSubName]   = useState("");
   const [subAmt, setSubAmt]     = useState("");
   const [subCycle, setSubCycle] = useState("monthly");
   const [subRenew, setSubRenew] = useState("");
-  const [subEdit, setSubEdit]   = useState(null);
+  const [editSub, setEditSub]   = useState(null);   // subscription object being edited
+  const [renewSub, setRenewSub] = useState(null);   // subscription object being renewed
 
-  const saveSub = () => {
-    if(!subName.trim()||!subAmt) return;
+  const addSub = () => {
+    if(!subName.trim()||!(parseFloat(subAmt)>0)) return;
     let d = JSON.parse(JSON.stringify(data));
-    if(subEdit){
-      d.subscriptions=d.subscriptions.map(s=>s.id===subEdit?{...s,name:subName,amount:parseFloat(subAmt)||0,cycle:subCycle,renewal:subRenew,renewalPrompted:false}:s);
-      setSubEdit(null);
-    } else {
-      d.subscriptions.push({id:"s_"+Date.now(),name:subName.trim(),amount:parseFloat(subAmt)||0,cycle:subCycle,renewal:subRenew,active:true,renewalPrompted:false});
-    }
+    d.subscriptions.push({id:"s_"+Date.now(),name:subName.trim(),amount:parseFloat(subAmt)||0,cycle:subCycle,renewal:subRenew,active:true,renewalPrompted:false});
     d=syncSubs(d); upd(d);
     setSubName("");setSubAmt("");setSubCycle("monthly");setSubRenew("");
   };
+  const saveEdit = (sid, fields) => {
+    let d = JSON.parse(JSON.stringify(data));
+    d.subscriptions=d.subscriptions.map(s=>s.id===sid?{...s,...fields,renewalPrompted:false}:s);
+    d=syncSubs(d); upd(d);
+  };
   const delSub = sid => { let d=JSON.parse(JSON.stringify(data));d.subscriptions=d.subscriptions.filter(s=>s.id!==sid);d=syncSubs(d);upd(d); };
-  const editSub = s => { setSubEdit(s.id);setSubName(s.name);setSubAmt(String(s.amount));setSubCycle(s.cycle);setSubRenew(s.renewal||""); };
+
+  const canAdd = subName.trim() && parseFloat(subAmt)>0;
 
   return (
     <div role="tabpanel" id="tab-panel" aria-labelledby="tab-subscriptions" tabIndex={0} style={{display:"flex",flexDirection:"column",gap:16}}>
+      {editSub && <SubEditModal sub={editSub} onSave={saveEdit} onDelete={delSub} onClose={()=>setEditSub(null)}/>}
+      {renewSub && <RenewalDialog sub={renewSub} onClose={()=>setRenewSub(null)} onConfirm={(sub,renewed,newAmt,newDate)=>{applyRenewal(sub,renewed,newAmt,newDate);setRenewSub(null);}}/>}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,300px),1fr))",gap:16}}>
-        {/* Form */}
+        {/* Add form */}
         <Card>
-          <SectionTitle>{subEdit?"Edit subscription":"Add subscription"}</SectionTitle>
+          <SectionTitle>Add subscription</SectionTitle>
           {subName && (
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:C.surface,borderRadius:8,marginBottom:14,border:`1px solid ${C.border}`}}>
               <BrandIcon name={subName} size={32}/>
@@ -50,18 +107,18 @@ export function SubscriptionsTab(){
             <div>
               <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Service name</div>
               <input placeholder="e.g. Spotify, UWorld, Netflix" value={subName} onChange={e=>setSubName(e.target.value)}
-                style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,boxSizing:"border-box"}}/>
+                style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               <div>
                 <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Amount ($)</div>
                 <input type="number" placeholder="9.99" value={subAmt} onChange={e=>setSubAmt(e.target.value)}
-                  style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,boxSizing:"border-box"}}/>
+                  style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
               </div>
               <div>
                 <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Billing cycle</div>
                 <select value={subCycle} onChange={e=>setSubCycle(e.target.value)} aria-label="Billing cycle"
-                  style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,boxSizing:"border-box"}}>
+                  style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}>
                   <option value="monthly">Monthly</option>
                   <option value="annual">Annual</option>
                   <option value="quarterly">Quarterly</option>
@@ -73,12 +130,9 @@ export function SubscriptionsTab(){
               <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Next renewal date</div>
               <DateField value={subRenew} onChange={setSubRenew} ariaLabel="Next renewal date"/>
             </div>
-            <div style={{display:"flex",gap:8,marginTop:2}}>
-              {subEdit && <button className="btn-pop" onClick={()=>{setSubEdit(null);setSubName("");setSubAmt("");setSubCycle("monthly");setSubRenew("");}} style={{padding:"9px 14px",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,background:"transparent",cursor:"pointer",color:C.gray}}>Cancel</button>}
-              <button className="btn-fill" onClick={saveSub} disabled={!subName.trim()||!(parseFloat(subAmt)>0)} style={{flex:1,padding:"9px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:(!subName.trim()||!(parseFloat(subAmt)>0))?C.surface:C.teal,color:(!subName.trim()||!(parseFloat(subAmt)>0))?C.gray:C.bg,cursor:(!subName.trim()||!(parseFloat(subAmt)>0))?"not-allowed":"pointer"}}>
-                {subEdit?"Save changes":"Add subscription"}
-              </button>
-            </div>
+            <button className="btn-fill" onClick={addSub} disabled={!canAdd} style={{padding:"9px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:canAdd?C.teal:C.surface,color:canAdd?C.bg:C.gray,cursor:canAdd?"pointer":"not-allowed",marginTop:2}}>
+              Add subscription
+            </button>
           </div>
         </Card>
 
@@ -139,8 +193,8 @@ export function SubscriptionsTab(){
                   </div>
                   {due && <Pill warn sm>Overdue</Pill>}
                   {soon && <Pill warn sm>{d}d</Pill>}
-                  {due && <button className="btn-fill" onClick={()=>setRenewDlg(s)} style={{fontSize:11,padding:"4px 10px",borderRadius:8,border:"none",background:C.amber,color:"#fff",cursor:"pointer",fontWeight:600}}>Handle</button>}
-                  <button className="btn-pop" onClick={()=>editSub(s)} style={{fontSize:11,padding:"4px 10px",borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",color:C.gray}}>Edit</button>
+                  {due && <button className="btn-fill" onClick={()=>setRenewSub(s)} style={{fontSize:11,padding:"4px 10px",borderRadius:8,border:"none",background:C.amber,color:"#fff",cursor:"pointer",fontWeight:600}}>Handle</button>}
+                  <button className="btn-pop" onClick={()=>setEditSub(s)} style={{fontSize:11,padding:"4px 10px",borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",color:C.gray}}>Edit</button>
                   <button className="btn-fill" onClick={()=>delSub(s.id)} style={{fontSize:11,padding:"4px 10px",borderRadius:8,border:`1px solid ${C.dangerMid}`,background:C.dangerLight,cursor:"pointer",color:C.danger,fontWeight:600}}>Delete</button>
                 </div>
               );

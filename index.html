@@ -246,12 +246,12 @@
   .tabbar.fade-l, .scrollx.fade-l { -webkit-mask-image: linear-gradient(to right, transparent 0, #000 26px, #000 100%); mask-image: linear-gradient(to right, transparent 0, #000 26px, #000 100%); }
   .tabbar.fade-r, .scrollx.fade-r { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent 100%); mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent 100%); }
   .tabbar.fade-l.fade-r, .scrollx.fade-l.fade-r { -webkit-mask-image: linear-gradient(to right, transparent 0, #000 26px, #000 calc(100% - 26px), transparent 100%); mask-image: linear-gradient(to right, transparent 0, #000 26px, #000 calc(100% - 26px), transparent 100%); }
-  /* Subtle themed scrollbar for in-panel scroll areas (avatar gallery) */
-  .av-scroll { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb, rgba(140,138,128,0.35)) transparent; }
-  .av-scroll::-webkit-scrollbar { width: 6px; }
-  .av-scroll::-webkit-scrollbar-track { background: transparent; }
-  .av-scroll::-webkit-scrollbar-thumb { background: var(--scroll-thumb, rgba(140,138,128,0.32)); border-radius: 6px; }
-  .av-scroll::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover, rgba(140,138,128,0.5)); }
+  /* Subtle themed scrollbar for in-panel scroll areas (avatar gallery, modal panels) */
+  .av-scroll, .mm { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb, rgba(140,138,128,0.35)) transparent; }
+  .av-scroll::-webkit-scrollbar, .mm::-webkit-scrollbar { width: 6px; }
+  .av-scroll::-webkit-scrollbar-track, .mm::-webkit-scrollbar-track { background: transparent; }
+  .av-scroll::-webkit-scrollbar-thumb, .mm::-webkit-scrollbar-thumb { background: var(--scroll-thumb, rgba(140,138,128,0.32)); border-radius: 6px; }
+  .av-scroll::-webkit-scrollbar-thumb:hover, .mm::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover, rgba(140,138,128,0.5)); }
 
   /* ── Ambient blob background ── */
   .blob-layer {

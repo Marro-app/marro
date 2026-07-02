@@ -17,7 +17,7 @@ export function WeeklyTab(){
   const { data, upd, cats, ay, subsMo, moSpendable, yrStartYear,
           viewWeek, setViewWeek, archives, currentWeekStart, currentWeekEnd, currentEntries,
           weeklyBudget, lastWeekSurplus, thisWeekBudget, viewEntries, viewTotal, viewBudget,
-          getMonthValIdx, dismissed, dismiss, reverseDeposit, rolloverReco } = useApp();
+          getMonthValIdx, dismissed, dismiss, reverseDeposit, rolloverReco, addWeeklyEntry } = useApp();
   const [wCat, setWCat]     = useState("");
   const [wAmt, setWAmt]     = useState("");
   const [wNote, setWNote]   = useState("");
@@ -31,63 +31,13 @@ export function WeeklyTab(){
 
   const addEntry = () => {
     if(!wCat||!wAmt) return;
-    const entryWeek = getMonday(wDate);
-    const thisWeek  = getMonday(new Date());
-    const amtNum = parseFloat(wAmt)||0;
-    const entry = {id:"e_"+Date.now(),catId:wCat,amount:amtNum,note:wNote,date:wDate};
-    let d = JSON.parse(JSON.stringify(data));
-    if(!d.currentWeekEntries) d.currentWeekEntries=[];
-    if(!d.weeklyArchive) d.weeklyArchive=[];
-
-    const eMonthIdx = (new Date(wDate+"T12:00:00").getMonth() - 7 + 12) % 12;
-    const mk = ay+"-"+MONTH_NAMES[eMonthIdx];
-    const catObj = cats.find(c=>c.id===wCat);
-    const isUnbudgeted = d.monthDisabled?.[mk]?.includes(wCat) && wCat!=="subs";
-
-    if(entryWeek !== thisWeek) {
-      // past OR future week — file to correct archive slot
-      const ex = d.weeklyArchive.find(a=>a.weekStart===entryWeek);
-      if(ex){ex.entries.push(entry);ex.total=ex.entries.reduce((a,e)=>a+Number(e.amount),0);}
-      else d.weeklyArchive.push({weekStart:entryWeek,weekEnd:getSunday(entryWeek),entries:[entry],total:entry.amount});
-      setViewWeek(entryWeek);
-    } else {
-      d.currentWeekEntries.push(entry);
-      setViewWeek(null);
-    }
-    // Exams spending is an actual contribution to the Step fund — credit the first
-    // unfunded Step goal, overflowing into the next once one is full. Links each
-    // credit to this weekly entry so deleting either side stays in sync.
-    if(wCat==="exams"){
-      if(!d.savingsLog) d.savingsLog=[];
-      let remainingAmt=amtNum;
-      (d.stepGoals||[]).forEach((g,gi)=>{
-        if(remainingAmt<=0) return;
-        const room=Math.max(0,(g.targetAmount||0)-(g.saved||0));
-        const credit=Math.min(room,remainingAmt);
-        if(credit<=0) return;
-        d.stepGoals[gi].saved=(d.stepGoals[gi].saved||0)+credit;
-        d.savingsLog.push({id:"sl_"+Date.now()+"_"+gi,goalId:g.id,amount:credit,date:wDate,note:(wNote||"From weekly log"),weeklyEntryId:entry.id,budgetAdded:null});
-        remainingAmt-=credit;
-      });
-    }
-    upd(d);setWAmt("");setWNote("");
-
-    // Recompute that month's net (spendable - planned - unbudgeted) to flag over-budget
-    const allFlat=[...(d.currentWeekEntries||[]),...((d.weeklyArchive||[]).flatMap(a=>a.entries||[]))];
-    const eCalYr=yrStartYear+(eMonthIdx>=5?1:0);
-    const spentCat=(cid)=>allFlat.filter(e=>{const dt=new Date(e.date+"T12:00:00");return e.catId===cid&&dt.getMonth()===((eMonthIdx+7)%12)&&dt.getFullYear()===eCalYr;}).reduce((a,e)=>a+Number(e.amount),0);
-    const disabledThisMonth=d.monthDisabled?.[mk]||[];
-    let planned=0, unb=0;
-    cats.forEach(c=>{
-      if(c.id==="subs"){ if(!disabledThisMonth.includes("subs")) planned+=subsMo; return; }
-      if(disabledThisMonth.includes(c.id)){ if(!c.locked&&!c.autoCalc) unb+=spentCat(c.id); }
-      else { const dyr2=d.years.find(y=>y.id===ay)||d.years[0]; const ov=dyr2.monthlyOverrides?.[MONTH_NAMES[eMonthIdx]]?.[c.id]; planned += (ov!==undefined?ov:(Number(dyr2.monthly[c.id])||0)); }
-    });
-    const deficit=Math.round(planned+unb-moSpendable);
-    if(deficit>0){
-      setWeeklyNotice({type:"warn", cat:isUnbudgeted?(catObj?.label):null, month:MONTH_FULL[eMonthIdx], deficit});
-    } else if(isUnbudgeted){
-      setWeeklyNotice({type:"info", cat:catObj?.label, month:MONTH_FULL[eMonthIdx]});
+    const info = addWeeklyEntry(wCat, wAmt, wNote, wDate);
+    setWAmt("");setWNote("");
+    if(!info) return;
+    if(info.deficit>0){
+      setWeeklyNotice({type:"warn", cat:info.isUnbudgeted?info.catLabel:null, month:MONTH_FULL[info.monthIdx], deficit:info.deficit});
+    } else if(info.isUnbudgeted){
+      setWeeklyNotice({type:"info", cat:info.catLabel, month:MONTH_FULL[info.monthIdx]});
     }
   };
   const delEntry = (eid, isArchived) => {

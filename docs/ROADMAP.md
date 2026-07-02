@@ -13,10 +13,10 @@
 
 ## Phase 1 — Simplify + open the doors (NOW, ~2–3 wks, two parallel tracks)
 
-**Track A — simplification pass (build):**
-- Hide 4 tabs — **Weekly, Savings, Subscriptions, Charts** — behind a single revivable flag (hide, never delete; code + data stay). Fold subscription totals into Budget as "fixed monthly costs"; keep ONE plan-vs-actual chart on Home; move category editing into settings.
-- Slim the header to ≤3 numbers (runway placeholder · month plan · debt placeholder until Phase 2 fills them).
-- Add a **"quick add"** affordance for one-off big expenses (a button, not a tab) — keeps surprises explainable under the monthly model.
+**Track A — simplification pass (build):** ✓ done 2026-07-02
+- ✓ Hide 4 tabs — **Weekly, Savings, Subscriptions, Charts** — behind a single revivable flag (`src/lib/featureFlags.js` → `HIDDEN_TABS`; hide, never delete — code + data stay). ✓ Fold subscription totals into Budget as "fixed monthly costs" (the existing auto-calc "Subscriptions" row, relabeled, gets a "Manage" link opening the Subscriptions form in a modal). ✓ Keep ONE plan-vs-actual chart on Home (ported from Charts tab into Budget). ✓ Move category editing into settings (Settings dropdown → "Categories" modal).
+- ✓ Slim the header to 3 numbers (Runway placeholder · Monthly plan (real) · Debt placeholder — both placeholders fill in with Phase 2's loan model).
+- ✓ Add a **"quick add"** header button + modal for one-off expenses — writes through a new shared `addWeeklyEntry` mutator (also used by the now-hidden Weekly tab) so Budget's chart/unbudgeted-spending stay in sync.
 
 **Track B — doors + trust (paperwork; start day 1, the queues are long):**
 - **Submit Google OAuth verification** (custom auth domain, logo, out of Testing mode). Everything downstream waits on this review.

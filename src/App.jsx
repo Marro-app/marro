@@ -14,7 +14,8 @@ import { DateField } from './components/pickers.jsx';
 import { AvatarArt, Avatar, AvatarPicker } from './components/avatars.jsx';
 import { LoginScreen } from './components/LoginScreen.jsx';
 import { ProgramModal, ProfileModal, AvatarModal, MarroIntro, OnboardingFlow, ProgressiveSetup } from './components/onboarding.jsx';
-import { RenewalDialog, ConflictModal } from './components/modals.jsx';
+import { RenewalDialog, ConflictModal, QuickAddModal } from './components/modals.jsx';
+import { HIDDEN_TABS } from './lib/featureFlags.js';
 import { AppContext } from './context/AppContext.js';
 import { AidTab } from './tabs/AidTab.jsx';
 import { SubscriptionsTab } from './tabs/SubscriptionsTab.jsx';
@@ -55,6 +56,8 @@ export function App() {
   const [newCatIcon, setNewCatIcon] = useState("dot");
   const [iconPickOpen, setIconPickOpen] = useState(false);   // collapsed icon grid in add flows
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showCategories, setShowCategories] = useState(false); // settings → Categories modal (Phase 1: moved off the tabbar)
+  const [showQuickAdd, setShowQuickAdd] = useState(false);      // header Quick add — one-off expense modal
 
   // Month selector (0=Aug, 11=Jul for academic year)
   const [selMonth, setSelMonth] = useState((new Date().getMonth() - 7 + 12) % 12);
@@ -543,12 +546,17 @@ export function App() {
     d.years.forEach(y=>{y.monthly.subs=mo;}); return d;
   };
 
-  const handleRenewal = (sub,renewed,newAmt,newDate) => {
+  // Pure renewal mutation (shared via ctx so the in-modal Subscriptions "Handle"
+  // button can drive its own local RenewalDialog — the App-level dialog below
+  // would render behind the "Fixed monthly costs" modal at equal z-index).
+  const applyRenewal = (sub,renewed,newAmt,newDate) => {
     let d=JSON.parse(JSON.stringify(data));
     if(!renewed) d.subscriptions=d.subscriptions.filter(s=>s.id!==sub.id);
     else d.subscriptions=d.subscriptions.map(s=>s.id===sub.id?{...s,amount:parseFloat(newAmt)||s.amount,renewal:newDate||"",renewalPrompted:true,active:true}:s);
-    d=syncSubs(d);upd(d);setRenewDlg(null);
+    d=syncSubs(d);upd(d);
   };
+  // App-level wrapper — used by the renewal banners' RenewalDialog.
+  const handleRenewal = (sub,renewed,newAmt,newDate) => { applyRenewal(sub,renewed,newAmt,newDate); setRenewDlg(null); };
 
   // Remove a weekly entry by id from both current week and archive (mutates d)
   const removeWeeklyEntry = (d, eid) => {
@@ -591,6 +599,66 @@ export function App() {
     } else {
       reverseDeposit(d, slEntry);
     }
+  };
+
+  // Log a one-off actual expense (Weekly tab's log form + the header Quick add
+  // button both call this). Files to the correct week/archive slot, credits any
+  // exam spending toward Step goals, and returns info the caller can use to show
+  // an over-budget/unbudgeted notice — it doesn't own any notice UI itself.
+  const addWeeklyEntry = (catId, amount, note, date) => {
+    const amtNum = parseFloat(amount)||0;
+    if(!catId || !amtNum) return null;
+    const entryWeek = getMonday(date);
+    const thisWeek  = getMonday(new Date());
+    const entry = {id:"e_"+Date.now(),catId,amount:amtNum,note,date};
+    let d = JSON.parse(JSON.stringify(data));
+    if(!d.currentWeekEntries) d.currentWeekEntries=[];
+    if(!d.weeklyArchive) d.weeklyArchive=[];
+
+    const eMonthIdx = (new Date(date+"T12:00:00").getMonth() - 7 + 12) % 12;
+    const mk = ay+"-"+MONTH_NAMES[eMonthIdx];
+    const catObj = cats.find(c=>c.id===catId);
+    const isUnbudgeted = d.monthDisabled?.[mk]?.includes(catId) && catId!=="subs";
+
+    if(entryWeek !== thisWeek) {
+      const ex = d.weeklyArchive.find(a=>a.weekStart===entryWeek);
+      if(ex){ex.entries.push(entry);ex.total=ex.entries.reduce((a,e)=>a+Number(e.amount),0);}
+      else d.weeklyArchive.push({weekStart:entryWeek,weekEnd:getSunday(entryWeek),entries:[entry],total:entry.amount});
+      setViewWeek(entryWeek);
+    } else {
+      d.currentWeekEntries.push(entry);
+      setViewWeek(null);
+    }
+    // Exams spending is an actual contribution to the Step fund — credit the first
+    // unfunded Step goal, overflowing into the next once one is full.
+    if(catId==="exams"){
+      if(!d.savingsLog) d.savingsLog=[];
+      let remainingAmt=amtNum;
+      (d.stepGoals||[]).forEach((g,gi)=>{
+        if(remainingAmt<=0) return;
+        const room=Math.max(0,(g.targetAmount||0)-(g.saved||0));
+        const credit=Math.min(room,remainingAmt);
+        if(credit<=0) return;
+        d.stepGoals[gi].saved=(d.stepGoals[gi].saved||0)+credit;
+        d.savingsLog.push({id:"sl_"+Date.now()+"_"+gi,goalId:g.id,amount:credit,date,note:(note||"From weekly log"),weeklyEntryId:entry.id,budgetAdded:null});
+        remainingAmt-=credit;
+      });
+    }
+    upd(d);
+
+    // Recompute that month's net (spendable - planned - unbudgeted) to flag over-budget
+    const allFlat=[...(d.currentWeekEntries||[]),...((d.weeklyArchive||[]).flatMap(a=>a.entries||[]))];
+    const eCalYr=yrStartYear+(eMonthIdx>=5?1:0);
+    const spentCat=(cid)=>allFlat.filter(e=>{const dt=new Date(e.date+"T12:00:00");return e.catId===cid&&dt.getMonth()===((eMonthIdx+7)%12)&&dt.getFullYear()===eCalYr;}).reduce((a,e)=>a+Number(e.amount),0);
+    const disabledThisMonth=d.monthDisabled?.[mk]||[];
+    let planned=0, unb=0;
+    cats.forEach(c=>{
+      if(c.id==="subs"){ if(!disabledThisMonth.includes("subs")) planned+=subsMo; return; }
+      if(disabledThisMonth.includes(c.id)){ if(!c.locked&&!c.autoCalc) unb+=spentCat(c.id); }
+      else { const dyr2=d.years.find(y=>y.id===ay)||d.years[0]; const ov=dyr2.monthlyOverrides?.[MONTH_NAMES[eMonthIdx]]?.[c.id]; planned += (ov!==undefined?ov:(Number(dyr2.monthly[c.id])||0)); }
+    });
+    const deficit=Math.round(planned+unb-moSpendable);
+    return {deficit, isUnbudgeted, catLabel:catObj?.label, monthIdx:eMonthIdx};
   };
 
   const addCat = () => {
@@ -719,7 +787,7 @@ export function App() {
     // shared mutation helpers (don't close over any one tab's private form state)
     setMo, setYrF, syncSubs, promoteToBudget, toggleMonthCat, removeWeeklyEntry,
     reverseDeposit, reverseDepositGroup, addCat, reorderCats, delCat,
-    reinstateYear, addYear, removeYear,
+    reinstateYear, addYear, removeYear, addWeeklyEntry, applyRenewal,
   };
 
   return (
@@ -741,6 +809,8 @@ export function App() {
         @keyframes marroDotPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.35)}}
       `}</style>
       {/* Modals */}
+      {showQuickAdd && <QuickAddModal onClose={()=>setShowQuickAdd(false)}/>}
+      {showCategories && <Modal title="Categories" onClose={()=>setShowCategories(false)} width={480}><CustomizeTab/></Modal>}
       {renewDlg && <RenewalDialog sub={renewDlg} onClose={()=>setRenewDlg(null)} onConfirm={handleRenewal}/>}
       {confirmReset && <Modal title="Reset everything?" onClose={()=>setConfirmReset(false)} width={350}>
         <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>This replaces <strong>all</strong> of your budget, weekly entries, savings, and subscriptions with the starting defaults. This cannot be undone.</div>
@@ -821,6 +891,10 @@ export function App() {
             {syncStatus==="offline"  && <span style={{fontSize:11,color:C.amber,display:"flex",alignItems:"center",gap:4}}><Icon name="live" size={11} color={C.amber}/>Offline</span>}
             {syncStatus==="conflict" && <span style={{fontSize:11,color:C.neg,display:"flex",alignItems:"center",gap:4}}><Icon name="live" size={11} color={C.neg}/>Conflict</span>}
             {flash && <span style={{fontSize:12,color:C.teal,fontWeight:600}}>Saved</span>}
+            {/* Quick add — one-off expense, no tab required (Phase 1: Weekly tab is hidden) */}
+            <button className="btn-pop" onClick={()=>setShowQuickAdd(true)} aria-label="Quick add expense" title="Quick add expense" style={{minWidth:44,minHeight:44,padding:"0 14px",borderRadius:22,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",color:C.text,display:"inline-flex",alignItems:"center",gap:6,fontSize:13,fontWeight:600,transition:"all .15s"}}>
+              <Icon name="plus" size={14}/> Quick add
+            </button>
             {/* Settings menu */}
             <div style={{position:"relative"}}>
               <button className="btn-pop" onClick={()=>setSettingsOpen(o=>!o)} aria-label="Settings" aria-haspopup="true" aria-expanded={settingsOpen} title="Settings" style={{width:32,height:32,borderRadius:8,border:`1px solid ${settingsOpen?C.sel:C.border}`,background:settingsOpen?C.selBg:"transparent",cursor:"pointer",color:C.textMid,display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .15s"}}>
@@ -874,6 +948,10 @@ export function App() {
                   </div>
                   {/* Actions */}
                   <div style={{padding:"4px 0"}}>
+                    <button className="menu-row" onClick={()=>{setSettingsOpen(false);setShowCategories(true);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
+                      <Icon name="settings" size={14}/>
+                      Categories
+                    </button>
                     <button className="menu-row" onClick={()=>{const d=JSON.parse(JSON.stringify(data));d.darkMode=!d.darkMode;upd(d);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
                       <span key={data.darkMode?"sun":"moon"} style={{display:"inline-flex",animation:"iconSwap 220ms cubic-bezier(0.23,1,0.32,1)"}}><Icon name={data.darkMode?"sun":"moon"} size={14}/></span>
                       {data.darkMode?"Light mode":"Dark mode"}
@@ -949,16 +1027,16 @@ export function App() {
         <span style={{fontSize:11,color:C.gray,whiteSpace:"nowrap"}}>{yrRangeLabel(data.years.find(y=>y.id===ay))}</span>
       </div>
 
-      {/* ── Top metrics ── */}
+      {/* ── Top metrics — slimmed to 3 (Phase 1); runway & debt fill in with Phase 2's loan model ── */}
       <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
-        <MetricTile label="Monthly spendable"  value={fmt(moSpendable)} sub="after tuition & fees" color={C.teal}/>
-        <MetricTile label="Monthly plan"        value={fmt(moSpend)}     sub={subsMo>0?`incl. ${fmtA(subsMo)} subs`:"planned spending"}/>
-        <MetricTile label="Monthly surplus"    value={fmtS(moSurplus)}  sub={moSurplus>0?"available to save":moSurplus<0?"over budget":"balanced"} color={moSurplus>0?C.green:moSurplus<0?C.neg:C.gray}/>
-        <MetricTile label="Year net"           value={fmtS(curYrNet)}   sub="full 12 months" color={curYrNet>=0?C.green:C.neg}/>
-        <MetricTile label="Total balance"    value={fmtS(totalAccumulatedBalance)} sub={"thru "+MONTH_NAMES[selMonth]+(priorYearsCarryover!==0?" · incl. prior yrs":"")} color={totalAccumulatedBalance>=0?C.teal:C.neg}/>
+        <MetricTile label="Runway"        value="—" sub="coming in Phase 2" color={C.gray}/>
+        <MetricTile label="Monthly plan"  value={fmt(moSpend)} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/>
+        <MetricTile label="Debt"          value="—" sub="coming in Phase 2" color={C.gray}/>
       </div>
 
-      {/* ── Tabs ── */}
+      {/* ── Tabs — Weekly/Charts/Savings/Subscriptions/Categories hidden behind featureFlags.HIDDEN_TABS
+           (Phase 1 simplification: code + data stay, just no entry point). Categories moved into
+           Settings; Subscriptions folded into Budget as a "Fixed monthly costs" line. ── */}
       <ChoiceGroup role="tablist" ariaLabel="Sections" className="tabbar" style={{
         display:"flex", marginBottom:24, overflowX:"auto", gap:2, padding:"4px",
         width:"fit-content", maxWidth:"100%",
@@ -977,7 +1055,7 @@ export function App() {
           ["aid","Aid & Detail",0],
           ["subscriptions","Subscriptions",renewalsDue.length],
           ["customize","Categories"],
-        ].map(([id,lbl,badge])=><TabBtn key={id} id={id} label={lbl} active={tab===id} onClick={()=>setTab(id)} badge={badge||0}/>)}
+        ].filter(([id])=>!HIDDEN_TABS[id]).map(([id,lbl,badge])=><TabBtn key={id} id={id} label={lbl} active={tab===id} onClick={()=>setTab(id)} badge={badge||0}/>)}
       </ChoiceGroup>
 
       {/* ══════════════ BUDGET ══════════════ */}
