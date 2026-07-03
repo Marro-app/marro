@@ -21,6 +21,12 @@ export default defineConfig({
         // Precache the whole fingerprinted build. Hashed filenames make cache
         // invalidation automatic — a new deploy = new hashes = clean update.
         globPatterns: ['**/*.{js,css,html,svg,png,woff2,txt,json}'],
+        // The landing page's own JS/CSS chunk is small today and fine to precache.
+        // But future landing IMAGES belong in public/landing/ and should be
+        // runtime-cached (on first visit), not precached onto every signed-in
+        // user's device who will never see the landing page again. Exclude that
+        // folder now so it's a non-issue later.
+        globIgnores: ['landing/**'],
         // Offline navigations fall back to the cached app shell...
         navigateFallback: '/index.html',
         // ...except real static pages and any serverless routes.

@@ -12,7 +12,8 @@ import { Icon, MarroLogo, GoogleGlyph } from './components/icons.jsx';
 import { XBtn, Card, SectionTitle, ChoiceGroup, Stepper, TabBtn, YrBtn, Banner, Modal, MetricTile, BlobHealth } from './components/primitives.jsx';
 import { DateField } from './components/pickers.jsx';
 import { AvatarArt, Avatar, AvatarPicker } from './components/avatars.jsx';
-import { LoginScreen } from './components/LoginScreen.jsx';
+import { LoginScreen } from './components/LoginScreen.jsx'; // kept, no longer rendered — see LandingPage
+const LandingPage = React.lazy(() => import('./landing/LandingPage.jsx'));
 import { ProgramModal, ProfileModal, AvatarModal, MarroIntro, OnboardingFlow, ProgressiveSetup } from './components/onboarding.jsx';
 import { RenewalDialog, ConflictModal, QuickAddModal } from './components/modals.jsx';
 import { HIDDEN_TABS } from './lib/featureFlags.js';
@@ -372,7 +373,11 @@ export function App() {
 
   const loadingScreen = <div style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"#101210",zIndex:2000}}><MarroIntro size={360}/></div>;
   if(session===undefined) return loadingScreen;
-  if(session===null) return <LoginScreen offline={!navigator.onLine}/>;
+  if(session===null) return (
+    <React.Suspense fallback={loadingScreen}>
+      <LandingPage offline={!navigator.onLine}/>
+    </React.Suspense>
+  );
   if(!ready) return loadingScreen;
 
   const yr   = data.years.find(y=>y.id===ay)||data.years[0];
