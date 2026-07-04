@@ -162,3 +162,13 @@ Conflict modal untested live (needs a real sync conflict; code-reviewed only) ·
 
 ## Pre-2026-06-11 (summarized from memory)
 Glass sweep all surfaces · semantic color split (was: surplus/deficit identical) · clay danger hue + steel-blue info · CHART_COLORS de-clustered · destructive modals Cancel-dominant · empty chart placeholder boxes · ✕ tap targets ≥28px · tab-bar mobile fade · InfoTip hover-intent + scale-in · date-field theming · real font weights · muted-text alpha 0.40→0.52 · progress track visibility · white-on-red primary buttons eliminated (main app) · one-click Reset wipe → confirmation · color-dot rings · mobile grid overflow fix.
+
+## 2026-07-03 — Landing page redesign (branch `landing-redesign`, pre-merge audit)
+New scrollytelling landing (`src/landing/`). Verified on localhost:3456 (dev):
+- **axe-core 4.10.2**: 0 violations on the `.lp` root (desktop viewport).
+- **Contrast**: body cream-on-dark ≥5:1 (agent spot-check: gold-on-bg 8.75:1, disabled cream 5.03:1). Mobile headline/ring collision found + fixed (stage raised to -28vh, 58vw cap, stronger bottom scrim).
+- **Hit targets**: all buttons/nav ≥44px; footer links given `::after` hit-slop (46px effective). In-paragraph Privacy link left inline (WCAG 2.5.8 inline exception).
+- **Keyboard**: `.lp` scroller uses `scroll-snap-type: y proximity` (no trap); first Tab lands on in-scroller nav link, arrows/PgDn scroll; all interactive elements are semantic `<a>`/`<button>` with `:focus-visible` outlines.
+- **Reduced motion**: `@media (prefers-reduced-motion: reduce)` kills all transitions/animations, reveals all panels, disables snap (static review; not yet OS-toggle tested).
+- **Console**: clean (no errors/warnings).
+- **Known gaps to close before merge**: OS-level reduce-motion toggle test; prod-build pass with service worker (unregister SW first per rule 7); Lighthouse on `npm run preview`; VoiceOver spot-check.
