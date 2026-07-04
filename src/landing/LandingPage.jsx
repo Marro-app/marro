@@ -13,9 +13,33 @@ import { RingCanvas } from './RingCanvas.jsx';
 import { FixedLayerContent, SrArticle, StaticDocument, SCENE_TICKS } from './scenes.jsx';
 import { SignInButton, OfflineNotice } from './SignInButton.jsx';
 
+// The scroll-driven "theater" (a fixed ring canvas posed behind real scrolling
+// text panels) only works where text and canvas can sit side-by-side — i.e. the
+// wide desktop layout. On a narrow phone the two collapse into one column and
+// the scaled-up ring poses sweep through the scrolling text, so headlines and
+// stage figures overlap illegibly at almost every scroll offset. Rather than
+// fight that, phones get the SAME clean stacked document used for reduced
+// motion: rings sit inline above each section, nothing is position-fixed, so
+// overlap is structurally impossible. Desktop keeps the full theater.
+function useIsNarrow(){
+  const query = '(max-width:900px)';
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(query).matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const onChange = () => setNarrow(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return narrow;
+}
+
 export default function LandingPage({ offline }){
   const reduceMotion = useReducedMotion();
-  return reduceMotion
+  const narrow = useIsNarrow();
+  return (reduceMotion || narrow)
     ? <StaticLanding offline={offline} />
     : <StagedLanding offline={offline} />;
 }
