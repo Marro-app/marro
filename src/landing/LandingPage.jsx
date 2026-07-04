@@ -1,57 +1,26 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { LazyMotion, domMin, m, useScroll, useTransform, useSpring, useReducedMotion, useMotionValue, useMotionValueEvent, animate } from 'motion/react';
+import { LazyMotion, domMin, useScroll, useTransform, useSpring, useMotionValue, useReducedMotion, animate } from 'motion/react';
 
-// domMin (not domAnimation): this page only drives motion values via `style`
-// (transform/opacity bound to scroll-linked values) — no variants, no
-// hover/tap/drag gestures — so the gesture-animation feature bundle in
-// domAnimation is dead weight here.
+// v5 "Split Stage". Ported structure from the approved marro-mockups/index.html
+// mockup: a fixed ring canvas (right half on desktop, top band on mobile) next
+// to REAL scrolling text panels (left half / below, on mobile) — not a
+// scroll-scrubbed crossfade. An IntersectionObserver on the panels sets which
+// scene is active; CSS per-[data-scene] rules pose the fixed canvas. This
+// replaces the v4 "Fixed Theater" (scroll-progress-scrubbed invisible spacers)
+// that the founder rejected as looking/feeling wrong.
 import './landing.css';
 import { RingCanvas } from './RingCanvas.jsx';
 import { FixedLayerContent, SrArticle, StaticDocument, SCENE_TICKS } from './scenes.jsx';
 import { SignInButton, OfflineNotice } from './SignInButton.jsx';
 
-// ============================================================================
-// v4 "FIXED THEATER". Nothing visible ever scrolls.
-//
-// The v3.x layouts kept visible text in the scrolling document below a fixed
-// stage — which meant that MID-SCROLL the text physically passed through the
-// fixed stage band on its way up the viewport (rest-position measurements
-// never caught it). v4 removes the failure mode structurally:
-//
-//   - The stage band (top 55dvh) and a text band (60dvh down) are BOTH
-//     position:fixed. Neither ever moves. Their geometry is disjoint at every
-//     viewport, and since no visible element lives in the scroll flow, there
-//     is no scroll offset at which text can cross the stage.
-//   - The scrolling column is 8 invisible aria-hidden spacers (100dvh each)
-//     that exist only to give the page scroll length.
-//   - Scroll progress (0..1) scrubs per-scene text layers in the fixed band:
-//     continuous, reversible crossfades via useTransform windows — layer i
-//     owns progress [i/8,(i+1)/8], fading through the window edges so
-//     adjacent layers crossfade with no dead frames.
-//   - The discrete data-scene state (stage poses, odometers, choreography)
-//     derives from the same progress value (floor(p*8)), replacing the old
-//     IntersectionObserver.
-//   - Screen readers additionally get a visually-hidden, text-only <article>
-//     with the full story in order (see scenes.jsx); interactive elements
-//     exist only in the fixed layers so there are no duplicate tab stops.
-//   - prefers-reduced-motion: the theater is skipped entirely — a normal
-//     static, stacked, scrolling document renders instead (StaticDocument).
-// ============================================================================
-
 export default function LandingPage({ offline }){
   const reduceMotion = useReducedMotion();
   return reduceMotion
     ? <StaticLanding offline={offline} />
-    : <TheaterLanding offline={offline} />;
+    : <StagedLanding offline={offline} />;
 }
 
-// Ambient blob background, reusing the signed-in app's exact global classes
-// and keyframes (.blob-layer/.blob-1..4, blobFloat1..4 — defined in
-// index.html and already reduced-motion-gated there). Rendered INSIDE .lp so
-// it sits in the landing's own stacking context (z-index:0, below the stage
-// band at 1010). The dark --blob* tokens are re-pinned on .lp in landing.css
-// because the landing is always dark while the app theme (documentElement
-// data-theme) may be light.
+// Ambient blob background, reusing the signed-in app's exact global classes.
 function BlobLayer(){
   return (
     <div className="blob-layer" aria-hidden="true">
@@ -90,29 +59,20 @@ function StaticLanding({ offline }){
   );
 }
 
-// ============ THE THEATER ============
-function TheaterLanding({ offline }){
-  const rootRef = useRef(null); // .lp — the actual scroll container
+// ============ THE STAGED LANDING ============
+function StagedLanding({ offline }){
+  const rootRef = useRef(null);
+  const panelRefs = useRef([]);
   const [scene, setScene] = useState('s1');
   const [loaded, setLoaded] = useState(false);
   const [drawn, setDrawn] = useState(false);
 
-  // Shared "core pulse" channel (v3 feature 3b): CTA hover -> gold core pulse.
   const corePulse = useMotionValue(1);
   const pulseCore = useCallback(() => {
     animate(corePulse, [1, 1.12, 1], { type: 'spring', stiffness: 320, damping: 22 });
   }, [corePulse]);
 
-  // Scroll progress over the spacer column drives EVERYTHING: text layer
-  // crossfades (continuous) and the discrete scene state (thresholds).
-  const { scrollYProgress } = useScroll({ container: rootRef });
-  useMotionValueEvent(scrollYProgress, 'change', (v) => {
-    const idx = Math.min(7, Math.max(0, Math.floor(v * 8)));
-    const s = `s${idx + 1}`;
-    setScene((prev) => (prev === s ? prev : s));
-  });
-
-  // Draw rings in on mount (double-rAF as in the mockup).
+  // Draw rings in on mount (double-rAF, as in the mockup).
   useEffect(() => {
     let id2;
     const id1 = requestAnimationFrame(() => {
@@ -121,21 +81,29 @@ function TheaterLanding({ offline }){
     return () => { cancelAnimationFrame(id1); if(id2) cancelAnimationFrame(id2); };
   }, []);
 
-  // Ring-close fix (see landing.css .lp-drawn): after the draw-in transition
-  // ends, drop the dasharray so the stroke is a true closed circle.
   useEffect(() => {
     if(!loaded) return;
     const t = setTimeout(() => setDrawn(true), 1000);
     return () => clearTimeout(t);
   }, [loaded]);
 
-  // Progress-tick navigation: scroll the driver to the middle of scene i's
-  // progress window.
+  // Real IntersectionObserver over the real scrolling panels — same mechanism
+  // as the approved mockup. Whichever panel crosses the 55% threshold becomes
+  // the active scene, which poses the fixed canvas via [data-scene] CSS.
+  useEffect(() => {
+    const panels = panelRefs.current.filter(Boolean);
+    if(!panels.length) return;
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if(e.isIntersecting) setScene(e.target.dataset.scene);
+      });
+    }, { root: null, threshold: 0.55 });
+    panels.forEach((p) => io.observe(p));
+    return () => io.disconnect();
+  }, []);
+
   const jumpTo = useCallback((i) => {
-    const el = rootRef.current;
-    if(!el) return;
-    const max = el.scrollHeight - el.clientHeight;
-    el.scrollTo({ top: ((i + 0.5) / 8) * max, behavior: 'smooth' });
+    panelRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
 
   const WrappedSignIn = useCallback(
@@ -149,16 +117,26 @@ function TheaterLanding({ offline }){
         <BlobLayer />
         <Nav offline={offline} onHoverCore={pulseCore} />
 
-        <ScrollLinkedCanvas scene={scene} rootRef={rootRef} corePulse={corePulse} />
+        <StageCanvas scene={scene} corePulse={corePulse} />
 
-        {/* Fixed text band: the canonical visible + interactive content. */}
-        <div className="lp-textband">
-          {SCENE_TICKS.map((_, i) => (
-            <FixedLayer key={i} index={i} progress={scrollYProgress}>
-              <FixedLayerContent index={i} scene={scene} SignInButton={WrappedSignIn} />
-            </FixedLayer>
+        {/* Real scrolling content — one panel per scene. This IS the page's
+            scroll flow (unlike v4's invisible spacers): normal document,
+            normal scrollbar, normal browser find-in-page / reader mode. */}
+        <main className="lp-scroller">
+          {SCENE_TICKS.map((label, i) => (
+            <section
+              key={i}
+              ref={(el) => { panelRefs.current[i] = el; }}
+              data-scene={`s${i + 1}`}
+              className="lp-panel"
+              aria-label={label}
+            >
+              <div className="lp-pt">
+                <FixedLayerContent index={i} scene={scene} SignInButton={WrappedSignIn} />
+              </div>
+            </section>
           ))}
-        </div>
+        </main>
 
         {/* Progress rail: one tick per scene, real buttons. */}
         <nav className="lp-ticks" aria-label="Scenes">
@@ -174,71 +152,26 @@ function TheaterLanding({ offline }){
           ))}
         </nav>
 
-        {/* Screen-reader narrative (visually hidden, text-only). */}
+        {/* Screen-reader narrative retained for parity with the visible stage
+            figures (aid letter number, odometers, etc.) that live only in the
+            decorative canvas. */}
         <SrArticle />
-
-        {/* The scroll driver: invisible spacers, one viewport each. */}
-        <main className="lp-main" aria-hidden="true">
-          <div className="lp-spacer" /><div className="lp-spacer" /><div className="lp-spacer" /><div className="lp-spacer" />
-          <div className="lp-spacer" /><div className="lp-spacer" /><div className="lp-spacer" /><div className="lp-spacer" />
-        </main>
       </div>
     </LazyMotion>
   );
 }
 
-// One fixed-band layer. Scroll progress scrubs opacity + a small y-translate
-// through the scene's window; adjacent windows overlap by a quarter-window on
-// each side so outgoing/incoming layers CROSSFADE (both at 50% exactly at the
-// boundary — continuous, reversible, no dead frames at any scroll speed).
-// visibility derives from opacity so inactive layers are visibility:hidden
-// (out of tab order and hit testing), not merely transparent.
-function FixedLayer({ index, progress, children }){
-  const W = 1 / 8;
-  const f = W * 0.25;
-  const s = index * W;
-  const e = s + W;
-  let pts, ops, ys;
-  if(index === 0){
-    pts = [0, e - f, e + f]; ops = [1, 1, 0]; ys = [0, 0, -12];
-  } else if(index === 7){
-    pts = [s - f, s + f, 1]; ops = [0, 1, 1]; ys = [16, 0, 0];
-  } else {
-    pts = [s - f, s + f, e - f, e + f]; ops = [0, 1, 1, 0]; ys = [16, 0, 0, -12];
-  }
-  const opacity = useTransform(progress, pts, ops);
-  const y = useTransform(progress, pts, ys);
-  const visibility = useTransform(opacity, (o) => (o > 0.02 ? 'visible' : 'hidden'));
-  return (
-    <m.div className="lp-flayer" style={{ opacity, y, visibility }}>
-      <div className="lp-flayer-inner lp-pt">{children}</div>
-    </m.div>
-  );
-}
+// Fixed decorative ring canvas + its scroll-linked continuous motion
+// (rotation/drift/glow/pointer-lean) — reads document scroll now, since the
+// scroller is the real page, not a nested container.
+function StageCanvas({ scene, corePulse }){
+  const { scrollYProgress } = useScroll();
 
-// Scroll-linked continuous stage motion (unchanged from v3: ring rotation,
-// stage drift, glow drift, pointer lean) — now reading the .lp root as the
-// scroll container. Reduced motion never reaches this component (the whole
-// theater is skipped), so no per-value gating branches are needed here.
-function ScrollLinkedCanvas({ scene, rootRef, corePulse }){
-  const { scrollYProgress } = useScroll({ container: rootRef });
+  const ringRotate = useSpring(useTransform(scrollYProgress, [0, 1], [0, 35]), { stiffness: 100, damping: 30 });
+  const scale = useSpring(useTransform(scrollYProgress, [0, 0.5, 1], [1, 1.04, 0.96]), { stiffness: 100, damping: 30 });
+  const y = useSpring(useTransform(scrollYProgress, [0, 0.5, 1], [0, -14, 14]), { stiffness: 100, damping: 30 });
+  const glowDrift = useSpring(useTransform(scrollYProgress, [0, 0.5, 1], [0.7, 1, 0.7]), { stiffness: 100, damping: 30 });
 
-  // Ring group: slow ~35deg rotation across the full page scroll.
-  const rotateRaw = useTransform(scrollYProgress, [0, 1], [0, 35]);
-  const ringRotate = useSpring(rotateRaw, { stiffness: 100, damping: 30 });
-
-  // Stage: subtle continuous scale/translate drift (max ~4% / 14px).
-  const scaleRaw = useTransform(scrollYProgress, [0, 0.5, 1], [1, 1.04, 0.96]);
-  const yRaw = useTransform(scrollYProgress, [0, 0.5, 1], [0, -14, 14]);
-  const scale = useSpring(scaleRaw, { stiffness: 100, damping: 30 });
-  const y = useSpring(yRaw, { stiffness: 100, damping: 30 });
-
-  // Background gold glow drifts slightly with scroll progress.
-  const glowRaw = useTransform(scrollYProgress, [0, 0.5, 1], [0.7, 1, 0.7]);
-  const glowDrift = useSpring(glowRaw, { stiffness: 100, damping: 30 });
-
-  // Pointer lean (v3 feature 6): desktop pointer only; motion values only,
-  // never React state per move. Composes on its own .lp-lean wrapper.
   const leanX = useMotionValue(0);
   const leanY = useMotionValue(0);
   const leanRotate = useMotionValue(0);
@@ -249,19 +182,17 @@ function ScrollLinkedCanvas({ scene, rootRef, corePulse }){
   useEffect(() => {
     const mq = window.matchMedia('(hover: hover) and (pointer: fine)');
     if(!mq.matches) return;
-    const root = rootRef.current;
-    if(!root) return;
     const onMove = (e) => {
       const w = window.innerWidth || 1;
       const h = window.innerHeight || 1;
-      const nx = (e.clientX / w) * 2 - 1; // -1..1
+      const nx = (e.clientX / w) * 2 - 1;
       const ny = (e.clientY / h) * 2 - 1;
       leanX.set(nx * 8);
       leanY.set(ny * 8);
       leanRotate.set(nx * 1.5);
     };
-    root.addEventListener('pointermove', onMove, { passive: true });
-    return () => root.removeEventListener('pointermove', onMove);
+    window.addEventListener('pointermove', onMove, { passive: true });
+    return () => window.removeEventListener('pointermove', onMove);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -277,8 +208,6 @@ function ScrollLinkedCanvas({ scene, rootRef, corePulse }){
   );
 }
 
-// Wraps SignInButton with the offline notice, kept local so scene content
-// stays presentation-only and doesn't need to know about offline state.
 function SignInButtonWithNote({ offline, className, showGlyph, onHoverCore }){
   return (
     <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>

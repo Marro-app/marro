@@ -37,7 +37,7 @@ const HEAD = {
   s4: <>Log it in <em className="lp-serif lp-acc">seconds.</em></>,
   s5: <>Always know <em className="lp-serif lp-acc">where you stand.</em></>,
   s6: <>Board exams. Rotation season. Marro <em className="lp-serif lp-acc">sees them coming.</em></>,
-  s7: <>Made <em className="lp-serif lp-acc">between lectures.</em></>,
+  s7: <>By us. <em className="lp-serif lp-acc">For us.</em></>,
 };
 
 const BODY = {
@@ -49,7 +49,7 @@ const BODY = {
   s6: 'Med school has expensive milestones on a known calendar. Plan for them before they land on a credit card.',
 };
 
-const QUOTE = 'Most of us start med school with big loans and almost no financial training. You sign on day one without a clear picture of what it all means long term. I am building Marro to make the picture clear from the start: what you have, where it goes, and no surprises creeping up later. Med school is stressful enough. Money should be one less thing on your plate.';
+const QUOTE = "The aid office gives you a number. Nobody tells you what to do with it. I built Marro because I needed that answer myself.";
 
 // Shared s4 log list. Ripples + newest-row landing choreography key off the
 // lp-loglist-in class (active only while s4 is the current scene in the
@@ -57,9 +57,9 @@ const QUOTE = 'Most of us start med school with big loans and almost no financia
 function LogList({ active }){
   return (
     <div className={`lp-loglist${active ? ' lp-loglist-in' : ''}`}>
-      <div className="lp-logrow" style={{ '--lp-row-i': 0 }}><div><span className="lp-dot8 lp-dot-ripple" style={{ background: 'var(--lp-blue)', color: 'var(--lp-blue)' }} aria-hidden="true"></span>Gas</div><div className="lp-amt lp-serif">$38.50</div></div>
+      <div className="lp-logrow" style={{ '--lp-row-i': 0 }}><div><span className="lp-dot8 lp-dot-ripple" style={{ background: 'var(--lp-blue)', color: 'var(--lp-blue)' }} aria-hidden="true"></span>Groceries</div><div className="lp-amt lp-serif">$50.90</div></div>
       <div className="lp-logrow" style={{ '--lp-row-i': 1 }}><div><span className="lp-dot8 lp-dot-ripple" style={{ background: 'rgba(246,239,221,.5)', color: 'rgba(246,239,221,.5)' }} aria-hidden="true"></span>Coffee with study group</div><div className="lp-amt lp-serif">$6.75</div></div>
-      <div className="lp-logrow lp-logrow-newest" style={{ '--lp-row-i': 2 }}><div><span className="lp-dot8 lp-dot-ripple" style={{ background: 'var(--lp-gold)', color: 'var(--lp-gold)' }} aria-hidden="true"></span>Groceries</div><div className="lp-amt lp-serif">$62.40</div></div>
+      <div className="lp-logrow lp-logrow-newest" style={{ '--lp-row-i': 2 }}><div><span className="lp-dot8 lp-dot-ripple" style={{ background: 'var(--lp-gold)', color: 'var(--lp-gold)' }} aria-hidden="true"></span>Set aside for Step 1</div><div className="lp-amt lp-serif">$50.00</div></div>
     </div>
   );
 }
@@ -69,7 +69,7 @@ function FounderSig(){
   return (
     <div className="lp-sig">
       <svg width="40" height="40" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="120" fill="#14150F" /><g transform="translate(256,256)" fill="none" stroke="#F6EFDD" strokeWidth="26"><circle r="172" /><circle r="118" /><circle r="64" opacity="0.72" /><circle r="26" fill="#DDA528" stroke="none" /></g></svg>
-      <div><div className="lp-nm">The med student behind Marro</div><div className="lp-rl">U.S. MD program</div></div>
+      <div><div className="lp-nm">The med student behind Marro</div><div className="lp-rl">MD program</div></div>
     </div>
   );
 }
@@ -78,7 +78,7 @@ function FounderSig(){
 function FooterLinks(){
   return (
     <footer className="lp-footer" style={{ padding: '28px 0 0' }}>
-      <a href="/privacy.html">Privacy Policy</a><span>·</span><a href="/terms.html">Terms of Service</a><span>·</span><span>Made for U.S. MD and DO students, at any school.</span>
+      <a href="/privacy.html">Privacy Policy</a><span>·</span><a href="/terms.html">Terms of Service</a><span>·</span><span>Made for MD and DO students, at any school.</span>
     </footer>
   );
 }
@@ -177,7 +177,7 @@ export function SrArticle(){
       <p>Marro says: $2,150 per month to live on.</p>
       <h2>{HEAD.s4}</h2>
       <p>{BODY.s4}</p>
-      <p>This week: $107.65. Gas $38.50. Coffee with study group $6.75. Groceries $62.40.</p>
+      <p>This week: $107.65. Groceries $50.90. Coffee with study group $6.75. Set aside for Step 1 $50.00.</p>
       <h2>{HEAD.s5}</h2>
       <p>{BODY.s5}</p>
       <p>Spent so far: 61% of plan, $1,310 of $2,150.</p>
@@ -186,10 +186,10 @@ export function SrArticle(){
       <p>Milestones: disbursement, Step 1, rotations, Step 2 CK. Plan adjusted. Step 1 covered. $2,094 per month.</p>
       <h2>{HEAD.s7}</h2>
       <p>{QUOTE}</p>
-      <p>The med student behind Marro. U.S. MD program.</p>
+      <p>The med student behind Marro. MD program.</p>
       <h2>Your numbers stay yours.</h2>
       <p>We never sell your personal info. Your budget is private to your account. Details in our Privacy Policy.</p>
-      <p>Free for medical students. Made for U.S. MD and DO students, at any school.</p>
+      <p>Free for medical students. Made for MD and DO students, at any school.</p>
     </article>
   );
 }

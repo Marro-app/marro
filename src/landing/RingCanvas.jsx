@@ -275,7 +275,7 @@ export function RingCanvas({ scene, ringRotate, stageDrift, glowDrift, corePulse
           {/* HTML overlay layers. Inactive layers are visibility:hidden via
               CSS (see .lp-layer in landing.css). All decorative: the whole
               canvas is aria-hidden, and the SR story lives in SrArticle. */}
-          <div className={`lp-layer${scene === 's2' ? ' lp-on' : ''}`}>
+          <div className={`lp-layer${scene === 's2' ? ' lp-on' : ''} lp-scrim`}>
             <div className="lp-stagelbl">Your aid letter says</div>
             <div className="lp-aidfig lp-serif">Cost of attendance<br />$84,000 / year</div>
           </div>
@@ -292,7 +292,7 @@ export function RingCanvas({ scene, ringRotate, stageDrift, glowDrift, corePulse
             <div className="lp-stagelbl">This week</div>
             <div className="lp-stagefig">$107<small>.65</small></div>
           </div>
-          <div className={`lp-layer${scene === 's5' ? ' lp-on' : ''}`}>
+          <div className={`lp-layer${scene === 's5' ? ' lp-on' : ''} lp-scrim`}>
             <div className="lp-stagelbl">Spent so far</div>
             <div className="lp-stagefig">
               <Odometer active={scene === 's5'} from={0} to={61} format={(v) => `${v}%`} className="lp-odometer" />
