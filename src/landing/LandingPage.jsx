@@ -21,6 +21,12 @@ import { BlobLayer, Nav, SignInButtonWithNote } from './landingShared.jsx';
 // so the decision of *which* branch to render never touches the animation lib.
 const StagedLanding = React.lazy(() => import('./StagedLanding.jsx'));
 
+// The mobile dot-dissolve experience. Lazy-loaded so its canvas particle code
+// (dotsEngine.js + dotsLanding.css) is its own chunk — desktop visitors never
+// download it, and it stays off the desktop critical path. Reduced-motion
+// visitors get StaticLanding instead and never touch this either.
+const DotsLanding = React.lazy(() => import('./DotsLanding.jsx'));
+
 // The scroll-driven "theater" (a fixed ring canvas posed behind real scrolling
 // text panels) only works where text and canvas can sit side-by-side — i.e. the
 // wide desktop layout. On a narrow phone the two collapse into one column and
@@ -65,13 +71,22 @@ function usePrefersReducedMotion(){
 export default function LandingPage({ offline }){
   const reduceMotion = usePrefersReducedMotion();
   const narrow = useIsNarrow();
-  return (reduceMotion || narrow)
-    ? <StaticLanding offline={offline} />
-    : (
-      <Suspense fallback={<StaticLanding offline={offline} />}>
-        <StagedLanding offline={offline} />
-      </Suspense>
-    );
+  // Dispatch:
+  //   prefers-reduced-motion        → StaticLanding (plain readable stack, a11y)
+  //   narrow/mobile AND motion OK    → DotsLanding  (dot-dissolve, lazy chunk)
+  //   desktop AND motion OK          → StagedLanding (theater, lazy chunk)
+  // StaticLanding is the Suspense fallback for both lazy branches so nothing
+  // ever flashes blank while a chunk resolves.
+  if (reduceMotion){
+    return <StaticLanding offline={offline} />;
+  }
+  return (
+    <Suspense fallback={<StaticLanding offline={offline} />}>
+      {narrow
+        ? <DotsLanding offline={offline} />
+        : <StagedLanding offline={offline} />}
+    </Suspense>
+  );
 }
 
 // ============ REDUCED MOTION: plain static document ============

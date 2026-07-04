@@ -171,7 +171,7 @@ export function SrArticle(){
       <p>Free for medical students.</p>
       <h2>{HEAD.s2}</h2>
       <p>{BODY.s2}</p>
-      <p>Your aid letter says: cost of attendance $84,000 per year. Example numbers.</p>
+      <p>Your aid letter says: cost of attendance $125,950 per year. Example numbers.</p>
       <h2>{HEAD.s3}</h2>
       <p>{BODY.s3}</p>
       <p>Marro says: $2,150 per month to live on.</p>
@@ -220,7 +220,7 @@ export function StaticDocument({ SignInButton }){
       <section aria-label="Start with your aid letter">
         <h2>{HEAD.s2}</h2>
         <p className="lp-body">{BODY.s2}</p>
-        <p className="lp-figline">Your aid letter says: cost of attendance $84,000 / year.</p>
+        <p className="lp-figline">Your aid letter says: cost of attendance $125,950 / year.</p>
         <p className="lp-mock-note">Example numbers.</p>
       </section>
       <section aria-label="Marro turns it into a monthly budget">

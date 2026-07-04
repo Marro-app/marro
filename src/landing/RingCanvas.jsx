@@ -277,7 +277,7 @@ export function RingCanvas({ scene, ringRotate, stageDrift, glowDrift, corePulse
               canvas is aria-hidden, and the SR story lives in SrArticle. */}
           <div className={`lp-layer${scene === 's2' ? ' lp-on' : ''} lp-scrim`}>
             <div className="lp-stagelbl">Your aid letter says</div>
-            <div className="lp-aidfig lp-serif">Cost of attendance<br />$84,000 / year</div>
+            <div className="lp-aidfig lp-serif">Cost of attendance<br />$125,950 / year</div>
           </div>
           <div className={`lp-layer${scene === 's3' ? ' lp-on' : ''}`}>
             <div className="lp-stagecard">
