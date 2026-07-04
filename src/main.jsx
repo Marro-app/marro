@@ -1,20 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import * as Sentry from '@sentry/react';
 import { App, SilentUpdater } from './App.jsx';
-
-// Error monitoring — DSN is safe to expose client-side (write-only, same trust
-// model as the Supabase anon key); only enabled in the production build so
-// local dev errors don't pollute the dashboard.
-if(import.meta.env.PROD && import.meta.env.VITE_SENTRY_DSN){
-  Sentry.init({
-    dsn: import.meta.env.VITE_SENTRY_DSN,
-    environment: import.meta.env.MODE,
-    tracesSampleRate: 0.1,
-    replaysSessionSampleRate: 0,
-    replaysOnErrorSampleRate: 0,
-  });
-}
 
 // localStorage shim — the app talks to `window.storage` (async KV) for its local
 // cache; back it with localStorage. Set before render so the boot effect sees it.
@@ -45,12 +31,80 @@ const CrashFallback = () => (
   </div>
 );
 
+// Plain React error boundary — no Sentry import here. Sentry is loaded lazily
+// (see below) well after first paint, so the boundary must work fully without
+// it. If Sentry has finished loading by the time an error is caught, we
+// forward it via a module-level ref (`sentryRef`) set once init resolves;
+// otherwise the error is simply left to Sentry's own global handlers (or
+// swallowed if Sentry hasn't loaded yet — the fallback UI still renders).
+let sentryRef = null;
+class ErrorBoundary extends React.Component {
+  constructor(props){
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(){
+    return { hasError: true };
+  }
+  componentDidCatch(error, info){
+    try { sentryRef?.captureException?.(error, { extra: info }); } catch { /* no-op */ }
+  }
+  render(){
+    if (this.state.hasError) return this.props.fallback;
+    return this.props.children;
+  }
+}
+
+// Error monitoring — DSN is safe to expose client-side (write-only, same trust
+// model as the Supabase anon key). Deferred: @sentry/react is NOT statically
+// imported, so it never lands in the initial bundle and its init never runs
+// on first paint — including on the logged-out marketing landing, which is
+// the highest-traffic, most performance-sensitive page in the app. Instead we
+// dynamically import it after the window 'load' event plus a short delay, off
+// the critical path. (No requestIdleCallback — iOS Safari doesn't have it.)
+if (import.meta.env.PROD && import.meta.env.VITE_SENTRY_DSN) {
+  const initSentryDeferred = () => {
+    setTimeout(() => {
+      import('@sentry/react').then((Sentry) => {
+        Sentry.init({
+          dsn: import.meta.env.VITE_SENTRY_DSN,
+          environment: import.meta.env.MODE,
+          tracesSampleRate: 0.1,
+          replaysSessionSampleRate: 0,
+          replaysOnErrorSampleRate: 0,
+        });
+        // Sentry's own global handlers (window.onerror / unhandledrejection)
+        // are installed by init() and keep working after this point — the
+        // ref below is only for errors caught by our React boundary.
+        sentryRef = Sentry;
+      }).catch(() => { /* Sentry failed to load — app still works fine */ });
+    }, 2000);
+  };
+  if (document.readyState === 'complete') {
+    initSentryDeferred();
+  } else {
+    window.addEventListener('load', initSentryDeferred, { once: true });
+  }
+}
+
 const root=createRoot(document.getElementById('root'));
 root.render(
   <React.Fragment>
-    <Sentry.ErrorBoundary fallback={<CrashFallback/>}>
+    <ErrorBoundary fallback={<CrashFallback/>}>
       <App/>
       <SilentUpdater/>
-    </Sentry.ErrorBoundary>
+    </ErrorBoundary>
   </React.Fragment>
 );
+
+// On-device performance overlay — dependency-free, mounted only when the URL
+// has ?perf (e.g. https://joinmarro.com/?perf on the founder's phone). Never
+// shown to normal visitors. Lazy-imported so it costs nothing when absent.
+if (new URLSearchParams(location.search).has('perf')) {
+  import('./perf/PerfOverlay.jsx').then(({ default: PerfOverlay }) => {
+    const perfRoot = document.createElement('div');
+    perfRoot.id = 'marro-perf-overlay-root';
+    document.body.appendChild(perfRoot);
+    createRoot(perfRoot).render(<PerfOverlay />);
+  }).catch(() => { /* diagnostic tool only — fail silently */ });
+}

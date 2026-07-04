@@ -71,6 +71,13 @@ function usePrefersReducedMotion(){
 export default function LandingPage({ offline }){
   const reduceMotion = usePrefersReducedMotion();
   const narrow = useIsNarrow();
+  // Perf diagnostics (?perf overlay, see src/perf/): mark the moment the
+  // landing dispatcher has mounted and produced its first DOM, regardless of
+  // which branch (Static/Dots/Staged) it picks. performance.mark is safe
+  // everywhere but guarded anyway since this runs on every visit.
+  useEffect(() => {
+    try { performance.mark('marro-landing-ready'); } catch { /* no-op */ }
+  }, []);
   // Dispatch:
   //   prefers-reduced-motion        → StaticLanding (plain readable stack, a11y)
   //   narrow/mobile AND motion OK    → DotsLanding  (dot-dissolve, lazy chunk)
