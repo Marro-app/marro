@@ -17,12 +17,21 @@
 // lives in the DOM (DotsLanding renders it). This module never touches the DOM
 // text except to read layout/computed style.
 
-const CAP = 1000;      // max particles per section shape (perf budget)
-const STEP = 4;        // glyph sampling grid, CSS px
-const STAGGER = 0.30;  // per-particle start-time spread
-const HOLD = 0.52;     // fraction of a scroll segment the section stays still
+// Per-section particle budget. The WHOLE section dissolves now (logo + headline
+// + figure + body + labels + log rows), so density is ADAPTIVE: big text/logo
+// are sampled on a fine grid, small text on a coarse grid (reads as fine dust /
+// shimmer, not literal letters). A per-section cap then downsamples so the live
+// particle count stays mobile-friendly (~1500–2200 across a transition, not 10k).
+const CAP = 2400;         // max particles per section (perf budget)
+const STEP_FINE = 2;      // grid for big headline/figure/logo, CSS px
+const STEP_MID = 3;       // grid for medium text
+const STEP_COARSE = 5;    // grid for body / small labels / log rows (fine dust)
+const BIG_FONT = 34;      // px: font-size at/above which text samples fine
+const MID_FONT = 20;      // px: font-size at/above which text samples mid
+const STAGGER = 0.30;     // per-particle start-time spread
+const HOLD = 0.52;        // fraction of a scroll segment the section stays still
 const COLORS = ['#DDA528', '#FBF6E8', '#82AEDB', '#E08A6B']; // gold cream blue clay
-const SPR = 12;        // dot sprite radius, px
+const SPR = 12;           // dot sprite radius, px
 
 function clamp(v, a, b){ return v < a ? a : (v > b ? b : v); }
 function smooth(v){ v = clamp(v, 0, 1); return v * v * (3 - 2 * v); }
@@ -68,47 +77,143 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
   let lastActive = -1;
   let destroyed = false;
 
-  // --- sample one section's glyphs into point targets ---
+  // Grid-sample the alpha channel of whatever was just drawn into offCtx, but
+  // ONLY within the given rect, at the given step. `tag` decides particle color:
+  //   'fig'  → figure (mostly gold, occasional blue/clay data dots)
+  //   'core' → the logo's gold core (always gold)
+  //   else   → heading/body (mostly gold, some cream)
+  // Points are pushed into `out`.
+  function gridSampleRect(img, rect, step, tag, out){
+    const x0 = Math.max(0, rect.left | 0), x1 = Math.min(vw, Math.ceil(rect.right));
+    const y0 = Math.max(0, rect.top | 0), y1 = Math.min(vh, Math.ceil(rect.bottom));
+    for (let y = y0; y < y1; y += step){
+      for (let x = x0; x < x1; x += step){
+        if (img[(y * vw + x) * 4 + 3] > 90){
+          const k = tag === 'core' ? 0 : pickColor(tag === 'fig');
+          out.push({ x: x + g(1.2), y: y + g(1.2), k: k });
+        }
+      }
+    }
+  }
+
+  // Draw one text node's words into offCtx at their real on-screen rects, using
+  // the parent's computed font (captures the synthesized italic too).
+  function paintTextNode(node){
+    if (!node.parentElement) return;
+    const st = getComputedStyle(node.parentElement);
+    offCtx.font = st.fontStyle + ' ' + st.fontWeight + ' ' + st.fontSize + ' ' + st.fontFamily;
+    offCtx.fillStyle = '#fff';
+    offCtx.textBaseline = 'middle';
+    const re = /\S+/g; let m;
+    while ((m = re.exec(node.textContent))){
+      const rng = document.createRange();
+      rng.setStart(node, m.index); rng.setEnd(node, m.index + m[0].length);
+      const rect = rng.getBoundingClientRect();
+      offCtx.fillText(m[0], rect.left, rect.top + rect.height / 2);
+    }
+  }
+
+  // Stroke the concentric Marro ring mark (rings r 216/150/86 + gold core r26,
+  // per the 512 viewBox) into offCtx, scaled/positioned to the SVG's on-screen
+  // rect. Sampled synchronously — no async image decode. Returns the core's
+  // screen rect so the caller can sample it separately (always-gold).
+  function paintRingLogo(svg){
+    const r = svg.getBoundingClientRect();
+    const s = r.width / 512;               // viewBox is 0..512
+    const ccx = r.left + r.width / 2, ccy = r.top + r.height / 2;
+    offCtx.save();
+    offCtx.strokeStyle = '#fff'; offCtx.fillStyle = '#fff';
+    offCtx.lineWidth = Math.max(1.5, 14 * s);
+    const rings = [216, 150, 86];
+    for (let i = 0; i < rings.length; i++){
+      offCtx.globalAlpha = i === 2 ? 0.72 : 1;
+      offCtx.beginPath();
+      offCtx.arc(ccx, ccy, rings[i] * s, 0, Math.PI * 2);
+      offCtx.stroke();
+    }
+    offCtx.globalAlpha = 1;
+    const coreR = 26 * s;
+    offCtx.beginPath(); offCtx.arc(ccx, ccy, coreR, 0, Math.PI * 2); offCtx.fill();
+    offCtx.restore();
+    return { left: ccx - coreR, right: ccx + coreR, top: ccy - coreR, bottom: ccy + coreR };
+  }
+
+  // Should this element be EXCLUDED from the dissolve? The primary CTA (the
+  // third-party-branded SignInButton) stays a plain opacity fade so it remains
+  // clickable + keyboard-operable — never turned into particles.
+  function isExcluded(el){
+    return !!(el.closest && (el.closest('.lp-cta') || el.closest('button')));
+  }
+
+  function fontStep(px){
+    return px >= BIG_FONT ? STEP_FINE : (px >= MID_FONT ? STEP_MID : STEP_COARSE);
+  }
+
+  // --- sample one WHOLE section's visible content into point targets ---
+  // Everything readable dissolves: logo, headline, figure, body, labels, log
+  // rows — sampled at adaptive density (fine for big/logo, coarse dust for
+  // small text). The CTA is excluded (see isExcluded).
   function sampleSection(section){
-    offCtx.clearRect(0, 0, vw, vh);
-    const figRegions = [];
-    const els = section.querySelectorAll('[data-p]');
-    for (let e = 0; e < els.length; e++){
-      const el = els[e], isFig = el.hasAttribute('data-fig');
-      if (isFig) figRegions.push(el.getBoundingClientRect());
-      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-      let node;
-      while ((node = walker.nextNode())){
-        if (!node.parentElement) continue;
-        const st = getComputedStyle(node.parentElement);
-        offCtx.font = st.fontStyle + ' ' + st.fontWeight + ' ' + st.fontSize + ' ' + st.fontFamily;
-        offCtx.fillStyle = '#fff';
-        offCtx.textBaseline = 'middle';
-        const text = node.textContent, re = /\S+/g;
-        let m;
-        while ((m = re.exec(text))){
-          const rng = document.createRange();
-          rng.setStart(node, m.index); rng.setEnd(node, m.index + m[0].length);
-          const rect = rng.getBoundingClientRect();
-          offCtx.fillText(m[0], rect.left, rect.top + rect.height / 2);
-        }
-      }
-    }
-    const img = offCtx.getImageData(0, 0, vw, vh).data;
+    const inner = section.firstElementChild || section;
     const pts = [];
-    for (let y = 0; y < vh; y += STEP){
-      for (let x = 0; x < vw; x += STEP){
-        if (img[(y * vw + x) * 4 + 3] > 110){
-          let inFig = false;
-          for (let f = 0; f < figRegions.length; f++){
-            const fr = figRegions[f];
-            if (x >= fr.left && x <= fr.right && y >= fr.top && y <= fr.bottom){ inFig = true; break; }
-          }
-          pts.push({ x: x + g(1.6), y: y + g(1.6), k: pickColor(inFig) });
-        }
+
+    // 1) SVG marks (hero ring logo, founder-sig ring, log-row dots). Each is
+    //    drawn on its own cleared offscreen pass so we can sample just its rect
+    //    at the right density and color.
+    const svgs = inner.querySelectorAll('svg');
+    for (let i = 0; i < svgs.length; i++){
+      const svg = svgs[i];
+      if (isExcluded(svg)) continue;
+      const rect = svg.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) continue;
+      const isLogo = svg.classList.contains('lpd-logo');
+      offCtx.clearRect(0, 0, vw, vh);
+      const coreRect = paintRingLogo(svg);   // works for both ring marks
+      const img = offCtx.getImageData(0, 0, vw, vh).data;
+      const step = isLogo ? STEP_FINE : STEP_MID;
+      gridSampleRect(img, rect, step, 'ring', pts);
+      // resample the gold core denser + always-gold so it stays a clear point
+      gridSampleRect(img, coreRect, STEP_FINE, 'core', pts);
+    }
+
+    // 2) Text — grouped by density bucket so each bucket is one offscreen pass.
+    //    Walk text nodes once; bucket each by its parent's font size and whether
+    //    it's a figure (data-fig ancestor). Excluded (CTA) nodes are skipped.
+    const buckets = { fine: [], mid: [], coarse: [] };
+    const figFlag = new Set();
+    const walker = document.createTreeWalker(inner, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())){
+      const parent = node.parentElement;
+      if (!parent || isExcluded(parent)) continue;
+      if (!node.textContent.trim()) continue;
+      const px = parseFloat(getComputedStyle(parent).fontSize) || 16;
+      const step = fontStep(px);
+      const bucket = step === STEP_FINE ? 'fine' : (step === STEP_MID ? 'mid' : 'coarse');
+      buckets[bucket].push(node);
+      if (parent.closest('[data-fig]')) figFlag.add(node);
+    }
+    const passes = [
+      ['fine', STEP_FINE], ['mid', STEP_MID], ['coarse', STEP_COARSE]
+    ];
+    for (let pi = 0; pi < passes.length; pi++){
+      const [name, step] = passes[pi];
+      const nodes = buckets[name];
+      if (!nodes.length) continue;
+      // split into figure vs non-figure sub-passes (one clear each) so color is
+      // correct without per-pixel region tests.
+      for (const isFig of [false, true]){
+        const sub = nodes.filter(n => figFlag.has(n) === isFig);
+        if (!sub.length) continue;
+        offCtx.clearRect(0, 0, vw, vh);
+        for (const n of sub) paintTextNode(n);
+        const img = offCtx.getImageData(0, 0, vw, vh).data;
+        gridSampleRect(img, { left: 0, top: 0, right: vw, bottom: vh }, step, isFig ? 'fig' : 'text', pts);
       }
     }
-    for (let i = pts.length - 1; i > 0; i--){ // shuffle then cap
+
+    // Shuffle, then cap to keep the live particle count bounded.
+    for (let i = pts.length - 1; i > 0; i--){
       const j = (Math.random() * (i + 1)) | 0, t = pts[i]; pts[i] = pts[j]; pts[j] = t;
     }
     if (pts.length > CAP) pts.length = CAP;
