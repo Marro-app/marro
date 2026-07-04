@@ -1,5 +1,5 @@
-import React from 'react';
-import { sb } from '../lib/data.js';
+import React, { useState } from 'react';
+import { getSupabase } from '../lib/data.js';
 import { GoogleGlyph } from '../components/icons.jsx';
 
 // Shared OAuth entry point for the landing page — same call as LoginScreen.jsx,
@@ -11,19 +11,32 @@ import { GoogleGlyph } from '../components/icons.jsx';
 // reaches into the fixed ring canvas. Desktop pointer only in practice: touch
 // devices don't fire pointerenter on tap the same way, so this never fights
 // the existing :active press-scale.
+//
+// supabase-js is lazy-loaded (see lib/data.js) — a logged-out cold visit never
+// downloads it. Clicking this button is one of the two places that trigger the
+// load; `pending` shows a visible, ADA-safe "connecting" state (button stays
+// keyboard-operable, no layout shift) while the dynamic import resolves.
 export function SignInButton({ offline, className, showGlyph, children, style, onHoverCore }){
-  const signIn = () => sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } });
+  const [pending, setPending] = useState(false);
+  const signIn = async () => {
+    setPending(true);
+    const sb = await getSupabase();
+    sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } });
+    // Intentionally leave `pending` true — the browser is about to navigate away
+    // for the OAuth redirect, so there's no "done" state to return to.
+  };
   return (
     <button
       type="button"
       className={className}
-      disabled={offline}
+      disabled={offline || pending}
+      aria-busy={pending}
       onClick={signIn}
       onPointerEnter={onHoverCore}
       style={style}
     >
       {showGlyph && <GoogleGlyph size={17} />}
-      {children || 'Continue with Google'}
+      {pending ? 'Connecting…' : (children || 'Continue with Google')}
     </button>
   );
 }

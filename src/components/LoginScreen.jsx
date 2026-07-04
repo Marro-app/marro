@@ -1,7 +1,7 @@
 import React from 'react';
 import { C } from '../lib/theme.js';
 import { MarroLogo, GoogleGlyph, Icon } from './icons.jsx';
-import { sb } from '../lib/data.js';
+import { getSupabase } from '../lib/data.js';
 
 // Public landing page — the logged-out view at the app root. It is intentionally
 // viewable WITHOUT signing in and states what Marro is: Google's OAuth
@@ -17,7 +17,10 @@ const FEATURES = [
 ];
 
 export const LoginScreen = ({offline}) => {
-  const signIn = () => sb.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.origin+location.pathname}});
+  const signIn = async () => {
+    const sb = await getSupabase();
+    sb.auth.signInWithOAuth({provider:"google",options:{redirectTo:location.origin+location.pathname}});
+  };
   return (
     <main style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"48px 24px",gap:0}}>
       <div style={{width:"100%",maxWidth:560,display:"flex",flexDirection:"column",alignItems:"center"}}>

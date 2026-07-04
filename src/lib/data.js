@@ -1,14 +1,56 @@
-import { createClient } from '@supabase/supabase-js';
-
 export const SUPABASE_URL      = "https://rjowpekykqlounnaegwn.supabase.co";
 export const SUPABASE_ANON_KEY = "sb_publishable_Kp89EOIm88PDospinCz-eA_wDs09kjq"; // publishable key — safe in client (RLS-gated)
-export const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {auth:{flowType:"pkce"}});
+
+// ── Lazy Supabase client ──────────────────────────────────────────────────────
+// supabase-js is ~150-200KB and was previously imported at module-eval time here,
+// which pulled it into the main bundle for EVERY visitor — including a first-time,
+// logged-out visitor who only ever sees the marketing landing page. It's now
+// dynamic-imported and memoized on first use, so it becomes its own lazy chunk
+// that a logged-out cold load never fetches.
+//
+// Every consumer (auth gate, sign-in button, profile/onboarding writes, the
+// app_state sync engine) MUST go through `await getSupabase()` — nothing may
+// import/use the client at module-eval time, or it defeats the whole point.
+let _sbPromise = null;
+export function getSupabase(){
+  if(!_sbPromise){
+    _sbPromise = import('@supabase/supabase-js').then(({createClient}) =>
+      createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {auth:{flowType:"pkce"}})
+    );
+  }
+  return _sbPromise;
+}
+
+// Synchronous boot check — must run BEFORE any import of supabase-js, so it
+// can decide whether to eagerly kick off getSupabase() at all. Two cases need
+// supabase loaded immediately, before render:
+//   (a) a returning signed-in user (their session token is cached locally), or
+//   (b) an OAuth/redirect callback that supabase itself must process — e.g. a
+//       first-time visitor who just completed Google sign-in and lands back
+//       with #access_token=... (or an error/type param) in the URL, with an
+//       EMPTY localStorage. Missing this case would silently break first-time
+//       sign-in, since nothing else would ever call getSupabase() to consume
+//       the callback.
+// Everything else (cold, logged-out, no callback) → render the landing page
+// immediately with zero supabase-js bytes downloaded.
+export const SESSION_STORAGE_KEY = "sb-rjowpekykqlounnaegwn-auth-token";
+export function needsEagerSupabase(){
+  try{
+    if(localStorage.getItem(SESSION_STORAGE_KEY)) return true;
+  }catch{ /* localStorage unavailable — fall through to URL check */ }
+  const hash = window.location.hash || "";
+  const search = window.location.search || "";
+  if(/access_token|error|type=/.test(hash)) return true;
+  if(/[?&](code|error)=/.test(search)) return true;
+  return false;
+}
 
 // ── Supabase sync (per-user row in app_state, RLS-gated) ─────────────────────────
 // Transport-only replacement for the old Gist proxy: same string-in / string-out,
 // null-on-failure contract, so the 3-way merge engine below is untouched.
 export const stateFetch = async () => {           // → JSON string | null  (null = no row OR error/offline)
   try {
+    const sb = await getSupabase();
     const {data, error} = await sb.from("app_state").select("state").maybeSingle();
     if(error || !data) return null;
     return JSON.stringify(data.state);
@@ -17,6 +59,7 @@ export const stateFetch = async () => {           // → JSON string | null  (nu
 
 export const stateWrite = async (content) => {    // → boolean (true = persisted)
   try {
+    const sb = await getSupabase();
     const {data:{user}} = await sb.auth.getUser();
     if(!user) return false;
     const {error} = await sb.from("app_state").upsert({user_id:user.id, state:JSON.parse(content)});

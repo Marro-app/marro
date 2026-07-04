@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { C } from '../lib/theme.js';
-import { sb } from '../lib/data.js';
+import { getSupabase } from '../lib/data.js';
 import { generateYearConfigs, blankYearFields, DEFAULT_STATE, DEFAULT_CATS, SETUP_VERSION, BLANK_MONTHLY, MONTH_NAMES, MONTH_FULL, todayStr, yr2 } from '../lib/format.js';
 import { US_MED_SCHOOLS, degreeForSchool, DO_DUAL, dualOptionsForSchool } from '../lib/schools.js';
 import { radioProps } from '../lib/ui-helpers.js';
@@ -114,6 +114,7 @@ export const ProfileModal = ({uid, onSaved, onClose}) => {
   const save = async () => {
     if(!canSave) return;
     setSaving(true); setErr("");
+    const sb = await getSupabase();
     // Update the existing row; if none yet (first-time), insert.
     let {data, error} = await sb.from("profiles").update({school}).eq("user_id", uid).select();
     if(!error && (!data || !data.length)){
@@ -330,6 +331,7 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
   const finish = async () => {
     if(!school || saving) return;
     setSaving(true); setErr("");
+    const sb = await getSupabase();
     let {data:pd, error} = await sb.from("profiles").update({school}).eq("user_id", uid).select();
     if(!error && (!pd || !pd.length)) ({data:pd, error} = await sb.from("profiles").insert({user_id:uid, school}).select());
     if(error || !pd || !pd.length){ setErr(error?.message || "Couldn't save — please try again."); setSaving(false); return; }

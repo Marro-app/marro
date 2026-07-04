@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 import { C, applyTheme, THEMES } from './lib/theme.js';
-import { sb, stateFetch, stateWrite, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY } from './lib/data.js';
+import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY } from './lib/data.js';
 import { fmt, fmtS, fmtD, fmtDay, fmtA, moTotal, todayStr, getMonday, getSunday, daysUntil, subMonthlyTotal, getYearMonthStr, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE } from './lib/format.js';
 import { BRANDS, BRAND_DOMAINS, getBrandDomain, getBrand } from './lib/brands.js';
 import { US_MED_SCHOOLS, degreeForSchool, DO_DUAL, dualOptionsForSchool } from './lib/schools.js';
@@ -98,18 +98,32 @@ export function App() {
 
 
   // Auth: restore session on boot + listen for sign-in/out across tabs.
+  //
+  // supabase-js is lazy-loaded (see lib/data.js) so a first-time, logged-out
+  // visitor to the marketing landing never downloads it. We only load it here
+  // eagerly, before the landing renders, when needsEagerSupabase() says so —
+  // a returning signed-in user (cached session token) or an OAuth/redirect
+  // callback supabase must process. Otherwise `session` is set to null right
+  // away and the landing renders with zero supabase-js bytes fetched; the
+  // client only loads later, on demand, when SignInButton is clicked.
   useEffect(()=>{
-    sb.auth.getSession().then(({data})=>setSession(data.session ?? null));
-    const {data:{subscription}} = sb.auth.onAuthStateChange((evt, s)=>{
-      setSession(s ?? null);
-      if(evt==="SIGNED_OUT"){
-        localStorage.removeItem("marro_v8");
-        localStorage.removeItem(SYNC_BASE_KEY);
-        localStorage.removeItem("marro_uid");
-        setData(null); setProfile(null); setReady(false); setSyncStatus(null);
-      }
-    });
-    return ()=>subscription.unsubscribe();
+    if(!needsEagerSupabase()){ setSession(null); return; }
+    let unsub;
+    (async()=>{
+      const sb = await getSupabase();
+      sb.auth.getSession().then(({data})=>setSession(data.session ?? null));
+      const {data:{subscription}} = sb.auth.onAuthStateChange((evt, s)=>{
+        setSession(s ?? null);
+        if(evt==="SIGNED_OUT"){
+          localStorage.removeItem("marro_v8");
+          localStorage.removeItem(SYNC_BASE_KEY);
+          localStorage.removeItem("marro_uid");
+          setData(null); setProfile(null); setReady(false); setSyncStatus(null);
+        }
+      });
+      unsub = () => subscription.unsubscribe();
+    })();
+    return ()=>unsub && unsub();
   },[]);
 
   // Load — gated on auth. Runs once a session is known; bails while restoring or
@@ -214,6 +228,7 @@ export function App() {
         // Profile (school). No row → {school:null} triggers the one-time ProfileModal.
         // On error (e.g. offline) leave profile null so we don't block — re-check next boot.
         try{
+          const sb = await getSupabase();
           const {data:prof, error} = await sb.from("profiles").select("school").maybeSingle();
           if(!error) setProfile(prof || {school:null});
         }catch{}
@@ -979,7 +994,7 @@ export function App() {
                       <span style={{fontSize:10.5,color:C.border,padding:"0 5px"}}>·</span>
                       <a href="/privacy.html" target="_blank" rel="noopener" style={{fontSize:10.5,color:C.gray,textDecoration:"none",borderBottom:`1px solid ${C.border}`}}>Privacy</a>
                     </div>
-                    <button className="menu-row" onClick={()=>{setSettingsOpen(false);sb.auth.signOut();}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:600,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
+                    <button className="menu-row" onClick={async()=>{setSettingsOpen(false);const sb=await getSupabase();sb.auth.signOut();}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:600,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
                       <Icon name="live" size={14}/>
                       Sign out
                     </button>
