@@ -64,6 +64,41 @@ function computeLandingReady(){
   return null;
 }
 
+function getMarkTime(name){
+  try {
+    const marks = performance.getEntriesByName(name, 'mark');
+    if (marks && marks.length) return marks[0].startTime;
+  } catch { /* no-op */ }
+  return null;
+}
+
+// Boot-phase marks set once (first boot only) in main.jsx / App.jsx. Each is
+// an absolute timestamp (ms from navigation start, same clock as performance.now()).
+function computeBootPhases(){
+  try {
+    const renderCall = getMarkTime('boot:render-call');
+    const appFirstRender = getMarkTime('boot:app-first-render');
+    const sessionDecided = getMarkTime('boot:session-decided');
+    const landingImportStart = getMarkTime('boot:landing-import-start');
+    const landingImportDone = getMarkTime('boot:landing-import-done');
+    const landingReady = computeLandingReady();
+    const delta = (a, b) => (a != null && b != null) ? (b - a) : null;
+    return {
+      toRenderCall: renderCall,
+      renderToAppRender: delta(renderCall, appFirstRender),
+      appRenderToSessionDecided: delta(appFirstRender, sessionDecided),
+      sessionToLandingImportStart: delta(sessionDecided, landingImportStart),
+      landingImportDuration: delta(landingImportStart, landingImportDone),
+      importDoneToLandingReady: delta(landingImportDone, landingReady),
+    };
+  } catch {
+    return {
+      toRenderCall: null, renderToAppRender: null, appRenderToSessionDecided: null,
+      sessionToLandingImportStart: null, landingImportDuration: null, importDoneToLandingReady: null,
+    };
+  }
+}
+
 function computeJsAndTransfer(){
   try {
     const resources = performance.getEntriesByType('resource') || [];
@@ -93,6 +128,7 @@ export default function PerfOverlay(){
   const [nav, setNav] = useState(() => computeNavMetrics());
   const [paint, setPaint] = useState(() => computePaintMetrics());
   const [landingReady, setLandingReady] = useState(() => computeLandingReady());
+  const [bootPhases, setBootPhases] = useState(() => computeBootPhases());
   const [lcp, setLcp] = useState(null);
   const [longTask, setLongTask] = useState(null);
   const [longTaskSupported, setLongTaskSupported] = useState(true);
@@ -110,6 +146,7 @@ export default function PerfOverlay(){
       setPaint(prev => (prev && prev.fp != null && prev.fcp != null) ? prev : computePaintMetrics());
       setLandingReady(prev => prev != null ? prev : computeLandingReady());
       setResources(computeJsAndTransfer());
+      setBootPhases(computeBootPhases());
     }, 500);
     // Stop polling after 15s — this is a diagnostic snapshot, not a live monitor.
     const stop = setTimeout(() => clearInterval(id), 15000);
@@ -186,6 +223,15 @@ export default function PerfOverlay(){
       <div style={row}><span style={label}>First Contentful Paint</span><span style={value}>{fmt(paint?.fcp)}</span></div>
       <div style={row}><span style={label}>LCP</span><span style={value}>{fmt(lcp)}</span></div>
       <div style={row}><span style={label}>App interactive (landing ready)</span><span style={value}>{fmt(landingReady)}</span></div>
+
+      <div style={{ marginTop: 10, marginBottom: 2, fontSize: 13, fontWeight: 800, color: '#ffd479', textTransform: 'uppercase', letterSpacing: 0.4 }}>Boot phases (ms)</div>
+      <div style={row}><span style={label}>→ render() call</span><span style={value}>{fmt(bootPhases.toRenderCall)}</span></div>
+      <div style={row}><span style={label}>render → App render</span><span style={value}>{fmt(bootPhases.renderToAppRender)}</span></div>
+      <div style={row}><span style={label}>App render → session decided</span><span style={value}>{fmt(bootPhases.appRenderToSessionDecided)}</span></div>
+      <div style={row}><span style={label}>session → landing import start</span><span style={value}>{fmt(bootPhases.sessionToLandingImportStart)}</span></div>
+      <div style={row}><span style={label}>landing import (fetch+parse)</span><span style={value}>{fmt(bootPhases.landingImportDuration)}</span></div>
+      <div style={row}><span style={label}>import done → landing ready</span><span style={value}>{fmt(bootPhases.importDoneToLandingReady)}</span></div>
+
       <div style={row}><span style={label}>Longest task</span><span style={value}>{longTaskSupported ? fmt(longTask) : 'n/a (unsupported)'}</span></div>
       <div style={{ ...row, background: 'rgba(255,212,121,0.12)', borderRadius: 8, padding: '8px 6px' }}>
         <span style={{ ...label, color: '#ffd479' }}>JS cache/network</span>

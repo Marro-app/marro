@@ -13,7 +13,19 @@ import { XBtn, Card, SectionTitle, ChoiceGroup, Stepper, TabBtn, YrBtn, Banner, 
 import { DateField } from './components/pickers.jsx';
 import { AvatarArt, Avatar, AvatarPicker } from './components/avatars.jsx';
 import { LoginScreen } from './components/LoginScreen.jsx'; // kept, no longer rendered — see LandingPage
-const LandingPage = React.lazy(() => import('./landing/LandingPage.jsx'));
+// Boot-phase instrumentation (debug-only; guarded so it never throws and only
+// marks once, on the first boot). See PerfOverlay.jsx for how these are read.
+let markedLandingImportStart = false;
+const LandingPage = React.lazy(() => {
+  if (!markedLandingImportStart) {
+    markedLandingImportStart = true;
+    try { performance.mark('boot:landing-import-start'); } catch { /* diagnostic only */ }
+  }
+  return import('./landing/LandingPage.jsx').then(m => {
+    try { performance.mark('boot:landing-import-done'); } catch { /* diagnostic only */ }
+    return m;
+  });
+});
 import { ProgramModal, ProfileModal, AvatarModal, MarroIntro, OnboardingFlow, ProgressiveSetup } from './components/onboarding.jsx';
 import { RenewalDialog, ConflictModal, QuickAddModal } from './components/modals.jsx';
 import { HIDDEN_TABS } from './lib/featureFlags.js';
@@ -32,7 +44,14 @@ const WeeklyTab = React.lazy(() => import('./tabs/WeeklyTab.jsx').then(m => ({ d
 const BudgetTab = React.lazy(() => import('./tabs/BudgetTab.jsx').then(m => ({ default: m.BudgetTab })));
 const CustomizeTab = React.lazy(() => import('./tabs/CustomizeTab.jsx').then(m => ({ default: m.CustomizeTab })));
 
+let markedFirstRender = false;
+let markedSessionDecided = false;
+
 export function App() {
+  if (!markedFirstRender) {
+    markedFirstRender = true;
+    try { performance.mark('boot:app-first-render'); } catch { /* diagnostic only */ }
+  }
   const [tab, setTab]           = useState("budget");
   const [ay,  setAy]            = useState(0);
   const [data, setData]         = useState(null);
@@ -107,11 +126,17 @@ export function App() {
   // away and the landing renders with zero supabase-js bytes fetched; the
   // client only loads later, on demand, when SignInButton is clicked.
   useEffect(()=>{
-    if(!needsEagerSupabase()){ setSession(null); return; }
+    if(!needsEagerSupabase()){
+      if(!markedSessionDecided){ markedSessionDecided = true; try { performance.mark('boot:session-decided'); } catch { /* diagnostic only */ } }
+      setSession(null); return;
+    }
     let unsub;
     (async()=>{
       const sb = await getSupabase();
-      sb.auth.getSession().then(({data})=>setSession(data.session ?? null));
+      sb.auth.getSession().then(({data})=>{
+        if(!markedSessionDecided){ markedSessionDecided = true; try { performance.mark('boot:session-decided'); } catch { /* diagnostic only */ } }
+        setSession(data.session ?? null);
+      });
       const {data:{subscription}} = sb.auth.onAuthStateChange((evt, s)=>{
         setSession(s ?? null);
         if(evt==="SIGNED_OUT"){

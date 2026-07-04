@@ -87,6 +87,8 @@ if (import.meta.env.PROD && import.meta.env.VITE_SENTRY_DSN) {
   }
 }
 
+try { performance.mark('boot:render-call'); } catch { /* diagnostic only */ }
+
 const root=createRoot(document.getElementById('root'));
 root.render(
   <React.Fragment>
