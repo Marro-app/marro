@@ -340,10 +340,22 @@
    behind its text so the ring stage above stays visible and readable text
    sits over the darkest part of the gradient. */
 @media (max-width:900px){
-  .lp{ --lp-stage-size:min(58vw,300px); }
-  .lp-stagewrap{margin-left:0;margin-top:-28vh;width:var(--lp-stage-size);height:var(--lp-stage-size)}
-  .lp-panel{align-items:flex-end;padding:0 24px 12vh;text-align:left;background:linear-gradient(180deg,transparent 32%,rgba(8,10,8,.74) 60%,rgba(8,10,8,.92) 100%)}
-  .lp-pt{max-width:100%}
+  .lp{ --lp-stage-size:min(58vw,280px); }
+  /* Pin the fixed ring canvas to the TOP zone of the viewport (below the nav)
+     instead of the vertical center. Previously margin-top:-28vh only nudged the
+     centered canvas up, leaving it in the mid-viewport band where the
+     bottom-aligned panel text overlapped it (rings + the "$107" stage figure
+     collided with the headline/body). Anchoring the canvas to the top ~44% and
+     reserving the bottom ~56% for text gives the two non-overlapping vertical
+     zones, so nothing stacks regardless of scroll position. */
+  .lp-canvas{align-items:flex-start}
+  .lp-stagewrap{margin-left:0;margin-top:calc(64px + 4vh)}
+  /* Panel text lives in the bottom band. min-height uses the small-viewport
+     unit (svh) so mobile URL-bar show/hide doesn't reflow the layout, and the
+     scrim now fully covers the text zone (opaque from 46% down) so text is
+     always legible and never floats over the rings. */
+  .lp-panel{min-height:100svh;align-items:flex-end;padding:0 24px 14vh;text-align:left;background:linear-gradient(180deg,transparent 40%,rgba(8,10,8,.82) 56%,rgba(8,10,8,.96) 100%)}
+  .lp-pt{max-width:100%;width:100%}
   .lp-ticks{right:8px;gap:14px}
   .lp-loglist{text-align:left}
   .lp-static-main{padding:88px 20px 40px}

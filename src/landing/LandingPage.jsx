@@ -93,11 +93,18 @@ function StagedLanding({ offline }){
   useEffect(() => {
     const panels = panelRefs.current.filter(Boolean);
     if(!panels.length) return;
+    // Detect whichever panel crosses the viewport's vertical MIDLINE. A plain
+    // threshold:0.55 can never be reached by a panel that is exactly 100vh tall
+    // (it tops out at ~0.5 visible), so scene changes used to stick/lag —
+    // especially on mobile, where that lag left a panel's text overlapping the
+    // wrong scene's ring pose. A symmetric -50%/-50% rootMargin collapses the
+    // root to a 1px band at the screen's middle, so exactly one panel is
+    // "intersecting" at any scroll offset and the active scene tracks cleanly.
     const io = new IntersectionObserver((entries) => {
       entries.forEach((e) => {
         if(e.isIntersecting) setScene(e.target.dataset.scene);
       });
-    }, { root: null, threshold: 0.55 });
+    }, { root: null, rootMargin: '-45% 0px -45% 0px', threshold: 0 });
     panels.forEach((p) => io.observe(p));
     return () => io.disconnect();
   }, []);

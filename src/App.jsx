@@ -18,13 +18,19 @@ import { ProgramModal, ProfileModal, AvatarModal, MarroIntro, OnboardingFlow, Pr
 import { RenewalDialog, ConflictModal, QuickAddModal } from './components/modals.jsx';
 import { HIDDEN_TABS } from './lib/featureFlags.js';
 import { AppContext } from './context/AppContext.js';
-import { AidTab } from './tabs/AidTab.jsx';
-import { SubscriptionsTab } from './tabs/SubscriptionsTab.jsx';
-import { SavingsTab } from './tabs/SavingsTab.jsx';
-import { ChartsTab } from './tabs/ChartsTab.jsx';
-import { WeeklyTab } from './tabs/WeeklyTab.jsx';
-import { BudgetTab } from './tabs/BudgetTab.jsx';
-import { CustomizeTab } from './tabs/CustomizeTab.jsx';
+// Tabs are lazy-loaded so the heavy Recharts dependency (only used by Budget/
+// Charts/Savings) and the other tab code stay OUT of the initial bundle. A
+// logged-out visitor landing on the marketing page no longer downloads/parses
+// the entire signed-in app + charting library just to see the landing page —
+// that was the main mobile cold-load cost. Each tab is only ever mounted one at
+// a time (mutually-exclusive `tab===...` guards), so code-splitting them is safe.
+const AidTab = React.lazy(() => import('./tabs/AidTab.jsx').then(m => ({ default: m.AidTab })));
+const SubscriptionsTab = React.lazy(() => import('./tabs/SubscriptionsTab.jsx').then(m => ({ default: m.SubscriptionsTab })));
+const SavingsTab = React.lazy(() => import('./tabs/SavingsTab.jsx').then(m => ({ default: m.SavingsTab })));
+const ChartsTab = React.lazy(() => import('./tabs/ChartsTab.jsx').then(m => ({ default: m.ChartsTab })));
+const WeeklyTab = React.lazy(() => import('./tabs/WeeklyTab.jsx').then(m => ({ default: m.WeeklyTab })));
+const BudgetTab = React.lazy(() => import('./tabs/BudgetTab.jsx').then(m => ({ default: m.BudgetTab })));
+const CustomizeTab = React.lazy(() => import('./tabs/CustomizeTab.jsx').then(m => ({ default: m.CustomizeTab })));
 
 export function App() {
   const [tab, setTab]           = useState("budget");
@@ -815,7 +821,7 @@ export function App() {
       `}</style>
       {/* Modals */}
       {showQuickAdd && <QuickAddModal onClose={()=>setShowQuickAdd(false)}/>}
-      {showCategories && <Modal title="Categories" onClose={()=>setShowCategories(false)} width={480}><CustomizeTab/></Modal>}
+      {showCategories && <Modal title="Categories" onClose={()=>setShowCategories(false)} width={480}><React.Suspense fallback={<div role="status" aria-live="polite" style={{padding:24,textAlign:"center",color:"var(--text-dim)",fontSize:14}}>Loading…</div>}><CustomizeTab/></React.Suspense></Modal>}
       {renewDlg && <RenewalDialog sub={renewDlg} onClose={()=>setRenewDlg(null)} onConfirm={handleRenewal}/>}
       {confirmReset && <Modal title="Reset everything?" onClose={()=>setConfirmReset(false)} width={350}>
         <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>This replaces <strong>all</strong> of your budget, weekly entries, savings, and subscriptions with the starting defaults. This cannot be undone.</div>
@@ -1063,26 +1069,31 @@ export function App() {
         ].filter(([id])=>!HIDDEN_TABS[id]).map(([id,lbl,badge])=><TabBtn key={id} id={id} label={lbl} active={tab===id} onClick={()=>setTab(id)} badge={badge||0}/>)}
       </ChoiceGroup>
 
-      {/* ══════════════ BUDGET ══════════════ */}
-      {tab==="budget" && <BudgetTab/>}
+      {/* Lazy tab chunks resolve near-instantly after first load (small, cached);
+          a minimal inline fallback avoids a full-screen flash on tab switch and
+          keeps layout stable. role=status announces the brief load to AT. */}
+      <React.Suspense fallback={<div role="status" aria-live="polite" style={{minHeight:200,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-dim)",fontSize:14}}>Loading…</div>}>
+        {/* ══════════════ BUDGET ══════════════ */}
+        {tab==="budget" && <BudgetTab/>}
 
-      {/* ══════════════ WEEKLY ══════════════ */}
-      {tab==="weekly" && <WeeklyTab/>}
+        {/* ══════════════ WEEKLY ══════════════ */}
+        {tab==="weekly" && <WeeklyTab/>}
 
-      {/* ══════════════ CHARTS ══════════════ */}
-      {tab==="charts" && <ChartsTab/>}
+        {/* ══════════════ CHARTS ══════════════ */}
+        {tab==="charts" && <ChartsTab/>}
 
-      {/* ══════════════ SAVINGS ══════════════ */}
-      {tab==="savings" && <SavingsTab/>}
+        {/* ══════════════ SAVINGS ══════════════ */}
+        {tab==="savings" && <SavingsTab/>}
 
-      {/* ══════════════ AID & DETAIL ══════════════ */}
-      {tab==="aid" && <AidTab/>}
+        {/* ══════════════ AID & DETAIL ══════════════ */}
+        {tab==="aid" && <AidTab/>}
 
-      {/* ══════════════ SUBSCRIPTIONS ══════════════ */}
-      {tab==="subscriptions" && <SubscriptionsTab/>}
+        {/* ══════════════ SUBSCRIPTIONS ══════════════ */}
+        {tab==="subscriptions" && <SubscriptionsTab/>}
 
-      {/* ══════════════ CUSTOMIZE ══════════════ */}
-      {tab==="customize" && <CustomizeTab/>}
+        {/* ══════════════ CUSTOMIZE ══════════════ */}
+        {tab==="customize" && <CustomizeTab/>}
+      </React.Suspense>
     </div>
     </AppContext.Provider>
   );
