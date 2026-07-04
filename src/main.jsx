@@ -1,6 +1,31 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
-import { App, SilentUpdater } from './App.jsx';
+import { needsEagerSupabase } from './lib/data.js';
+import { SilentUpdater } from './SilentUpdater.jsx';
+
+// Both the full app and the marketing landing are lazy — a logged-out cold
+// load must download/parse ONLY the landing's own module graph, never
+// App.jsx's (onboarding, modals, schools/brands data, avatars, primitives,
+// pickers, LoginScreen, etc). `needsEagerSupabase()` (lib/data.js — a tiny
+// sync check with no heavy deps at eval time) decides which lazy branch to
+// render below, so App.jsx is only ever imported for a returning signed-in
+// user or an OAuth/PKCE sign-in callback.
+const App = React.lazy(() => import('./App.jsx').then(m => ({ default: m.App })));
+const LandingPage = React.lazy(() => import('./landing/LandingPage.jsx'));
+
+// Minimal, dependency-free fallback — must not import anything heavy (no
+// MarroIntro, no theme helpers). Just enough to avoid a blank screen while
+// the chosen lazy chunk downloads.
+const BootFallback = () => (
+  <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}} aria-hidden="true">
+    <div style={{
+      width:28,height:28,borderRadius:'50%',
+      border:'2px solid rgba(128,128,128,0.25)',borderTopColor:'rgba(128,128,128,0.7)',
+      animation:'marro-boot-spin 0.8s linear infinite',
+    }}/>
+    <style>{'@keyframes marro-boot-spin{to{transform:rotate(360deg)}}'}</style>
+  </div>
+);
 
 // localStorage shim — the app talks to `window.storage` (async KV) for its local
 // cache; back it with localStorage. Set before render so the boot effect sees it.
@@ -89,11 +114,19 @@ if (import.meta.env.PROD && import.meta.env.VITE_SENTRY_DSN) {
 
 try { performance.mark('boot:render-call'); } catch { /* diagnostic only */ }
 
+// Boot gate: decide ONCE, synchronously, before rendering — a returning
+// signed-in user (cached session token) or an in-flight OAuth/PKCE callback
+// takes the App path; everything else (the common cold, logged-out visitor)
+// takes the landing-only path and never imports App.jsx at all.
+const eager = needsEagerSupabase();
+
 const root=createRoot(document.getElementById('root'));
 root.render(
   <React.Fragment>
     <ErrorBoundary fallback={<CrashFallback/>}>
-      <App/>
+      <Suspense fallback={<BootFallback/>}>
+        {eager ? <App/> : <LandingPage offline={!navigator.onLine}/>}
+      </Suspense>
       <SilentUpdater/>
     </ErrorBoundary>
   </React.Fragment>
