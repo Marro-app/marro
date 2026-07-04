@@ -31,12 +31,12 @@ const SEG_VH = 1.7; // scroll segment per section, in viewport heights
 // screen 1, "like the computer version".
 function HeroLogo(){
   return (
-    <svg className="lp-dots-logo" viewBox="0 0 512 512" aria-hidden="true" focusable="false">
+    <svg className="lpd-logo" viewBox="0 0 512 512" aria-hidden="true" focusable="false">
       <g transform="translate(256,256)" fill="none" stroke="#F6EFDD" strokeWidth="14">
         <circle r="216" />
         <circle r="150" />
         <circle r="86" opacity="0.72" />
-        <circle className="lp-dots-core" r="26" fill="#DDA528" stroke="none" />
+        <circle className="lpd-core" r="26" fill="#DDA528" stroke="none" />
       </g>
     </svg>
   );
@@ -64,8 +64,8 @@ function sectionContent(index, offline){
     case 1: return (
       <>
         <h2 data-p>It starts with <em className="lp-acc">one intimidating number.</em></h2>
-        <div className="lp-dots-fig" data-p data-fig>$125,950<span className="lp-unit"> / year</span></div>
-        <p className="lp-dots-figlabel">cost of attendance</p>
+        <div className="lpd-fig" data-p data-fig>$125,950<span className="lp-unit"> / year</span></div>
+        <p className="lpd-figlabel">cost of attendance</p>
         <p className="lp-body">Your aid letter is a wall of figures written for the financial aid office, not for you. Type it into Marro once.</p>
         <p className="lp-mock-note">Example numbers.</p>
       </>
@@ -73,16 +73,16 @@ function sectionContent(index, offline){
     case 2: return (
       <>
         <h2 data-p>Marro hands you back <em className="lp-acc">one that matters.</em></h2>
-        <div className="lp-dots-fig" data-p data-fig style={{ color: 'var(--lp-gold)' }}>$2,150<span className="lp-unit"> / month</span></div>
-        <p className="lp-dots-figlabel">to live on</p>
+        <div className="lpd-fig" data-p data-fig style={{ color: 'var(--lp-gold)' }}>$2,150<span className="lp-unit"> / month</span></div>
+        <p className="lpd-figlabel">to live on</p>
         <p className="lp-body">The math happens once: aid in, school costs out, and what remains becomes your monthly number. No spreadsheet required.</p>
       </>
     );
     case 3: return (
       <>
         <h2 data-p>Always know <em className="lp-acc">where you stand.</em></h2>
-        <div className="lp-dots-fig" data-p data-fig>61<span className="lp-unit">%</span></div>
-        <p className="lp-dots-figlabel">of plan — $1,310 of $2,150 spent so far</p>
+        <div className="lpd-fig" data-p data-fig>61<span className="lp-unit">%</span></div>
+        <p className="lpd-figlabel">of plan — $1,310 of $2,150 spent so far</p>
         <p className="lp-body">One glance: your plan against what you actually spent. Ahead, behind, or right on track.</p>
       </>
     );
@@ -136,7 +136,7 @@ export default function DotsLanding({ offline }){
     if (!canvas || !stage) return;
 
     const getSections = () =>
-      Array.prototype.slice.call(stage.querySelectorAll('.lp-dots-layer'));
+      Array.prototype.slice.call(stage.querySelectorAll('.lpd-layer'));
 
     const engine = createDotsEngine({
       canvas,
@@ -165,26 +165,26 @@ export default function DotsLanding({ offline }){
   const spacerHeight = `calc(${(SECTION_COUNT - 1) * SEG_VH * 100}vh + 100vh)`;
 
   return (
-    <div className="lp lp-dots" id="top" data-scene={`s${active + 1}`}>
+    <div className="lp lpd" id="top" data-scene={`s${active + 1}`}>
       <BlobLayer />
       <Nav offline={offline} />
 
       {/* Decorative particle canvas (screen readers ignore it). */}
-      <canvas ref={canvasRef} className="lp-dots-fx" aria-hidden="true" />
+      <canvas ref={canvasRef} className="lpd-fx" aria-hidden="true" />
 
       {/* Visible, selectable text — the fixed stage of stacked section layers.
           Only the ACTIVE layer is exposed to AT + the tab order; the other five
           (visually hidden but present in the DOM) are `inert`, so there are no
           focus traps on off-screen CTAs and no duplicate reading. The active
           layer keeps its REAL interactive controls (SignInButton, links). */}
-      <div className="lp-dots-stage" ref={stageRef}>
+      <div className="lpd-stage" ref={stageRef}>
         {Array.from({ length: SECTION_COUNT }, (_, i) => (
           <section
             key={i}
-            className={`lp-dots-layer${i === active ? ' lp-dots-on' : ''}`}
+            className={`lpd-layer${i === active ? ' lpd-on' : ''}`}
             {...(i === active ? {} : { inert: '', 'aria-hidden': 'true' })}
           >
-            <div className="lp-dots-inner">{sectionContent(i, offline)}</div>
+            <div className="lpd-inner">{sectionContent(i, offline)}</div>
           </section>
         ))}
       </div>
@@ -194,9 +194,9 @@ export default function DotsLanding({ offline }){
       <SrArticle />
 
       {/* Scroll driver. */}
-      <div className="lp-dots-spacer" style={{ height: spacerHeight }} aria-hidden="true" />
+      <div className="lpd-spacer" style={{ height: spacerHeight }} aria-hidden="true" />
 
-      <p className={`lp-dots-hint${showHint ? ' lp-dots-hint-show' : ''}`} aria-hidden="true">Scroll</p>
+      <p className={`lpd-hint${showHint ? ' lpd-hint-show' : ''}`} aria-hidden="true">Scroll</p>
     </div>
   );
 }

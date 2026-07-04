@@ -182,6 +182,23 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
     ctx.globalAlpha = 1;
   }
 
+  // Drive one section layer's visible opacity/translate DIRECTLY (change-guarded
+  // so we only touch the DOM when a value actually changes — no per-frame
+  // thrash). This is what makes the real DOM text turn INTO the dots: during a
+  // transition the outgoing layer fades out fast (over the first 16% of t) and
+  // the incoming layer fades in only in the last 16%, so mid-flight the ONLY
+  // visible representation of the words is the glyph-sampled particle cloud.
+  // The text stays in the DOM at all times (opacity/visibility only) for
+  // selection + screen readers.
+  function setLayerStyle(L, op, ty){
+    if (L._op === op && L._ty === ty) return;
+    L._op = op; L._ty = ty;
+    L.style.opacity = op;
+    L.style.visibility = op <= 0.001 ? 'hidden' : 'visible';
+    const inner = L.firstElementChild;
+    if (inner) inner.style.transform = ty ? 'translateY(' + ty + 'px)' : '';
+  }
+
   // --- main loop ---
   function frame(now){
     if (destroyed) return;
@@ -199,7 +216,20 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
     let t = f <= HOLD ? 0 : (f - HOLD) / (1 - HOLD);
     if (p >= N - 1){ i = N - 2; t = 1; }
 
-    // report the "readable" section to React so it can toggle DOM visibility
+    // Per-layer visible opacity, INVERSE to particle activity (prototype timing).
+    for (let s = 0; s < N; s++){
+      if (s === i){
+        setLayerStyle(sections[s], 1 - smooth(t / 0.16), 0);
+      } else if (s === i + 1){
+        const inO = smooth((t - 0.84) / 0.16);
+        setLayerStyle(sections[s], inO, (1 - inO) * 10);
+      } else {
+        setLayerStyle(sections[s], 0, 0);
+      }
+    }
+
+    // Report the "readable" section to React for the inert/aria a11y toggle only
+    // (NOT the visual driver — visibility is driven directly above).
     const active = (t < 0.5) ? i : i + 1;
     if (active !== lastActive){ lastActive = active; onActiveSection && onActiveSection(active); }
 
