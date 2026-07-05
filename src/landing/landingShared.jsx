@@ -34,6 +34,7 @@ function useAuthModal(offline){
 
   const modal = (
     <AuthModal
+      key={state.mode}
       open={state.open}
       initialMode={state.mode}
       offline={offline}

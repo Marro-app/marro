@@ -29,7 +29,7 @@ const STEP_COARSE = 5;    // grid for body / small labels / log rows (fine dust)
 const BIG_FONT = 34;      // px: font-size at/above which text samples fine
 const MID_FONT = 20;      // px: font-size at/above which text samples mid
 const STAGGER = 0.30;     // per-particle start-time spread
-const HOLD = 0.35;        // fraction of a scroll segment the section stays still
+const HOLD = 0.20;        // fraction of a scroll segment the section stays still
 const COLORS = ['#DDA528', '#FBF6E8', '#82AEDB', '#E08A6B']; // gold cream blue clay
 const SPR = 12;           // dot sprite radius, px
 

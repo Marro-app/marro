@@ -45,6 +45,31 @@ export function needsEagerSupabase(){
   return false;
 }
 
+// Password-reset redirect marker — appended by `resetPasswordForEmail`'s
+// `redirectTo` (see EmailPasswordForm.jsx) as `?reset=1`, alongside whatever
+// PKCE `?code=...`/hash params Supabase itself adds on top. Checked
+// synchronously at boot, BEFORE needsEagerSupabase()'s App-vs-landing
+// decision, so a recovery link can never be mistaken for a normal signed-in
+// return visit or OAuth callback and silently complete into the full App.
+export function isRecoveryRedirect(){
+  const search = window.location.search || "";
+  const hash = window.location.hash || "";
+  return /[?&]reset=1\b/.test(search) || /[?&]reset=1\b/.test(hash);
+}
+
+// Strips the recovery marker (and any Supabase code/hash params riding along
+// with it) from the visible URL once the reset flow has been handled —
+// otherwise a refresh or bookmark would re-trigger ResetPasswordGate forever,
+// and/or resubmit a now-consumed PKCE code.
+export function clearRecoveryUrlParams(){
+  try{
+    const url = new URL(window.location.href);
+    url.search = "";
+    url.hash = "";
+    window.history.replaceState({}, "", url.pathname);
+  }catch{ /* best-effort cleanup only */ }
+}
+
 // ── Supabase sync (per-user row in app_state, RLS-gated) ─────────────────────────
 // Transport-only replacement for the old Gist proxy: same string-in / string-out,
 // null-on-failure contract, so the 3-way merge engine below is untouched.

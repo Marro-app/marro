@@ -386,6 +386,10 @@
   --lp-cream40:rgba(248,242,226,.58); --lp-gold:#DDA528; --lp-blue:#82AEDB; --lp-clay:#E08A6B;
   --lp-border:rgba(246,239,221,.12); --lp-glass:rgba(246,239,221,.045);
   --lp-ease:cubic-bezier(.22,1,.36,1);
+  /* Tell the browser this subtree is dark so native form-control chrome
+     (autofill suggestion dropdowns, etc.) doesn't render with light-mode
+     assumptions that clash with our custom dark inputs below. */
+  color-scheme:dark;
 }
 
 /* Shared dialog opened by the Nav's Log in/Sign up buttons and the hero's
@@ -417,6 +421,22 @@
 .lp-input:focus-visible{outline:2px solid var(--lp-cream);outline-offset:2px}
 .lp-input[aria-invalid="true"]{border-color:var(--lp-clay)}
 .lp-input:disabled{opacity:.5;cursor:not-allowed}
+/* Chrome/Safari paint autofilled inputs with their own light background +
+   dark text, overriding the dark theme above the moment the browser
+   recognizes a field as fillable (inconsistent/"sometimes" by design — it
+   only kicks in once the browser has seen the field or has a saved
+   credential). background-color can't override this directly; the standard
+   workaround is a huge inset box-shadow in our dark bg color, paired with
+   -webkit-text-fill-color to force the cream text color back. */
+.lp-input:-webkit-autofill,
+.lp-input:-webkit-autofill:hover,
+.lp-input:-webkit-autofill:focus{
+  -webkit-box-shadow:0 0 0 1000px #14150F inset;
+  box-shadow:0 0 0 1000px #14150F inset;
+  -webkit-text-fill-color:var(--lp-cream);
+  caret-color:var(--lp-cream);
+  transition:background-color 9999s ease-in-out 0s;
+}
 
 .lp-pwdwrap{position:relative;display:flex;align-items:stretch}
 .lp-pwdwrap .lp-input{flex:1;padding-right:64px}
@@ -430,6 +450,27 @@
 .lp-epnotice{margin:4px 0 12px;padding:10px 12px;border-radius:10px;background:rgba(130,174,219,.12);border:1px solid rgba(130,174,219,.4);color:var(--lp-blue);font-size:13px;line-height:1.4}
 
 .lp-epsubmit{width:100%;margin-top:4px}
+
+/* ===== FORGOT PASSWORD / RESET FLOW ===== */
+/* "Forgot password?" — low-emphasis text link, same convention as the
+   existing .lp-cta-signin link (hero's "Already have an account? Log in").
+   Sits right under the password field, left-aligned, no button chrome. */
+.lp-forgotpwd{background:none;border:none;font:inherit;font-size:13px;color:var(--lp-cream63);padding:4px 0 12px;min-height:44px;display:inline-flex;align-items:center;cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--lp-border);align-self:flex-start}
+.lp-forgotpwd:hover{color:var(--lp-cream)}
+.lp-forgotpwd:focus-visible{outline:2px solid var(--lp-cream);outline-offset:3px;border-radius:4px}
+
+.lp-authback{background:none;border:none;font:inherit;font-size:13px;color:var(--lp-cream63);padding:0 0 16px;min-height:44px;display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.lp-authback:hover{color:var(--lp-cream)}
+.lp-authback:focus-visible{outline:2px solid var(--lp-cream);outline-offset:3px;border-radius:4px}
+
+/* ResetPasswordGate.jsx: a full standalone page (not opened from a trigger
+   button, no backdrop-dismiss/close affordance needed) reusing the same
+   glass-card modal surface. .lp-authbackdrop there is rendered inline
+   (position:fixed via inline style) rather than as the usual click-to-close
+   overlay, so this variant drops the backdrop's dismiss cursor semantics —
+   purely a full-bleed centered container. */
+.lp-resetgate{min-height:100dvh}
+.lp-authstandalone{margin:0 auto}
 
 /* ===== REDUCED MOTION ===== */
 /* Under prefers-reduced-motion the THEATER NEVER RENDERS — LandingPage.jsx

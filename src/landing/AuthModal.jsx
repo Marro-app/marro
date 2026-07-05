@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { getSupabase } from '../lib/data.js';
 import { GoogleGlyph } from '../components/icons.jsx';
 import { EmailPasswordFields } from './EmailPasswordForm.jsx';
+import { RequestResetForm } from './RequestResetForm.jsx';
 
 // Shared auth dialog — replaces the old "Continue with Google (primary) +
 // hidden 'or use email instead' toggle" pattern with two entry-point buttons
@@ -15,8 +16,15 @@ import { EmailPasswordFields } from './EmailPasswordForm.jsx';
 // returns to the trigger on close, and the page behind is scroll-locked.
 //
 // Apple sign-in is out of scope (see docs/FUTURE_WORK.md) — not rendered
-// here, not even disabled. "Forgot password?" is also omitted this pass
-// (Phase B, not built yet) to avoid a dead link.
+// here, not even disabled.
+//
+// `mode` also accepts 'reset-request' (clicking "Forgot password?" inside the
+// Log in tab switches into it — see EmailPasswordForm.jsx). That mode swaps
+// the tabs/Google button out for RequestResetForm's own email-only view; the
+// actual "set a new password" screen is a SEPARATE standalone page
+// (ResetPasswordScreen.jsx via ResetPasswordGate.jsx), rendered outside this
+// modal entirely, since the user arrives there fresh from an email link with
+// no modal trigger/context to reopen into.
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -28,10 +36,10 @@ export function AuthModal({ open, initialMode = 'signin', offline, onClose, trig
   const firstFieldRef = useRef(null);
   const headingId = useId();
 
-  // Reset to whichever tab the trigger asked for each time the modal opens.
-  useEffect(() => {
-    if (open) setMode(initialMode);
-  }, [open, initialMode]);
+  // No effect needed to sync `mode` with `initialMode`: the caller
+  // (landingShared.jsx's useAuthModal) keys this component by mode, so a new
+  // initialMode forces a fresh mount with the correct `useState(initialMode)`
+  // value already active on the very first render — no post-paint tab flash.
 
   // Focus the first field on open; return focus to the trigger on close.
   useEffect(() => {
@@ -88,7 +96,7 @@ export function AuthModal({ open, initialMode = 'signin', offline, onClose, trig
     // navigate away for the OAuth redirect, so there's no "done" state.
   };
 
-  const heading = mode === 'signin' ? 'Log in to Marro' : 'Create your account';
+  const heading = mode === 'signin' ? 'Log in to Marro' : mode === 'reset-request' ? 'Reset your password' : 'Create your account';
 
   // Portaled to document.body: .lp-nav (a common trigger ancestor) has its
   // own backdrop-filter, which creates a containing block for descendant
@@ -113,41 +121,57 @@ export function AuthModal({ open, initialMode = 'signin', offline, onClose, trig
 
           <h2 id={headingId} className="lp-authheading">{heading}</h2>
 
-          <div className="lp-eptabs" role="tablist" aria-label="Log in or create an account">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'signin'}
-              className={`lp-eptab${mode === 'signin' ? ' lp-eptab-on' : ''}`}
-              onClick={() => setMode('signin')}
-            >
-              Log in
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === 'signup'}
-              className={`lp-eptab${mode === 'signup' ? ' lp-eptab-on' : ''}`}
-              onClick={() => setMode('signup')}
-            >
-              Sign up
-            </button>
-          </div>
+          {mode === 'reset-request' ? (
+            <RequestResetForm
+              offline={offline}
+              autoFocusRef={firstFieldRef}
+              onBack={() => setMode('signin')}
+            />
+          ) : (
+            <>
+              <div className="lp-eptabs" role="tablist" aria-label="Log in or create an account">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === 'signin'}
+                  className={`lp-eptab${mode === 'signin' ? ' lp-eptab-on' : ''}`}
+                  onClick={() => setMode('signin')}
+                >
+                  Log in
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={mode === 'signup'}
+                  className={`lp-eptab${mode === 'signup' ? ' lp-eptab-on' : ''}`}
+                  onClick={() => setMode('signup')}
+                >
+                  Sign up
+                </button>
+              </div>
 
-          <EmailPasswordFields mode={mode} offline={offline} autoFocusRef={firstFieldRef} key={mode} />
+              <EmailPasswordFields
+                mode={mode}
+                offline={offline}
+                autoFocusRef={firstFieldRef}
+                onForgotPassword={() => setMode('reset-request')}
+                key={mode}
+              />
 
-          <div className="lp-authdivider" role="separator"><span>or</span></div>
+              <div className="lp-authdivider" role="separator"><span>or</span></div>
 
-          <button
-            type="button"
-            className="lp-btn lp-btn-ghost lp-authgoogle"
-            disabled={offline || googlePending}
-            aria-busy={googlePending}
-            onClick={signInGoogle}
-          >
-            <GoogleGlyph size={17} />
-            {googlePending ? 'Connecting…' : 'Continue with Google'}
-          </button>
+              <button
+                type="button"
+                className="lp-btn lp-btn-ghost lp-authgoogle"
+                disabled={offline || googlePending}
+                aria-busy={googlePending}
+                onClick={signInGoogle}
+              >
+                <GoogleGlyph size={17} />
+                {googlePending ? 'Connecting…' : 'Continue with Google'}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>,

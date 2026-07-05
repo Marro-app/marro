@@ -5,8 +5,10 @@ import { getSupabase } from '../lib/data.js';
 // (see that file for the modal shell: tabs live one level up there so the
 // modal heading can react to the active tab). No allowlist gating here,
 // matching the app's current open-signup posture (Google has none either).
-// Forgot-password / reset flow is a separate later phase — intentionally not
-// built here (omitted entirely to avoid a dead link).
+// "Forgot password?" (signin tab only) hands off to AuthModal's
+// 'reset-request' mode via the `onForgotPassword` callback — see
+// RequestResetForm.jsx for that screen and ResetPasswordScreen.jsx/
+// ResetPasswordGate.jsx for the standalone page the emailed link lands on.
 //
 // Same lazy-import discipline as SignInButton.jsx: supabase-js is only
 // pulled in on submit, never at module scope, so a cold logged-out visit
@@ -50,7 +52,7 @@ function PasswordField({ id, label, value, onChange, autoComplete, error, disabl
 // it can also drive the modal's heading text) — this component only renders
 // the fields, validation, and submit/resend logic for whichever mode is
 // active.
-export function EmailPasswordFields({ mode, offline, autoFocusRef }){
+export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassword }){
   const uid = useId();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -110,9 +112,22 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef }){
           const f = friendlyError(signInErr);
           if (f.kind === 'unconfirmed') setNeedsConfirm(true);
           setError(f.text);
+          setPending(false);
+          return;
         }
-        // On success, Supabase's auth listener elsewhere in the app picks up
-        // the session — nothing else to do here.
+        // On success: unlike Google OAuth (a full-page redirect that re-runs
+        // main.jsx's boot decision fresh and picks up the new session),
+        // signInWithPassword creates a session in place with no navigation —
+        // the user is still sitting on the already-rendered LandingPage/
+        // AuthModal, which has no listener to promote the view to the signed-
+        // in App (App.jsx's own onAuthStateChange listener only exists once
+        // App has mounted, which is exactly the problem). A hard reload
+        // mirrors what OAuth already does naturally: main.jsx re-runs
+        // needsEagerSupabase(), now sees the freshly-written session token in
+        // localStorage, and renders <App/>. Also drops the URL back to a bare
+        // path so no stray query params linger.
+        window.location.href = window.location.pathname;
+        return; // page is navigating away — leave `pending` true, no further UI updates needed
       } else {
         const { error: signUpErr } = await sb.auth.signUp({
           email,
@@ -184,6 +199,12 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef }){
         disabled={disabled}
         error={validationError}
       />
+
+      {mode === 'signin' && (
+        <button type="button" className="txt-act lp-forgotpwd" onClick={onForgotPassword}>
+          Forgot password?
+        </button>
+      )}
 
       {mode === 'signup' && (
         <PasswordField

@@ -1,6 +1,6 @@
 import React, { Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
-import { needsEagerSupabase } from './lib/data.js';
+import { needsEagerSupabase, isRecoveryRedirect } from './lib/data.js';
 
 // Both the full app and the marketing landing are lazy — a logged-out cold
 // load must download/parse ONLY the landing's own module graph, never
@@ -11,6 +11,21 @@ import { needsEagerSupabase } from './lib/data.js';
 // user or an OAuth/PKCE sign-in callback.
 const App = React.lazy(() => import('./App.jsx').then(m => ({ default: m.App })));
 const LandingPage = React.lazy(() => import('./landing/LandingPage.jsx'));
+
+// Password-recovery emails redirect back here with a `?reset=1` marker (see
+// `resetPasswordForEmail`'s redirectTo in EmailPasswordForm.jsx) ALONGSIDE the
+// normal PKCE `?code=...` param Supabase also appends. Without this check,
+// `needsEagerSupabase()` would see that `code` param, decide "OAuth/sign-in
+// callback", and eagerly render the full signed-in App — silently completing
+// the recovery sign-in and dropping the user straight into their real data
+// instead of a "set a new password" screen. This check runs synchronously,
+// BEFORE `needsEagerSupabase()` / the App-vs-Landing decision, and short-
+// circuits straight to a dedicated ResetPasswordGate — so there is no frame
+// where the real App can flash on screen. Checked here (not deferred to a
+// PASSWORD_RECOVERY auth-event listener) precisely because that event only
+// fires AFTER supabase-js exchanges the code client-side, which is already
+// too late to prevent App.jsx from having been chosen as the render target.
+const ResetPasswordGate = React.lazy(() => import('./landing/ResetPasswordGate.jsx'));
 
 // Minimal, dependency-free fallback — must not import anything heavy (no
 // MarroIntro, no theme helpers). Just enough to avoid a blank screen while
@@ -113,18 +128,23 @@ if (import.meta.env.PROD && import.meta.env.VITE_SENTRY_DSN) {
 
 try { performance.mark('boot:render-call'); } catch { /* diagnostic only */ }
 
-// Boot gate: decide ONCE, synchronously, before rendering — a returning
-// signed-in user (cached session token) or an in-flight OAuth/PKCE callback
-// takes the App path; everything else (the common cold, logged-out visitor)
-// takes the landing-only path and never imports App.jsx at all.
-const eager = needsEagerSupabase();
+// Boot gate: decide ONCE, synchronously, before rendering. Recovery-redirect
+// links are checked FIRST (see comment above) so they can never fall through
+// to the App path. Otherwise: a returning signed-in user (cached session
+// token) or an in-flight OAuth/PKCE callback takes the App path; everything
+// else (the common cold, logged-out visitor) takes the landing-only path and
+// never imports App.jsx at all.
+const recovery = isRecoveryRedirect();
+const eager = !recovery && needsEagerSupabase();
 
 const root=createRoot(document.getElementById('root'));
 root.render(
   <React.Fragment>
     <ErrorBoundary fallback={<CrashFallback/>}>
       <Suspense fallback={<BootFallback/>}>
-        {eager ? <App/> : <LandingPage offline={!navigator.onLine}/>}
+        {recovery
+          ? <ResetPasswordGate/>
+          : (eager ? <App/> : <LandingPage offline={!navigator.onLine}/>)}
       </Suspense>
     </ErrorBoundary>
   </React.Fragment>
