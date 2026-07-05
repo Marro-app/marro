@@ -24,7 +24,7 @@ import { createDotsEngine } from './dotsEngine.js';
 // StaticLanding), but we guard anyway and render a plain readable stack.
 // ============================================================================
 
-const SEG_VH = 1.7; // scroll segment per section, in viewport heights
+const SEG_VH = 1.1; // scroll segment per section, in viewport heights
 
 // The Marro ring mark — same rings as the desktop hero / static-doc figure
 // (r 216/150/86 cream stroke + r26 gold core). Requested by the founder for
