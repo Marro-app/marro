@@ -123,6 +123,35 @@ function computeJsAndTransfer(){
   }
 }
 
+// The KEY bisection: is the pre-render time spent DOWNLOADING the JS or
+// PARSING/EXECUTING it? `entryFinishedAt` = when the first-loaded script
+// finished downloading (ms from nav start). Compare it to boot:render-call:
+// if entryFinishedAt ≈ render-call, the time was network (download/CDN); if
+// entryFinishedAt is small but render-call is large, the time was CPU (parse/exec).
+function computeScriptTiming(){
+  try {
+    const resources = performance.getEntriesByType('resource') || [];
+    const scripts = resources.filter(r => r.initiatorType === 'script' || /\.js(\?|$)/.test(r.name));
+    if (!scripts.length) return { entryName: null, entryFinishedAt: null, entryFetchDur: null, slowestName: null, slowestDur: null };
+    const nameOf = r => { try { return r.name.split('/').pop().split('?')[0]; } catch { return r.name; } };
+    const entry = scripts.reduce((a, b) => (b.startTime < a.startTime ? b : a));
+    let slowest = null;
+    for (const r of scripts) {
+      const dur = r.responseEnd - r.startTime;
+      if ((r.transferSize > 0 || dur > 0) && (!slowest || dur > (slowest.responseEnd - slowest.startTime))) slowest = r;
+    }
+    return {
+      entryName: nameOf(entry),
+      entryFinishedAt: entry.responseEnd,
+      entryFetchDur: entry.responseEnd - entry.startTime,
+      slowestName: slowest ? nameOf(slowest) : null,
+      slowestDur: slowest ? (slowest.responseEnd - slowest.startTime) : null,
+    };
+  } catch {
+    return { entryName: null, entryFinishedAt: null, entryFetchDur: null, slowestName: null, slowestDur: null };
+  }
+}
+
 export default function PerfOverlay(){
   const [visible, setVisible] = useState(true);
   const [nav, setNav] = useState(() => computeNavMetrics());
@@ -133,6 +162,7 @@ export default function PerfOverlay(){
   const [longTask, setLongTask] = useState(null);
   const [longTaskSupported, setLongTaskSupported] = useState(true);
   const [resources, setResources] = useState(() => computeJsAndTransfer());
+  const [scriptTiming, setScriptTiming] = useState(() => computeScriptTiming());
   const [connType, setConnType] = useState(() => {
     try { return navigator.connection?.effectiveType || null; } catch { return null; }
   });
@@ -146,6 +176,7 @@ export default function PerfOverlay(){
       setPaint(prev => (prev && prev.fp != null && prev.fcp != null) ? prev : computePaintMetrics());
       setLandingReady(prev => prev != null ? prev : computeLandingReady());
       setResources(computeJsAndTransfer());
+      setScriptTiming(computeScriptTiming());
       setBootPhases(computeBootPhases());
     }, 500);
     // Stop polling after 15s — this is a diagnostic snapshot, not a live monitor.
@@ -243,6 +274,11 @@ export default function PerfOverlay(){
       </div>
       <div style={row}><span style={label}>Total transferred</span><span style={value}>{resources.totalTransferredKB == null ? 'n/a' : `${Math.round(resources.totalTransferredKB)} KB`}</span></div>
       <div style={row}><span style={label}>Resource count</span><span style={value}>{resources.resourceCount ?? 'n/a'}</span></div>
+
+      <div style={{ marginTop: 10, marginBottom: 2, fontSize: 13, fontWeight: 800, color: '#ffd479', textTransform: 'uppercase', letterSpacing: 0.4 }}>Download vs CPU (the key bisection)</div>
+      <div style={{ ...row, background: 'rgba(255,212,121,0.12)', borderRadius: 8, padding: '8px 6px' }}><span style={{ ...label, color: '#ffd479' }}>Entry JS finished @</span><span style={value}>{fmt(scriptTiming.entryFinishedAt)}</span></div>
+      <div style={row}><span style={label}>Entry JS fetch ({scriptTiming.entryName || '?'})</span><span style={value}>{fmt(scriptTiming.entryFetchDur)}</span></div>
+      <div style={row}><span style={label}>Slowest JS fetch</span><span style={value}>{scriptTiming.slowestDur == null ? 'n/a' : `${Math.round(scriptTiming.slowestDur)} ms (${scriptTiming.slowestName})`}</span></div>
       <div style={row}><span style={label}>Connection</span><span style={value}>{connType || 'n/a (iOS)'}</span></div>
       <div style={{ marginTop: 6, fontSize: 11, color: 'rgba(255,255,255,0.55)', wordBreak: 'break-all' }}>{ua}</div>
     </div>
