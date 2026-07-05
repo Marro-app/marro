@@ -1,4 +1,4 @@
-import React, { useId, useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { getSupabase } from '../lib/data.js';
 
 // Email + password sign-in/sign-up form fields — rendered inside AuthModal.jsx
@@ -16,7 +16,7 @@ import { getSupabase } from '../lib/data.js';
 
 const MIN_PASSWORD_LEN = 6; // Supabase's own default minimum
 
-function PasswordField({ id, label, value, onChange, autoComplete, error, disabled }){
+function PasswordField({ id, label, value, onChange, autoComplete, error, disabled, onEnter }){
   const [show, setShow] = useState(false);
   return (
     <div className="lp-field">
@@ -27,6 +27,16 @@ function PasswordField({ id, label, value, onChange, autoComplete, error, disabl
           type={show ? 'text' : 'password'}
           value={value}
           onChange={onChange}
+          onKeyDown={(e) => {
+            // Belt-and-suspenders: native Enter-submits-form is unreliable in
+            // some mobile/PWA keyboard contexts, so explicitly request a
+            // submit rather than relying solely on the browser default.
+            if (e.key === 'Enter' && onEnter){
+              e.preventDefault();
+              onEnter();
+            }
+          }}
+          enterKeyHint="go"
           autoComplete={autoComplete}
           disabled={disabled}
           className="lp-input"
@@ -172,9 +182,11 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
   const pwdId = `${uid}-pwd`;
   const confirmId = `${uid}-confirm`;
   const disabled = offline || pending;
+  const formRef = useRef(null);
+  const submitForm = () => formRef.current?.requestSubmit();
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="lp-epform-fields">
+    <form ref={formRef} onSubmit={handleSubmit} noValidate className="lp-epform-fields">
       <div className="lp-field">
         <label htmlFor={emailId}>Email</label>
         <input
@@ -195,6 +207,7 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
         label="Password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
+        onEnter={mode === 'signin' ? submitForm : undefined}
         autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
         disabled={disabled}
         error={validationError}
@@ -212,6 +225,7 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
           label="Confirm password"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
+          onEnter={submitForm}
           autoComplete="new-password"
           disabled={disabled}
           error={validationError}

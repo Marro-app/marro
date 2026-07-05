@@ -402,17 +402,21 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
         {/* Escape hatch: no Esc/close on this hard-gate modal, so a user who signed in
             by mistake (or wants to switch accounts) needs a way out. Low-emphasis text
             link (not a button) — the primary action on every step stays "Continue"/
-            "Finish". Placed first in the dialog so Tab reaches it before the step
-            content, without disrupting the step's own internal tab order. */}
+            "Finish". Placed first in normal flow (not absolutely positioned) so it
+            reads as part of the card instead of floating over the scrim backdrop,
+            and so Tab reaches it before the step content without disrupting the
+            step's own internal tab order. */}
         {step!==5 && (
-          <button
-            className="txt-act"
-            onClick={signOut}
-            disabled={signingOut}
-            style={{position:"absolute",top:12,left:12,zIndex:2,minWidth:44,minHeight:44,padding:"0 8px",margin:"-10px 0 0 -8px",border:"none",background:"transparent",color:C.gray,cursor:signingOut?"default":"pointer",fontSize:12.5,fontWeight:500,display:"flex",alignItems:"center",justifyContent:"flex-start"}}
-          >
-            {signingOut?"Signing out…":"Sign out"}
-          </button>
+          <div style={{display:"flex",justifyContent:"flex-start",marginBottom:14}}>
+            <button
+              className="txt-act"
+              onClick={signOut}
+              disabled={signingOut}
+              style={{minHeight:44,padding:"0 8px",margin:"0 0 0 -8px",border:"none",background:"transparent",color:C.gray,cursor:signingOut?"default":"pointer",fontSize:12.5,fontWeight:500}}
+            >
+              {signingOut?"Signing out…":"Sign out"}
+            </button>
+          </div>
         )}
         {/* progress dots */}
         {step>=1 && step<=4 && (

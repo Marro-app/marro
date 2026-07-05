@@ -1,6 +1,23 @@
 import React, { Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { needsEagerSupabase, isRecoveryRedirect } from './lib/data.js';
+// Eager, statically-imported landing stylesheet — NOT because the landing
+// page itself needs to render eagerly (it's still lazy below), but because
+// this CSS is what actually styles AuthModal/EmailPasswordForm (.lp-input,
+// .lp-authportal, etc). Those live in landingShared.jsx, which is imported
+// by LandingPage.jsx, DotsLanding.jsx, and StagedLanding.jsx — all separately
+// lazy-loaded — so Vite splits this CSS into its own chunk that's only
+// fetched (via a dynamically-injected <link rel="stylesheet">) once one of
+// those JS chunks is dynamically imported. That created a real FOUC race in
+// production (never in `vite dev`, which injects CSS synchronously as part
+// of ES module evaluation): on a fresh page load, clicking "Get Started" /
+// "Log in" could open AuthModal and paint its inputs before this stylesheet
+// finished loading over the network, rendering them with no visible
+// background/border. Importing it here — from `main.jsx`, the one entry
+// point that's synchronously loaded on every single visit — guarantees the
+// browser has fully fetched and applied it before any lazy landing component
+// (or its modal) ever gets a chance to mount, eliminating the race entirely.
+import './landing/landing.css';
 
 // Both the full app and the marketing landing are lazy — a logged-out cold
 // load must download/parse ONLY the landing's own module graph, never
