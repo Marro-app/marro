@@ -1,0 +1,23 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "gh pr list --repo Marro-app/marro 2>/dev/null || true",
+            "if": "Bash(git push*)",
+            "statusMessage": "Checking for open pull requests..."
+          },
+          {
+            "type": "command",
+            "command": "gh pr list --repo Marro-app/marro 2>/dev/null || true",
+            "if": "Bash(git commit*)",
+            "statusMessage": "Checking for open pull requests..."
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -29,7 +29,16 @@ const STEP_COARSE = 5;    // grid for body / small labels / log rows (fine dust)
 const BIG_FONT = 34;      // px: font-size at/above which text samples fine
 const MID_FONT = 20;      // px: font-size at/above which text samples mid
 const STAGGER = 0.30;     // per-particle start-time spread
-const HOLD = 0.20;        // fraction of a scroll segment the section stays still
+// Fraction of each scroll segment the section stays fully formed + legible
+// (particles idle, real DOM text shown). The rest of the segment is the
+// dot-dissolve transition. This must NOT be too small: outside the HOLD band
+// the cloud is a scattered mid-flight scatter, so if the user comes to rest
+// anywhere in the transition band the dots freeze as unformed "dust" that
+// never resolves (there's no scroll motion left to drive t forward). A prior
+// pass shortened this to 0.20, which made ~80% of every segment dust-prone and
+// caused the visible "stuck in dust" stalls. 0.36 restores a comfortable
+// legible rest zone while keeping the shortened SEG_VH dead-zone reduction.
+const HOLD = 0.36;        // fraction of a scroll segment the section stays still
 const COLORS = ['#DDA528', '#FBF6E8', '#82AEDB', '#E08A6B']; // gold cream blue clay
 const SPR = 12;           // dot sprite radius, px
 
@@ -85,6 +94,7 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
   // continuous even when the underlying scroll signal isn't.
   let pSmooth = 0, pSmoothInit = false;
   let lastNow = 0;
+  let lastTarget = 0;   // previous frame's raw scroll target (detects "at rest")
 
   // Grid-sample the alpha channel of whatever was just drawn into offCtx, but
   // ONLY within the given rect, at the given step. `tag` decides particle color:
@@ -263,7 +273,15 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
     ctx.clearRect(0, 0, vw, vh);
     canvasDirty = true;
     const parts = getTransition(k);
-    const gA = Math.min(smooth(t / 0.13), smooth((1 - t) / 0.13));
+    // Global alpha envelope for the whole cloud. CRITICAL: the particle cloud
+    // is a pixel-copy of the glyphs, so it MUST NOT be visible at the same time
+    // as the real DOM text of the same section — otherwise you see the text
+    // twice, offset (once as DOM text, once as its dot-sampled ghost). The DOM
+    // outgoing layer is fully hidden by t=0.16 and the incoming layer only
+    // starts appearing at t=0.84 (see the setLayerStyle loop in frame()). So
+    // the dots must fade IN only after 0.16 and fade OUT before 0.84, leaving a
+    // clean gap on each side where neither the DOM text nor its ghost overlap.
+    const gA = Math.min(smooth((t - 0.18) / 0.14), smooth((0.82 - t) / 0.14));
     const bell = 4 * t * (1 - t);
 
     // breathing gold core — the heart of the Marro logo
@@ -341,12 +359,30 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
     // reads as continuous instead of hitching in step with each scroll tick.
     const dt = lastNow ? Math.min(now - lastNow, 48) : 16.7;
     lastNow = now;
-    if (!pSmoothInit){ pSmooth = pTarget; pSmoothInit = true; }
+    if (!pSmoothInit){ pSmooth = pTarget; lastTarget = pTarget; pSmoothInit = true; }
     const rate = 0.018; // ms time-constant-ish factor; ~90% caught up in ~120ms
     const followed = 1 - Math.pow(1 - rate, dt);
-    pSmooth += (pTarget - pSmooth) * followed;
+
+    // Where should the smoothed progress be heading THIS frame?
+    //  - While the user is actively scrolling, follow the raw scroll target so
+    //    the dissolve is scroll-scrubbed exactly as before.
+    //  - Once scroll comes to rest (the raw target stopped changing) but we're
+    //    parked mid-transition, retarget to the nearest legible rest point (the
+    //    middle of the nearer section's HOLD band). Otherwise the cloud hangs
+    //    forever as an unformed scattered "dust" that never coalesces into text
+    //    — there's no scroll motion left to drive t. These two goals are
+    //    MUTUALLY EXCLUSIVE (one lerp target, never both) so they can't fight
+    //    and stall the cloud halfway.
+    const scrollAtRest = Math.abs(pTarget - lastTarget) < 0.0004 && Math.abs(pTarget - pSmooth) < 0.5;
+    lastTarget = pTarget;
+    let goal = pTarget;
+    if (scrollAtRest){
+      const seg = clamp(Math.round(pTarget), 0, N - 1);
+      goal = seg >= N - 1 ? N - 1 : seg + HOLD * 0.5;   // inside the section's HOLD band
+    }
+    pSmooth += (goal - pSmooth) * followed;
     // Snap once close enough so we don't chase forever / never fully settle.
-    if (Math.abs(pTarget - pSmooth) < 0.0008) pSmooth = pTarget;
+    if (Math.abs(goal - pSmooth) < 0.0008) pSmooth = goal;
     const p = pSmooth;
 
     let i = Math.min(Math.floor(p), N - 2);
@@ -381,10 +417,16 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
     // Settled and sampled? Sleep (no re-arm) — scroll/resize/rebuild wakes us.
     // Before `ready` (fonts still loading) keep spinning so targets build.
     // Also keep spinning while the smoothed progress is still catching up to
-    // the raw scroll target, or the lerp would freeze the instant the user
-    // stops scrolling instead of easing the rest of the way in.
-    const settled = pSmooth === pTarget;
-    if (ready && settled && !(t > 0 && t < 1)) return;
+    // the raw scroll target, OR while the rest-resolve ease is still pulling us
+    // into a legible HOLD band — otherwise the lerp would freeze the instant the
+    // user stops scrolling instead of easing the rest of the way into text.
+    // Sleep only once the smoothed progress has reached its goal for this frame
+    // (the raw scroll target while scrolling, or the resolved HOLD-band rest
+    // point once scroll settled) AND we're not mid-transition. Until then keep
+    // the loop armed so the ease — including the rest-resolve into readable
+    // text — actually completes instead of freezing the moment scroll stops.
+    const parked = pSmooth === goal;
+    if (ready && parked && !(t > 0 && t < 1)) return;
     wake();
   }
 
