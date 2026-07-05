@@ -1,7 +1,6 @@
 import React, { Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { needsEagerSupabase } from './lib/data.js';
-import { SilentUpdater } from './SilentUpdater.jsx';
 
 // Both the full app and the marketing landing are lazy — a logged-out cold
 // load must download/parse ONLY the landing's own module graph, never
@@ -127,10 +126,30 @@ root.render(
       <Suspense fallback={<BootFallback/>}>
         {eager ? <App/> : <LandingPage offline={!navigator.onLine}/>}
       </Suspense>
-      <SilentUpdater/>
     </ErrorBoundary>
   </React.Fragment>
 );
+
+// PWA silent-update registration — SilentUpdater (and the virtual:pwa-register
+// / workbox-window module graph it drags in) must NOT block first paint. It's
+// dynamically imported and mounted into its own small root after the window
+// 'load' event plus a short delay, same deferred pattern as Sentry above.
+// (No requestIdleCallback — iOS Safari doesn't have it.)
+const mountSilentUpdaterDeferred = () => {
+  setTimeout(() => {
+    import('./SilentUpdater.jsx').then(({ SilentUpdater }) => {
+      const suRoot = document.createElement('div');
+      suRoot.id = 'marro-silent-updater-root';
+      document.body.appendChild(suRoot);
+      createRoot(suRoot).render(<SilentUpdater/>);
+    }).catch(() => { /* SW update flow only — fail silently */ });
+  }, 1500);
+};
+if (document.readyState === 'complete') {
+  mountSilentUpdaterDeferred();
+} else {
+  window.addEventListener('load', mountSilentUpdaterDeferred, { once: true });
+}
 
 // On-device performance overlay — dependency-free, mounted only when the URL
 // has ?perf (e.g. https://joinmarro.com/?perf on the founder's phone). Never
