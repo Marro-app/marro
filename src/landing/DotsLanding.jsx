@@ -54,7 +54,7 @@ function sectionContent(index, offline){
         <h1 data-p>Your aid package, turned into <em className="lp-acc">a plan.</em></h1>
         <p className="lp-body">Enter your aid and school costs once. Marro shows what you actually have to live on, every month.</p>
         <div className="lp-cta">
-          <GetStartedCTA offline={offline} note="Free for medical students." />
+          <GetStartedCTA offline={offline} note="Free for medical students." align="center" />
         </div>
       </>
     );
@@ -99,7 +99,7 @@ function sectionContent(index, offline){
         <p className="lp-body">We never sell your personal info. Your budget is private to your account. Details in our <a href="/privacy.html" style={{ color: 'var(--lp-cream63)' }}>Privacy Policy</a>.</p>
         <h2 data-p style={{ marginTop: 22, fontSize: 'clamp(1.35rem,5.5vw,1.9rem)' }}><em className="lp-acc">Free</em> for medical students.</h2>
         <div className="lp-cta">
-          <GetStartedCTA offline={offline} />
+          <GetStartedCTA offline={offline} align="center" />
         </div>
         <footer className="lp-footer">
           <a href="/privacy.html">Privacy Policy</a><span>·</span>

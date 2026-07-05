@@ -88,10 +88,10 @@ export function Nav({ offline, onHoverCore }){
 // link (signin mode) — satisfies the one-primary-button-per-screen rule
 // (docs/DESIGN_SYSTEM.md → "Buttons"), replacing the old single
 // "Continue with Google" + hidden email-toggle pattern.
-export function GetStartedCTA({ offline, onHoverCore, note }){
+export function GetStartedCTA({ offline, onHoverCore, note, align = 'flex-start' }){
   const { modal, open } = useAuthModal(offline);
   return (
-    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
+    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 12, alignItems: align }}>
       <button
         type="button"
         className="lp-btn lp-btn-fill"
