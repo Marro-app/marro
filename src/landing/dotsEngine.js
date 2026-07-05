@@ -305,15 +305,24 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
   }
 
   // --- main loop ---
+  // The loop SLEEPS while a section is held fully formed (no rAF armed at
+  // all — not even a cheap no-op frame, so the page can truly idle and the
+  // per-frame getSections() DOM query never runs at rest). A passive scroll
+  // listener (plus resize/rebuild) re-arms it. While a transition is
+  // mid-flight (0 < t < 1) it keeps itself armed so the dot wobble animates
+  // even if the user stops scrolling mid-dissolve.
+  function wake(){
+    if (!destroyed && !raf) raf = requestAnimationFrame(frame);
+  }
   function frame(now){
     if (destroyed) return;
-    raf = requestAnimationFrame(frame);
-    if (!vw || !vh){ size(); if (!vw || !vh) return; }
+    raf = 0;
+    if (!vw || !vh){ size(); if (!vw || !vh){ wake(); return; } }
     if (!ready && fontsLoaded){ buildTargets(); ready = true; }
 
     const sections = getSections();
     const N = sections.length;
-    if (N < 2){ return; }
+    if (N < 2){ wake(); return; }
     const segPx = segVH * vh;
     const p = clamp(window.scrollY / segPx, 0, N - 1);
     let i = Math.min(Math.floor(p), N - 2);
@@ -344,6 +353,11 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
       ctx.clearRect(0, 0, vw, vh);
       canvasDirty = false;
     }
+
+    // Settled and sampled? Sleep (no re-arm) — scroll/resize/rebuild wakes us.
+    // Before `ready` (fonts still loading) keep spinning so targets build.
+    if (ready && !(t > 0 && t < 1)) return;
+    wake();
   }
 
   function size(){
@@ -361,7 +375,7 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
   let resizeTimer = 0;
   function onResize(){
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(function(){ size(); if (ready) buildTargets(); }, 250);
+    resizeTimer = setTimeout(function(){ size(); if (ready) buildTargets(); wake(); }, 250);
   }
 
   return {
@@ -374,21 +388,23 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
         if ((!vw || !vh) && n > 0) setTimeout(function(){ retrySize(n - 1); }, 100);
       })(30);
       window.addEventListener('resize', onResize, { passive: true });
+      window.addEventListener('scroll', wake, { passive: true });
       if (document.fonts && document.fonts.ready){
-        document.fonts.ready.then(function(){ fontsLoaded = true; });
+        document.fonts.ready.then(function(){ fontsLoaded = true; wake(); });
       } else {
         fontsLoaded = true;
       }
-      raf = requestAnimationFrame(frame);
+      wake();
     },
     // segment height in px, for DotsLanding to size the scroll spacer
     segPx(){ return segVH * (window.innerHeight || 1); },
-    rebuild(){ if (ready) buildTargets(); },
+    rebuild(){ if (ready) buildTargets(); wake(); },
     destroy(){
       destroyed = true;
       cancelAnimationFrame(raf);
       clearTimeout(resizeTimer);
       window.removeEventListener('resize', onResize);
+      window.removeEventListener('scroll', wake);
     }
   };
 }

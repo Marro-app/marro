@@ -359,6 +359,15 @@
   .lp-ticks{right:8px;gap:14px}
   .lp-loglist{text-align:left}
   .lp-static-main{padding:88px 20px 40px}
+  /* Perf: backdrop-filter is extremely expensive to composite on iPhones —
+     it re-samples and re-blurs everything behind the element whenever the
+     backdrop changes (every scroll frame, every canvas transition frame).
+     On phones the glass surfaces swap to near-opaque fills instead: same
+     dark tone, same borders, text contrast preserved (≥4.5:1 cream on
+     near-black), just no live blur. Desktop keeps the true glass. */
+  .lp-nav{backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(16,18,16,.9)}
+  .lp-stagecard{backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(24,26,18,.94)}
+  .lp-loglist{backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(30,32,26,.94)}
 }
 
 /* ===== REDUCED MOTION ===== */
