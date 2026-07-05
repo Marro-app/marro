@@ -9,7 +9,7 @@ import React, { Suspense, useEffect, useState } from 'react';
 // that the founder rejected as looking/feeling wrong.
 import './landing.css';
 import { StaticDocument } from './scenes.jsx';
-import { BlobLayer, Nav, SignInButtonWithNote } from './landingShared.jsx';
+import { BlobLayer, Nav, GetStartedCTA } from './landingShared.jsx';
 
 // Perf: the desktop-only animated theater (StagedLanding) is the ONLY landing
 // code that needs `motion/react` (~the animation engine). It's lazy-imported
@@ -102,7 +102,7 @@ function StaticLanding({ offline }){
     <div className="lp lp-static" data-scene="s1">
       <BlobLayer />
       <Nav offline={offline} />
-      <StaticDocument SignInButton={(props) => <SignInButtonWithNote offline={offline} {...props} />} />
+      <StaticDocument GetStartedCTA={(props) => <GetStartedCTA offline={offline} {...props} />} />
     </div>
   );
 }

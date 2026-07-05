@@ -12,9 +12,9 @@ import { m, useReducedMotion, animate, useMotionValue } from 'motion/react';
 // the `m.*` primitives so the continuous motion lives in the same
 // LazyMotion(domMin) tree as the rest of the landing chunk.
 //
-// `corePulse` is a MotionValue (scale, 1 at rest) driven by SignInButton's
-// hover callback via LandingPage — a shared "give the core life" channel so
-// hovering the CTA visibly reaches into the fixed stage.
+// `corePulse` is a MotionValue (scale, 1 at rest) driven by the Nav/CTA
+// buttons' hover callback via LandingPage — a shared "give the core life"
+// channel so hovering the CTA visibly reaches into the fixed stage.
 //
 // Six "chaos" dots (feature 1: scattered money → shape) wander loosely around
 // the stage on s1, then spring onto the three ring radii the moment s2

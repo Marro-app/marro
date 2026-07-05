@@ -83,15 +83,18 @@ function FooterLinks(){
   );
 }
 
-// s8 content — identical in fixed layer and static doc.
-function GetStarted({ SignInButton }){
+// s8 content — identical in fixed layer and static doc. `GetStartedCTA` is the
+// shared primary-button + "Already have an account?" link component from
+// landingShared.jsx (opens AuthModal) — Google sign-in now lives inside that
+// modal, not as its own button here.
+function GetStarted({ GetStartedCTA }){
   return (
     <>
       <h2>Your numbers stay yours.</h2>
       <p className="lp-body">We never sell your personal info. Your budget is private to your account. Details in our <a href="/privacy.html" style={{ color: 'var(--lp-cream63)' }}>Privacy Policy</a>.</p>
       <h2 style={{ marginTop: 28 }}><em className="lp-serif lp-acc">Free</em> for medical students.</h2>
       <div className="lp-cta">
-        <SignInButton className="lp-btn lp-btn-fill" showGlyph />
+        <GetStartedCTA />
       </div>
       <FooterLinks />
     </>
@@ -100,15 +103,14 @@ function GetStarted({ SignInButton }){
 
 // ============ 1. FIXED-BAND LAYER CONTENT (visible, interactive) ============
 // One entry per scene index (0-7). `scene` drives the s4 loglist choreography.
-export function FixedLayerContent({ index, scene, SignInButton }){
+export function FixedLayerContent({ index, scene, GetStartedCTA }){
   switch(index){
     case 0: return (
       <>
         <h1>{HEAD.s1}</h1>
         <p className="lp-body">{BODY.s1}</p>
         <div className="lp-cta">
-          <SignInButton className="lp-btn lp-btn-fill" />
-          <span className="lp-note">Free for medical students.</span>
+          <GetStartedCTA note="Free for medical students." />
         </div>
       </>
     );
@@ -151,7 +153,7 @@ export function FixedLayerContent({ index, scene, SignInButton }){
         <FounderSig />
       </>
     );
-    case 7: return <GetStarted SignInButton={SignInButton} />;
+    case 7: return <GetStarted GetStartedCTA={GetStartedCTA} />;
     default: return null;
   }
 }
@@ -198,7 +200,7 @@ export function SrArticle(){
 // No theater: a normal stacked, scrolling, fully readable page. One static
 // ring figure at the top stands in for the stage; each scene's stage-only
 // figure appears as plain text inside its section.
-export function StaticDocument({ SignInButton }){
+export function StaticDocument({ GetStartedCTA }){
   return (
     <main className="lp-static-main">
       <div className="lp-static-fig" aria-hidden="true">
@@ -213,8 +215,7 @@ export function StaticDocument({ SignInButton }){
         <h1>{HEAD.s1}</h1>
         <p className="lp-body">{BODY.s1}</p>
         <div className="lp-cta">
-          <SignInButton className="lp-btn lp-btn-fill" />
-          <span className="lp-note">Free for medical students.</span>
+          <GetStartedCTA note="Free for medical students." />
         </div>
       </section>
       <section aria-label="Start with your aid letter">
@@ -249,7 +250,7 @@ export function StaticDocument({ SignInButton }){
         <FounderSig />
       </section>
       <section aria-label="Get started">
-        <GetStarted SignInButton={SignInButton} />
+        <GetStarted GetStartedCTA={GetStartedCTA} />
       </section>
     </main>
   );

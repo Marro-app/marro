@@ -123,7 +123,8 @@ export function App() {
   // a returning signed-in user (cached session token) or an OAuth/redirect
   // callback supabase must process. Otherwise `session` is set to null right
   // away and the landing renders with zero supabase-js bytes fetched; the
-  // client only loads later, on demand, when SignInButton is clicked.
+  // client only loads later, on demand, when the auth modal's "Continue with
+  // Google" button is clicked (see src/landing/AuthModal.jsx).
   useEffect(()=>{
     if(!needsEagerSupabase()){
       if(!markedSessionDecided){ markedSessionDecided = true; try { performance.mark('boot:session-decided'); } catch { /* diagnostic only */ } }

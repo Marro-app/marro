@@ -76,6 +76,15 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
   let canvasDirty = false;
   let lastActive = -1;
   let destroyed = false;
+  // Smoothed scroll-progress: raw window.scrollY arrives in bursty, uneven
+  // steps on mobile (touch momentum reports irregularly, rubber-banding,
+  // OS-level scroll coalescing). Feeding that straight into particle math
+  // makes the dots visibly hitch/step with each scroll event. Instead we
+  // lerp a smoothed progress value toward the raw target every rAF frame —
+  // framerate-independent via an exponential decay — so particle motion is
+  // continuous even when the underlying scroll signal isn't.
+  let pSmooth = 0, pSmoothInit = false;
+  let lastNow = 0;
 
   // Grid-sample the alpha channel of whatever was just drawn into offCtx, but
   // ONLY within the given rect, at the given step. `tag` decides particle color:
@@ -324,7 +333,22 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
     const N = sections.length;
     if (N < 2){ wake(); return; }
     const segPx = segVH * vh;
-    const p = clamp(window.scrollY / segPx, 0, N - 1);
+    const pTarget = clamp(window.scrollY / segPx, 0, N - 1);
+
+    // Lerp the smoothed progress toward the raw scroll target each frame
+    // (exponential decay, framerate-independent via dt). This absorbs the
+    // uneven/bursty delivery of scroll events on mobile so particle motion
+    // reads as continuous instead of hitching in step with each scroll tick.
+    const dt = lastNow ? Math.min(now - lastNow, 48) : 16.7;
+    lastNow = now;
+    if (!pSmoothInit){ pSmooth = pTarget; pSmoothInit = true; }
+    const rate = 0.018; // ms time-constant-ish factor; ~90% caught up in ~120ms
+    const followed = 1 - Math.pow(1 - rate, dt);
+    pSmooth += (pTarget - pSmooth) * followed;
+    // Snap once close enough so we don't chase forever / never fully settle.
+    if (Math.abs(pTarget - pSmooth) < 0.0008) pSmooth = pTarget;
+    const p = pSmooth;
+
     let i = Math.min(Math.floor(p), N - 2);
     const f = p - i;
     let t = f <= HOLD ? 0 : (f - HOLD) / (1 - HOLD);
@@ -356,7 +380,11 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
 
     // Settled and sampled? Sleep (no re-arm) — scroll/resize/rebuild wakes us.
     // Before `ready` (fonts still loading) keep spinning so targets build.
-    if (ready && !(t > 0 && t < 1)) return;
+    // Also keep spinning while the smoothed progress is still catching up to
+    // the raw scroll target, or the lerp would freeze the instant the user
+    // stops scrolling instead of easing the rest of the way in.
+    const settled = pSmooth === pTarget;
+    if (ready && settled && !(t > 0 && t < 1)) return;
     wake();
   }
 

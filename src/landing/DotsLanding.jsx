@@ -2,8 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import './landing.css';
 import './dotsLanding.css';
 import { SrArticle } from './scenes.jsx';
-import { BlobLayer, Nav } from './landingShared.jsx';
-import { SignInButton, OfflineNotice } from './SignInButton.jsx';
+import { BlobLayer, Nav, GetStartedCTA } from './landingShared.jsx';
 import { createDotsEngine } from './dotsEngine.js';
 
 // ============================================================================
@@ -45,7 +44,7 @@ function HeroLogo(){
 // Section layer content. Each visible headline/figure gets data-p so the engine
 // samples its rendered glyphs; figures also get data-fig (occasional blue/clay
 // data dots). Copy is verbatim from scenes.jsx; figures match the SR article
-// ($125,950 / year, $2,150 / month, 61%). Interactive controls (SignInButton,
+// ($125,950 / year, $2,150 / month, 61%). Interactive controls (GetStartedCTA,
 // links) live only here — the SR article is text-only, so no duplicate tab stops.
 function sectionContent(index, offline){
   switch(index){
@@ -55,10 +54,8 @@ function sectionContent(index, offline){
         <h1 data-p>Your aid package, turned into <em className="lp-acc">a plan.</em></h1>
         <p className="lp-body">Enter your aid and school costs once. Marro shows what you actually have to live on, every month.</p>
         <div className="lp-cta">
-          <SignInButton offline={offline} className="lp-btn lp-btn-fill" showGlyph />
-          <span className="lp-note">Free for medical students.</span>
+          <GetStartedCTA offline={offline} note="Free for medical students." />
         </div>
-        <OfflineNotice offline={offline} />
       </>
     );
     case 1: return (
@@ -102,9 +99,8 @@ function sectionContent(index, offline){
         <p className="lp-body">We never sell your personal info. Your budget is private to your account. Details in our <a href="/privacy.html" style={{ color: 'var(--lp-cream63)' }}>Privacy Policy</a>.</p>
         <h2 data-p style={{ marginTop: 22, fontSize: 'clamp(1.35rem,5.5vw,1.9rem)' }}><em className="lp-acc">Free</em> for medical students.</h2>
         <div className="lp-cta">
-          <SignInButton offline={offline} className="lp-btn lp-btn-fill" showGlyph />
+          <GetStartedCTA offline={offline} />
         </div>
-        <OfflineNotice offline={offline} />
         <footer className="lp-footer">
           <a href="/privacy.html">Privacy Policy</a><span>·</span>
           <a href="/terms.html">Terms of Service</a><span>·</span>
@@ -176,7 +172,7 @@ export default function DotsLanding({ offline }){
           Only the ACTIVE layer is exposed to AT + the tab order; the other five
           (visually hidden but present in the DOM) are `inert`, so there are no
           focus traps on off-screen CTAs and no duplicate reading. The active
-          layer keeps its REAL interactive controls (SignInButton, links). */}
+          layer keeps its REAL interactive controls (GetStartedCTA, links). */}
       <div className="lpd-stage" ref={stageRef}>
         {Array.from({ length: SECTION_COUNT }, (_, i) => (
           <section

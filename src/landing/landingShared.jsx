@@ -1,5 +1,5 @@
-import React from 'react';
-import { SignInButton, OfflineNotice } from './SignInButton.jsx';
+import React, { useRef, useState } from 'react';
+import { AuthModal } from './AuthModal.jsx';
 
 // Shared, motion-free pieces used by both StaticLanding (mobile /
 // prefers-reduced-motion, rendered eagerly) and StagedLanding (desktop
@@ -19,7 +19,34 @@ export function BlobLayer(){
   );
 }
 
+// Shared open/close state + trigger-ref plumbing for AuthModal. Returns the
+// modal element to render plus an `open(mode)` callback that also stashes
+// which element triggered it, so focus returns there on close.
+function useAuthModal(offline){
+  const [state, setState] = useState({ open: false, mode: 'signin' });
+  const triggerRef = useRef(null);
+
+  const open = (mode) => (e) => {
+    triggerRef.current = e?.currentTarget || null;
+    setState({ open: true, mode });
+  };
+  const close = () => setState((s) => ({ ...s, open: false }));
+
+  const modal = (
+    <AuthModal
+      open={state.open}
+      initialMode={state.mode}
+      offline={offline}
+      onClose={close}
+      triggerRef={triggerRef}
+    />
+  );
+
+  return { modal, open };
+}
+
 export function Nav({ offline, onHoverCore }){
+  const { modal, open } = useAuthModal(offline);
   return (
     <nav className="lp-nav" aria-label="Main">
       <a className="lp-navbrand" href="#top">
@@ -30,16 +57,53 @@ export function Nav({ offline, onHoverCore }){
         </svg>
         <span>Marro<span className="lp-dot">.</span></span>
       </a>
-      <SignInButton offline={offline} className="lp-btn lp-btn-ghost" style={{ minHeight: 44, padding: '8px 18px' }} onHoverCore={onHoverCore} />
+      <span style={{ display: 'inline-flex', gap: 10 }}>
+        <button
+          type="button"
+          className="lp-btn lp-btn-ghost"
+          style={{ minHeight: 44, padding: '8px 18px' }}
+          onClick={open('signin')}
+          onPointerEnter={onHoverCore}
+        >
+          Log in
+        </button>
+        <button
+          type="button"
+          className="lp-btn lp-btn-fill"
+          style={{ minHeight: 44, padding: '8px 18px' }}
+          onClick={open('signup')}
+          onPointerEnter={onHoverCore}
+        >
+          Sign up
+        </button>
+      </span>
+      {modal}
     </nav>
   );
 }
 
-export function SignInButtonWithNote({ offline, className, showGlyph, onHoverCore }){
+// Hero/closing CTA: one primary "Get started free" button (opens the modal in
+// signup mode) plus a low-emphasis "Already have an account? Log in" text
+// link (signin mode) — satisfies the one-primary-button-per-screen rule
+// (docs/DESIGN_SYSTEM.md → "Buttons"), replacing the old single
+// "Continue with Google" + hidden email-toggle pattern.
+export function GetStartedCTA({ offline, onHoverCore, note }){
+  const { modal, open } = useAuthModal(offline);
   return (
-    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
-      <SignInButton offline={offline} className={className} showGlyph={showGlyph} onHoverCore={onHoverCore} />
-      <OfflineNotice offline={offline} />
+    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
+      <button
+        type="button"
+        className="lp-btn lp-btn-fill"
+        onClick={open('signup')}
+        onPointerEnter={onHoverCore}
+      >
+        Get started free
+      </button>
+      {note && <span className="lp-note">{note}</span>}
+      <button type="button" className="lp-cta-signin" onClick={open('signin')}>
+        Already have an account? Log in
+      </button>
+      {modal}
     </span>
   );
 }

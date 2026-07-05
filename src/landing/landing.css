@@ -231,9 +231,12 @@
 .lp-pt h2 em,.lp-static-main h2 em{font-style:italic;font-weight:500;line-height:1.14;display:inline-block;padding-bottom:2px}
 .lp-pt .lp-body,.lp-static-main .lp-body{margin:16px 0 0;color:var(--lp-cream63);font-size:clamp(1rem,1.3vw,1.1rem);max-width:46ch}
 .lp-static-main .lp-body{margin-left:auto;margin-right:auto}
-.lp-pt .lp-cta,.lp-static-main .lp-cta{margin-top:28px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.lp-pt .lp-cta,.lp-static-main .lp-cta{margin-top:28px;display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
 .lp-static-main .lp-cta{justify-content:center}
-.lp-pt .lp-note,.lp-static-main .lp-note{font-size:13.5px;color:var(--lp-cream63)}
+.lp-pt .lp-note,.lp-static-main .lp-note{font-size:14px;font-weight:600;color:var(--lp-gold)}
+.lp-cta-signin{background:none;border:none;font:inherit;font-size:13.5px;color:var(--lp-cream63);padding:8px 0;min-height:44px;display:inline-flex;align-items:center;cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--lp-border)}
+.lp-cta-signin:hover{color:var(--lp-cream)}
+.lp-cta-signin:focus-visible{outline:2px solid var(--lp-cream);outline-offset:3px;border-radius:4px}
 .lp-mock-note{font-size:12.5px;color:var(--lp-cream40);margin-top:14px}
 
 /* ===== STATIC DOCUMENT (prefers-reduced-motion) ===== */
@@ -369,6 +372,64 @@
   .lp-stagecard{backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(24,26,18,.94)}
   .lp-loglist{backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(30,32,26,.94)}
 }
+
+/* ===== AUTH MODAL (replaces the old Google-primary + email-toggle pattern) ===== */
+/* AuthModal.jsx portals its tree to document.body (needed so the fixed
+   backdrop escapes .lp-nav's backdrop-filter containing-block, which would
+   otherwise clip/mis-position it — see the comment in AuthModal.jsx). That
+   also takes it out from under .lp, which is where all --lp-* custom
+   properties are scoped — so this wrapper re-declares just the variables
+   (not .lp's full visual reset/background/position) around the portaled
+   tree. Keep in sync with the --lp-* block on .lp above. */
+.lp-authportal{
+  --lp-bg:#0C0E0C; --lp-stage:#14150F; --lp-cream:#FBF6E8; --lp-cream63:rgba(248,242,226,.82);
+  --lp-cream40:rgba(248,242,226,.58); --lp-gold:#DDA528; --lp-blue:#82AEDB; --lp-clay:#E08A6B;
+  --lp-border:rgba(246,239,221,.12); --lp-glass:rgba(246,239,221,.045);
+  --lp-ease:cubic-bezier(.22,1,.36,1);
+}
+
+/* Shared dialog opened by the Nav's Log in/Sign up buttons and the hero's
+   Get started/Log in link (see AuthModal.jsx). Surface matches the existing
+   .lp-stagecard glass-card convention (rounded corners, dark tint, subtle
+   border) rather than a hand-rolled look. */
+.lp-authbackdrop{position:fixed;inset:0;z-index:2000;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(8,10,8,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.lp-authmodal{position:relative;width:100%;max-width:400px;max-height:calc(100dvh - 48px);overflow-y:auto;padding:32px;border-radius:22px;background:rgba(24,26,18,.96);border:1px solid rgba(248,242,226,.18);box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 24px 60px rgba(0,0,0,.5);color:var(--lp-cream);font-family:'Inter',system-ui,sans-serif}
+.lp-authclose{position:absolute;top:16px;right:16px;width:32px;height:32px;display:inline-flex;align-items:center;justify-content:center;border:none;background:transparent;color:var(--lp-cream63);border-radius:8px;cursor:pointer}
+.lp-authclose::after{content:'';position:absolute;inset:-6px}
+.lp-authclose:hover{background:var(--lp-glass);color:var(--lp-cream)}
+.lp-authclose:focus-visible{outline:2px solid var(--lp-cream);outline-offset:2px}
+.lp-authheading{font-family:'Newsreader',Georgia,serif;font-weight:550;font-size:1.5rem;letter-spacing:-.015em;margin:0 32px 20px 0}
+
+.lp-authdivider{display:flex;align-items:center;gap:12px;margin:20px 0;color:var(--lp-cream40);font-size:12.5px}
+.lp-authdivider::before,.lp-authdivider::after{content:'';flex:1;height:1px;background:var(--lp-border)}
+
+.lp-authgoogle{width:100%}
+
+/* ===== EMAIL/PASSWORD FORM FIELDS (Phase A, now rendered inside AuthModal) ===== */
+.lp-eptabs{display:flex;gap:8px;margin-bottom:16px}
+.lp-eptab{flex:1;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--lp-border);background:transparent;color:var(--lp-cream63);font:inherit;font-size:14px;font-weight:600;cursor:pointer;transition:background .15s ease,color .15s ease}
+.lp-eptab:focus-visible{outline:2px solid var(--lp-cream);outline-offset:2px}
+.lp-eptab-on{background:var(--lp-cream);color:#14150F;border-color:var(--lp-cream)}
+
+.lp-field{margin-bottom:12px;display:flex;flex-direction:column;gap:4px}
+.lp-field label{font-size:12.5px;color:var(--lp-cream63);font-weight:600}
+.lp-input{min-height:44px;padding:10px 12px;border-radius:10px;border:1px solid var(--lp-border);background:rgba(246,239,221,.04);color:var(--lp-cream);font:inherit;font-size:15px}
+.lp-input:focus-visible{outline:2px solid var(--lp-cream);outline-offset:2px}
+.lp-input[aria-invalid="true"]{border-color:var(--lp-clay)}
+.lp-input:disabled{opacity:.5;cursor:not-allowed}
+
+.lp-pwdwrap{position:relative;display:flex;align-items:stretch}
+.lp-pwdwrap .lp-input{flex:1;padding-right:64px}
+.lp-pwdtoggle{position:absolute;right:4px;top:50%;transform:translateY(-50%);min-width:44px;min-height:36px;padding:0 10px;border:none;background:transparent;color:var(--lp-cream63);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;border-radius:8px}
+.lp-pwdtoggle:hover:not(:disabled){background:var(--lp-glass)}
+.lp-pwdtoggle:focus-visible{outline:2px solid var(--lp-cream);outline-offset:2px}
+.lp-pwdtoggle:disabled{opacity:.5;cursor:not-allowed}
+
+.lp-eperr{margin:4px 0 12px;padding:10px 12px;border-radius:10px;background:rgba(224,138,107,.12);border:1px solid rgba(224,138,107,.4);color:var(--lp-clay);font-size:13px;line-height:1.4}
+.lp-epresend{color:var(--lp-clay);text-decoration:underline;font-size:13px;padding:0;min-height:auto}
+.lp-epnotice{margin:4px 0 12px;padding:10px 12px;border-radius:10px;background:rgba(130,174,219,.12);border:1px solid rgba(130,174,219,.4);color:var(--lp-blue);font-size:13px;line-height:1.4}
+
+.lp-epsubmit{width:100%;margin-top:4px}
 
 /* ===== REDUCED MOTION ===== */
 /* Under prefers-reduced-motion the THEATER NEVER RENDERS — LandingPage.jsx

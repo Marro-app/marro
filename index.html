@@ -128,9 +128,17 @@
     --glass-modal-border: rgba(255,255,255,0.80);
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  /* Disable native rubber-band/overscroll bounce on the document. Pure
+     browser-chrome tweak — does NOT change how scrolling works (no scroll
+     container changes), so it can't affect the IntersectionObserver scene
+     logic in StagedLanding.jsx/DotsLanding.jsx, which reads real document
+     scroll position. It only stops the page sliding past its own top/bottom
+     edge on touch devices, which was making the fixed/blurred `.lp-nav`
+     appear to detach during the bounce (Safari rendering quirk). */
+  html { overscroll-behavior-y: none; }
   /* App-like chrome, not a document: plain text isn't selectable/I-beam by
      default (mirrors native macOS/iOS apps) — only form fields are. */
-  body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); transition: background .3s; cursor: default; user-select: none; -webkit-user-select: none; }
+  body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); transition: background .3s; cursor: default; user-select: none; -webkit-user-select: none; overscroll-behavior-y: none; }
   input, textarea, [contenteditable] { cursor: text; user-select: text; -webkit-user-select: text; }
   #root { min-height: 100vh; background: transparent; position: relative; z-index: 1; }
   #loading { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; color: var(--text); }

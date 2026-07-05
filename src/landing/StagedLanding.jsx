@@ -9,7 +9,7 @@ import { LazyMotion, domMin, useScroll, useTransform, useSpring, useMotionValue,
 // module only when it decides to render the staged (desktop) experience.
 import { RingCanvas } from './RingCanvas.jsx';
 import { FixedLayerContent, SrArticle, SCENE_TICKS } from './scenes.jsx';
-import { BlobLayer, Nav, SignInButtonWithNote } from './landingShared.jsx';
+import { BlobLayer, Nav, GetStartedCTA } from './landingShared.jsx';
 
 // ============ THE STAGED LANDING ============
 export default function StagedLanding({ offline }){
@@ -65,8 +65,8 @@ export default function StagedLanding({ offline }){
     panelRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, []);
 
-  const WrappedSignIn = useCallback(
-    (props) => <SignInButtonWithNote offline={offline} onHoverCore={pulseCore} {...props} />,
+  const WrappedGetStartedCTA = useCallback(
+    (props) => <GetStartedCTA offline={offline} onHoverCore={pulseCore} {...props} />,
     [offline, pulseCore]
   );
 
@@ -91,7 +91,7 @@ export default function StagedLanding({ offline }){
               aria-label={label}
             >
               <div className="lp-pt">
-                <FixedLayerContent index={i} scene={scene} SignInButton={WrappedSignIn} />
+                <FixedLayerContent index={i} scene={scene} GetStartedCTA={WrappedGetStartedCTA} />
               </div>
             </section>
           ))}
