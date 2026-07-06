@@ -37,6 +37,16 @@ function dotXY(angleDeg, r){
   return { x: 256 + r * Math.cos(rad), y: 256 + r * Math.sin(rad) };
 }
 
+// Module-level (not defined inside RingCanvas) so their identity is stable
+// across renders. Odometer's effect keys on `format` in its dep array —
+// a fresh arrow every render (which RingCanvas does on every scene change,
+// not just while a given odometer counts) would retrigger that effect mid
+// count-up, `controls.stop()`-ing the running animate() with no restart
+// (guarded by hasPlayed.current), freezing the number at whatever value it
+// had reached.
+const fmtUsd = (v) => `$${v.toLocaleString('en-US')}`;
+const fmtPct = (v) => `${v}%`;
+
 // Feature 2: odometer count-up. Animates a MotionValue from `from` to `to`
 // over ~0.9s and writes the formatted string straight into the span's text
 // node (bypassing React re-renders — this is a decorative, aria-hidden
@@ -111,13 +121,17 @@ export function RingCanvas({ scene, ringRotate, stageDrift, glowDrift, corePulse
       coreOpacity.set(0); // ring-center core hides; drop core takes over
       dropOpacity.set(1);
       dropY.set(0);
-      animate(dropY, 210, { type: 'spring', stiffness: 260, damping: 22 });
+      const dropControls = animate(dropY, 210, { type: 'spring', stiffness: 260, damping: 22 });
       const t = setTimeout(() => {
         // land: drop core fades, ring core quietly returns
         animate(dropOpacity, 0, { duration: 0.35, ease: 'easeOut' });
         animate(coreOpacity, 1, { duration: 0.5, ease: 'easeOut' });
       }, 480);
-      return () => clearTimeout(t);
+      // Explicitly stop the spring on cleanup (scene changes away from s4
+      // before it settles, or unmount) instead of relying on a later
+      // dropY.set() to implicitly cancel it — leaving it running let a
+      // stale spring frame fight the "leaving4" reset below.
+      return () => { clearTimeout(t); dropControls.stop(); };
     }
     if(leaving4){
       dropY.set(0);
@@ -134,7 +148,6 @@ export function RingCanvas({ scene, ringRotate, stageDrift, glowDrift, corePulse
   // both instead — CSS scene transform on the outer wrap, spring drift on
   // the inner one.
   const leanOn = !reduceMotion && lean;
-  const fmtUsd = (v) => `$${v.toLocaleString('en-US')}`;
   return (
     <div className="lp-canvas" aria-hidden="true">
       <div className="lp-stagewrap">
@@ -295,7 +308,7 @@ export function RingCanvas({ scene, ringRotate, stageDrift, glowDrift, corePulse
           <div className={`lp-layer${scene === 's5' ? ' lp-on' : ''} lp-scrim`}>
             <div className="lp-stagelbl">Spent so far</div>
             <div className="lp-stagefig">
-              <Odometer active={scene === 's5'} from={0} to={61} format={(v) => `${v}%`} className="lp-odometer" />
+              <Odometer active={scene === 's5'} from={0} to={61} format={fmtPct} className="lp-odometer" />
               <small> of plan</small>
             </div>
             <div className="lp-stagelbl" style={{ marginTop: 8 }}>= $1,310 of $2,150</div>

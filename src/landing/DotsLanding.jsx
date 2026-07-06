@@ -88,7 +88,7 @@ function sectionContent(index, offline){
         <h2 data-p>By us. <em className="lp-acc">For us.</em></h2>
         <blockquote>The aid office gives you a number. Nobody tells you what to do with it. I built Marro because I needed that answer myself.</blockquote>
         <div className="lp-sig">
-          <svg width="40" height="40" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="120" fill="#14150F" /><g transform="translate(256,256)" fill="none" stroke="#F6EFDD" strokeWidth="26"><circle r="172" /><circle r="118" /><circle r="64" opacity="0.72" /><circle r="26" fill="#DDA528" stroke="none" /></g></svg>
+          <svg className="lpd-sig-mark" width="40" height="40" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="120" fill="#14150F" /><g transform="translate(256,256)" fill="none" stroke="#F6EFDD" strokeWidth="26"><circle r="172" /><circle r="118" /><circle r="64" opacity="0.72" /><circle r="26" fill="#DDA528" stroke="none" /></g></svg>
           <div><div className="lp-nm">The med student behind Marro</div><div className="lp-rl">MD program</div></div>
         </div>
       </>
@@ -119,7 +119,13 @@ export default function DotsLanding({ offline }){
   const canvasRef = useRef(null);
   const engineRef = useRef(null);
   const [active, setActive] = useState(0);
-  const [showHint, setShowHint] = useState(true);
+  // Read the actual scroll position at mount, not a hardcoded `true`: a
+  // reload/bfcache-restore mid-page (browser scroll restoration) can land
+  // the user already scrolled well past the hero before any 'scroll' event
+  // fires, and the hint would otherwise sit visible until the next scroll.
+  const [showHint, setShowHint] = useState(
+    () => typeof window === 'undefined' || window.scrollY <= 40
+  );
 
   // Reduced-motion guard (belt-and-suspenders — LandingPage already routes away).
   const reduced = typeof window !== 'undefined'
@@ -166,7 +172,19 @@ export default function DotsLanding({ offline }){
   // the page's total scrollable distance disagree with the engine's
   // per-frame progress math, i.e. exactly the class of bug this fix targets
   // on the JS side (see dotsEngine.js baseVH comment).
-  const spacerHeight = `calc(${(SECTION_COUNT - 1) * SEG_VH * 100}svh + 100svh)`;
+  //
+  // Set as a plain `height:vh; height:svh;` PAIR via cssText (not React's
+  // style object, which can't hold two same-key declarations) so pre-15.4
+  // Safari — which doesn't understand svh at all — silently drops that
+  // second declaration and keeps the vh fallback instead of ending up with
+  // no height/an unscrollable page.
+  const spacerRef = useRef(null);
+  useLayoutEffect(() => {
+    const el = spacerRef.current;
+    if (!el) return;
+    const n = (SECTION_COUNT - 1) * SEG_VH * 100;
+    el.style.cssText = `height:calc(${n}vh + 100vh);height:calc(${n}svh + 100svh);`;
+  }, []);
 
   return (
     <div className="lp lpd" id="top" data-scene={`s${active + 1}`}>
@@ -198,7 +216,7 @@ export default function DotsLanding({ offline }){
       <SrArticle />
 
       {/* Scroll driver. */}
-      <div className="lpd-spacer" style={{ height: spacerHeight }} aria-hidden="true" />
+      <div className="lpd-spacer" ref={spacerRef} aria-hidden="true" />
 
       <p className={`lpd-hint${showHint ? ' lpd-hint-show' : ''}`} aria-hidden="true">Scroll</p>
     </div>
