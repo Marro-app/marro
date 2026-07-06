@@ -109,6 +109,20 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
   let pSmooth = 0, pSmoothInit = false;
   let lastNow = 0;
   let lastTarget = 0;   // previous frame's raw scroll target (detects "at rest")
+  // Rest-resolve LATCH: the raw scroll target captured at the moment scroll
+  // came to rest (-1 = not resting). While latched, the lerp goal is pinned to
+  // the nearest HOLD-band center and STAYS there until the user actually
+  // scrolls again. This must be a one-shot latch, not a per-frame condition:
+  // the old per-frame check included `|pTarget - pSmooth| < 0.5`, and when the
+  // rest point sat 0.5–0.68 sections from its HOLD center (fractional scroll
+  // position 0.5–0.68 of a segment), pSmooth easing TOWARD the hold center
+  // crossed that 0.5 radius — flipping the condition off, snapping the goal
+  // back to the raw target, pulling pSmooth back inside the radius, flipping
+  // it on again… a permanent goal oscillation. At phone frame rates the swing
+  // crossed the section boundary every few frames, visibly pumping the settled
+  // text's opacity/translate — the continuous "jitter after the text forms"
+  // bug (and the rAF loop never slept).
+  let restLatch = -1;
 
   // Grid-sample the alpha channel of whatever was just drawn into offCtx, but
   // ONLY within the given rect, at the given step. `tag` decides particle color:
@@ -388,11 +402,20 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
     //    — there's no scroll motion left to drive t. These two goals are
     //    MUTUALLY EXCLUSIVE (one lerp target, never both) so they can't fight
     //    and stall the cloud halfway.
-    const scrollAtRest = Math.abs(pTarget - lastTarget) < 0.0004 && Math.abs(pTarget - pSmooth) < 0.5;
+    const moved = Math.abs(pTarget - lastTarget) >= 0.0004;
     lastTarget = pTarget;
+    // Break the latch only on REAL scrolling: a deliberate change of scroll
+    // position (> ~2% of a segment, ≈11–14px), not sub-pixel scroll noise or
+    // pSmooth's own easing (which must never be able to unlatch the goal —
+    // see restLatch declaration for the oscillation this prevents).
+    if (restLatch >= 0 && Math.abs(pTarget - restLatch) > 0.02) restLatch = -1;
+    // Engage once: scroll target stopped changing AND the smoothed progress
+    // has mostly caught up (while it's still far behind — e.g. a long fling —
+    // keep scrubbing toward the raw target first, exactly as before).
+    if (restLatch < 0 && !moved && Math.abs(pTarget - pSmooth) < 0.5) restLatch = pTarget;
     let goal = pTarget;
-    if (scrollAtRest){
-      const seg = clamp(Math.round(pTarget), 0, N - 1);
+    if (restLatch >= 0){
+      const seg = clamp(Math.round(restLatch), 0, N - 1);
       goal = seg >= N - 1 ? N - 1 : seg + HOLD * 0.5;   // inside the section's HOLD band
     }
     pSmooth += (goal - pSmooth) * followed;
