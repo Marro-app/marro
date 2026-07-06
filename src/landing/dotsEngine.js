@@ -78,6 +78,20 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
   const sprites = makeSprites();
 
   let vw = 0, vh = 0, dpr = 1, cx = 0, cy = 0;
+  // STABLE segment-height basis for all scroll→progress math, in px.
+  // iOS Safari collapses/expands its URL bar + bottom toolbar during scroll,
+  // which changes window.innerHeight MID-GESTURE (and fires `resize`). If the
+  // progress denominator (segPx) were derived from that live value, pTarget =
+  // scrollY/segPx would jump discontinuously between two frames of a single
+  // gesture (innerHeight swings ~660↔780px on an iPhone — >0.5 sections of
+  // error deep into the page), making the engine briefly target the WRONG
+  // section (ghost glyphs) or rest-resolve into the wrong HOLD band (stuck
+  // dust). So we measure 100svh ONCE (small viewport height — assumes chrome
+  // fully shown; never changes with chrome state) and reuse it. Re-measured
+  // only on a real orientation/width change — chrome collapse never changes
+  // width. The spacer in DotsLanding uses the same 100svh basis (CSS), so the
+  // page length and the progress math can never disagree.
+  let baseVH = 0;
   let targets = null;    // per-section point arrays
   let trans = [];        // cached transition particle sets
   let raf = 0;
@@ -350,7 +364,8 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
     const sections = getSections();
     const N = sections.length;
     if (N < 2){ wake(); return; }
-    const segPx = segVH * vh;
+    // Use baseVH (stable), NOT the live `vh` — see baseVH comment above size().
+    const segPx = segVH * baseVH;
     const pTarget = clamp(window.scrollY / segPx, 0, N - 1);
 
     // Lerp the smoothed progress toward the raw scroll target each frame
@@ -431,9 +446,18 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
   }
 
   function size(){
-    vw = window.innerWidth || document.documentElement.clientWidth;
+    const newVW = window.innerWidth || document.documentElement.clientWidth;
     vh = window.innerHeight || document.documentElement.clientHeight;
-    if (!vw || !vh){ vw = vh = 0; return; }
+    if (!newVW || !vh){ vw = vh = 0; return; }
+    // Only re-baseline baseVH when the WIDTH changes (real rotation/resize) or
+    // on first measurement. iOS Safari's chrome collapse/expand changes
+    // window.innerHeight (and fires `resize`) without changing width — so a
+    // width-unchanged resize is chrome movement, not a layout event, and must
+    // NOT shift the progress-math denominator (segPx) or the scroll-driven
+    // section boundaries would jump mid-gesture (see baseVH declaration above
+    // for the full rationale / symptom mapping).
+    if (!baseVH || newVW !== vw) baseVH = vh;
+    vw = newVW;
     cx = vw / 2; cy = vh / 2;
     dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = vw * dpr; canvas.height = vh * dpr;
@@ -445,7 +469,15 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
   let resizeTimer = 0;
   function onResize(){
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(function(){ size(); if (ready) buildTargets(); wake(); }, 250);
+    resizeTimer = setTimeout(function(){
+      const prevW = vw;
+      size();
+      // Only rebuild particle targets (expensive: re-samples every glyph) on a
+      // real width change. A chrome-driven height-only resize must not thrash
+      // the whole particle system mid-scroll.
+      if (ready && vw !== prevW) buildTargets();
+      wake();
+    }, 250);
   }
 
   return {
@@ -466,8 +498,11 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
       }
       wake();
     },
-    // segment height in px, for DotsLanding to size the scroll spacer
-    segPx(){ return segVH * (window.innerHeight || 1); },
+    // segment height in px, for DotsLanding to size the scroll spacer.
+    // Uses the same stable baseVH as the progress math (not live innerHeight)
+    // so the spacer's total scrollable height can never disagree with the
+    // section-boundary math above — both must move together or not at all.
+    segPx(){ return segVH * (baseVH || window.innerHeight || 1); },
     rebuild(){ if (ready) buildTargets(); wake(); },
     destroy(){
       destroyed = true;

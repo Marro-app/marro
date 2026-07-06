@@ -158,7 +158,15 @@ export default function DotsLanding({ offline }){
     return () => window.removeEventListener('scroll', onScroll);
   }, [reduced]);
 
-  const spacerHeight = `calc(${(SECTION_COUNT - 1) * SEG_VH * 100}vh + 100vh)`;
+  // Use svh (small viewport height — assumes browser chrome is always fully
+  // shown, so the value never changes as iOS Safari's URL bar/toolbar
+  // collapse/expand mid-scroll) instead of bare vh. Bare vh on iOS Safari is
+  // sized off the LARGEST possible viewport (chrome hidden), which can
+  // disagree with dotsEngine.js's stable baseVH — a mismatch here would make
+  // the page's total scrollable distance disagree with the engine's
+  // per-frame progress math, i.e. exactly the class of bug this fix targets
+  // on the JS side (see dotsEngine.js baseVH comment).
+  const spacerHeight = `calc(${(SECTION_COUNT - 1) * SEG_VH * 100}svh + 100svh)`;
 
   return (
     <div className="lp lpd" id="top" data-scene={`s${active + 1}`}>
