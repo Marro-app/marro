@@ -41,10 +41,25 @@ This is the concrete day-to-day routine.
 
 - **Branch naming:** `yourname/short-feature-name` (e.g. `mohamad/loan-snapshot`,
   `ethan/csv-import`). Whoever starts a feature creates the branch off latest `main`,
-  works there, and opens a PR (pull request — GitHub's review step: the change sits
-  there for the other founder to look over before it merges) when ready. No more
-  direct pushes to `main`, and no more bypassing branch protection — that was a
-  solo-founder shortcut; use the PR flow it was already requiring.
+  works there, and opens a PR when ready.
+- **The PR is NOT a wait-for-the-other-founder review gate** (revised 2026-07-06).
+  Neither of us reads raw diffs, so a "please approve my PR" step was just theater —
+  we were rubber-stamping our own PRs anyway. What the PR is actually for, and why we
+  still branch instead of pushing straight to `main`:
+  1. **Preview deploy** — Vercel builds every branch to a temporary preview URL. That's
+     how you click-test the *real running app* before it's live on joinmarro.com — the
+     actual safety net for people who can't read code. Never skip it.
+  2. **CI checks** — build/lint must pass before merge.
+  3. **A `/code-review` pass by Claude** — the real correctness/security review, the
+     substitute for reading the diff. Ask your Claude session to run it on anything
+     non-trivial (`/code-review`, or `/code-review ultra` for bigger/backend changes).
+  4. **No-clobber** — a branch keeps your parallel session from stepping on the other
+     founder's work on `main`.
+
+  Flow: branch → push → test the preview URL → (Claude `/code-review` if it matters) →
+  **merge it yourself** the moment it looks good. No waiting on the other founder.
+  Still **never push directly to `main`** — it auto-deploys to production with no
+  preview-test buffer, and it's where parallel sessions collide.
 - **Before starting work, check what the other founder is mid-flight on:** run
   `git branch -r` (or check GitHub's branch/PR list) and skim the last few entries in
   `docs/PRODUCT_DECISIONS.md`. Tell your Claude session to do this at the start of a
