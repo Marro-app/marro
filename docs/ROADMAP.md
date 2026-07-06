@@ -20,7 +20,7 @@
 
 **Track B — doors + trust (paperwork; start day 1, the queues are long):**
 - ✓ **Landing redesign** (2026-07-03, branch `landing-redesign`) — scrollytelling "Growth Rings" public landing page (`src/landing/`), replacing the old plain login screen for signed-out visitors. Feeds directly into the OAuth verification requirement below (Google needs a real public home page, not a login wall). Details in `PRODUCT_DECISIONS.md` 2026-07-03.
-- **Submit Google OAuth verification** (custom auth domain, logo, out of Testing mode). Everything downstream waits on this review.
+- ✓ **Submit Google OAuth verification** (custom auth domain, logo, out of Testing mode) — done 2026-07-05; verified and out of Testing mode.
 - Enable the **`allowed_emails` invite gate** at publish time (SQL ready: `supabase/allowed_emails.sql`).
 - **Usage/event logging:** an `events` table (RLS write-own — policies or it reads empty, CLAUDE.md rule 4) + ~10 key events (login, setup finish, check-in done, tab views). No dashboard UI — SQL views only.
 - **Account deletion + data export** (first serverless fn; also the privacy.html promise + GDPR/CCPA).
