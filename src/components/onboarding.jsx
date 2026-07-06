@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { C } from '../lib/theme.js';
-import { getSupabase } from '../lib/data.js';
+import { getSupabase, logEvent } from '../lib/data.js';
 import { generateYearConfigs, blankYearFields, DEFAULT_STATE, DEFAULT_CATS, SETUP_VERSION, BLANK_MONTHLY, MONTH_NAMES, MONTH_FULL, todayStr, yr2 } from '../lib/format.js';
 import { US_MED_SCHOOLS, degreeForSchool, DO_DUAL, dualOptionsForSchool } from '../lib/schools.js';
 import { radioProps } from '../lib/ui-helpers.js';
@@ -364,6 +364,9 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
     if(firstRun) d.years = generateYearConfigs(startYear, progLen).map(cfg=>({...cfg, monthly:{...BLANK_MONTHLY}, monthlyOverrides:{}}));
     d.setupVersion = SETUP_VERSION;
     upd(d);
+    // First-run onboarding actually completing (not the grandfathered/progressive
+    // catch-up path in ProgressiveSetup below) — fire once, here only.
+    if(firstRun) logEvent('setup_finished', {});
     setStep(5);
     setTimeout(()=>onDone(school), 1500);
   };

@@ -61,4 +61,21 @@ export default [
     },
     settings: { react: { version: '18.3' } },
   },
+  {
+    // Vercel serverless functions run in Node, not the browser — separate
+    // globals from the src/ browser config above (rather than adding
+    // process/require to the browser set, which would be wrong there).
+    files: ['api/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+    },
+  },
 ];

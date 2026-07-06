@@ -82,6 +82,18 @@ export const stateFetch = async () => {           // → JSON string | null  (nu
   } catch { return null; }
 };
 
+// Closed-beta invite gate (supabase/allowed_emails.sql §3). Fails closed:
+// any RPC error (network hiccup, cold start) is treated as "not allowed" —
+// worst case a legitimate user retries, which beats an invite-only gate that
+// silently lets strangers through during an outage.
+export const isEmailAllowed = async () => {       // → boolean
+  try {
+    const sb = await getSupabase();
+    const {data, error} = await sb.rpc('is_email_allowed');
+    return !error && data === true;
+  } catch { return false; }
+};
+
 export const stateWrite = async (content) => {    // → boolean (true = persisted)
   try {
     const sb = await getSupabase();
@@ -90,6 +102,95 @@ export const stateWrite = async (content) => {    // → boolean (true = persist
     const {error} = await sb.from("app_state").upsert({user_id:user.id, state:JSON.parse(content)});
     return !error;
   } catch { return false; }
+};
+
+// ── Usage/event logging (Phase 1 Track B, supabase/events.sql) ──────────────────
+// Fire-and-forget: NEVER throws, NEVER awaited by the caller for its result, and
+// safe with no session/offline/any Supabase error — logging must never affect
+// the actual feature it's attached to. Looks up the current user id itself so
+// call sites don't need to thread one through. `metadata` must stay minimal,
+// non-sensitive structural context only (e.g. {tab:"budget"}) — never dollar
+// amounts, balances, or other financial/personal details (docs/DATA_ETHICS.md).
+// Table is insert-only from the client (RLS — see supabase/events.sql); no read
+// path exists here or anywhere else in the app.
+export const logEvent = async (eventName, metadata) => {
+  try {
+    const sb = await getSupabase();
+    const {data:{user}} = await sb.auth.getUser();
+    if(!user) return;
+    await sb.from("events").insert({user_id:user.id, event_name:eventName, metadata:metadata ?? null});
+  } catch { /* best-effort only — logging must never surface an error to the caller */ }
+};
+
+// ── Data export (Settings → "Export my data") ────────────────────────────────
+// Entirely client-side: the signed-in user's own `app_state` + `profiles` rows
+// are already readable by them under existing RLS (the same rows stateFetch/
+// stateWrite already read/write) — no backend needed here. Bundles both rows
+// plus basic account info into one human-readable JSON file and triggers a
+// browser download. Returns {ok:boolean, error?:string} so the caller can show
+// a UI failure state rather than fail silently.
+export const exportUserData = async () => {
+  try {
+    const sb = await getSupabase();
+    const {data:{user}} = await sb.auth.getUser();
+    if (!user) return {ok:false, error:"Not signed in."};
+
+    const [{data:stateRow, error:stateErr}, {data:profileRow, error:profileErr}] = await Promise.all([
+      sb.from("app_state").select("state, created_at, updated_at").maybeSingle(),
+      sb.from("profiles").select("school, created_at, updated_at").maybeSingle(),
+    ]);
+    if (stateErr || profileErr) return {ok:false, error:"Couldn't read your data. Please try again."};
+
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      account: {id:user.id, email:user.email, createdAt:user.created_at},
+      profile: profileRow || null,
+      appState: stateRow?.state || null,
+    };
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0,10);
+    a.href = url;
+    a.download = `marro-export-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    return {ok:true};
+  } catch {
+    return {ok:false, error:"Couldn't export your data. Please try again."};
+  }
+};
+
+// ── Account deletion (Settings → "Delete my account") ────────────────────────
+// A public/anon Supabase client can never delete its own auth.users row (needs
+// the Admin API + service-role key — never shipped to the browser). This calls
+// the Vercel serverless function (api/delete-account.js), which verifies the
+// caller's access token server-side and derives the uid itself — the client
+// never asserts its own user id to the backend, it just proves who it is via
+// the bearer token. Returns {ok:boolean, error?:string}.
+export const deleteAccount = async () => {
+  try {
+    const sb = await getSupabase();
+    const {data:{session}} = await sb.auth.getSession();
+    const token = session?.access_token;
+    if (!token) return {ok:false, error:"Not signed in."};
+
+    const res = await fetch("/api/delete-account", {
+      method: "POST",
+      headers: {Authorization: `Bearer ${token}`},
+    });
+    if (!res.ok) {
+      let msg = "Failed to delete account. Please try again.";
+      try { const body = await res.json(); if (body?.error) msg = body.error; } catch { /* non-JSON error body */ }
+      return {ok:false, error:msg};
+    }
+    return {ok:true};
+  } catch {
+    return {ok:false, error:"Network error — please check your connection and try again."};
+  }
 };
 
 // ── 3-way merge engine ─────────────────────────────────────────────────────────

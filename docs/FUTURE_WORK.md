@@ -61,4 +61,4 @@ Both items below require the **Supabase service-role key behind a server functio
 - [ ] Bloom state currently triggers only from "Log deposit" — also trigger when a weekly exams entry overflows a goal to fully funded.
 
 ## Pre-public-launch (Phase 2.5b → before non-WCM testers)
-- [ ] **Google OAuth consent shows raw Supabase domain** ("Sign in to <ref>.supabase.co") + "unverified app" warning. Harmless in testing, looks sketchy to new users. Fix at launch: (1) buy a domain, (2) add it as a Supabase **custom auth domain** (paid add-on, needs Pro plan) so the callback is on our domain, (3) add a real app logo, (4) submit the Google consent screen for **verification** (removes the warning + shows "Marro" + logo). Pairs with publishing the consent screen out of Testing mode (currently capped at 100 test users).
+- ✓ **Google OAuth consent verification** — done 2026-07-05. Custom auth domain, real app logo, verification approved, published out of Testing mode (no more 100-user cap or "unverified app" warning).

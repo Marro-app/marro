@@ -6,6 +6,7 @@ import { BrandIcon } from '../components/icons.jsx';
 import { DateField } from '../components/pickers.jsx';
 import { RenewalDialog } from '../components/modals.jsx';
 import { useApp } from '../context/AppContext.js';
+import { logEvent } from '../lib/data.js';
 
 // Dedicated edit modal — makes "you're editing X" unmistakable (vs. the old
 // repopulate-the-add-form pattern, which users missed). Owns its own field state
@@ -79,6 +80,7 @@ export function SubscriptionsTab(){
     d.subscriptions.push({id:"s_"+Date.now(),name:subName.trim(),amount:parseFloat(subAmt)||0,cycle:subCycle,renewal:subRenew,active:true,renewalPrompted:false});
     d=syncSubs(d); upd(d);
     setSubName("");setSubAmt("");setSubCycle("monthly");setSubRenew("");
+    logEvent('subscription_added', {});
   };
   const saveEdit = (sid, fields) => {
     let d = JSON.parse(JSON.stringify(data));
