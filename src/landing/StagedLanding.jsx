@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { LazyMotion, domMin, useScroll, useTransform, useSpring, useMotionValue, animate } from 'motion/react';
 
 // Split out of LandingPage.jsx (perf fix): this is the desktop-only animated
@@ -14,6 +14,7 @@ import { BlobLayer, Nav, GetStartedCTA } from './landingShared.jsx';
 // ============ THE STAGED LANDING ============
 export default function StagedLanding({ offline }){
   const rootRef = useRef(null);
+  const scrollerRef = useRef(null);
   const panelRefs = useRef([]);
   const [scene, setScene] = useState('s1');
   const [loaded, setLoaded] = useState(false);
@@ -23,6 +24,69 @@ export default function StagedLanding({ offline }){
   const pulseCore = useCallback(() => {
     animate(corePulse, [1, 1.12, 1], { type: 'spring', stiffness: 320, damping: 22 });
   }, [corePulse]);
+
+  // Keep --lp-nav-h (the top edge of the clamped scroll container, see
+  // landing.css) exactly equal to the fixed nav's real rendered height, so
+  // text zoom / font wrapping can never open a gap or an overlap between the
+  // banner and the scrollable zone. Layout effect so the first paint already
+  // has the right clamp.
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    const nav = root?.querySelector('.lp-nav');
+    if(!root || !nav || typeof ResizeObserver === 'undefined') return;
+    const set = () => {
+      root.style.setProperty('--lp-nav-h', `${Math.ceil(nav.getBoundingClientRect().height)}px`);
+    };
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(nav);
+    return () => ro.disconnect();
+  }, []);
+
+  // The document no longer scrolls (the page is exactly one viewport tall;
+  // .lp-scroller is the real scroll container). Browsers only route keyboard
+  // scrolling into a container when focus is on/inside it, so without this a
+  // keyboard user pressing Space/arrows on page load would see nothing move
+  // (WCAG 2.1.1 regression). Forward document-level scroll keys — ONLY when
+  // nothing is focused (target is <body>/<html>), so buttons, the modal and
+  // in-scroller focus keep their native behavior untouched.
+  useEffect(() => {
+    const onKey = (e) => {
+      const scroller = scrollerRef.current;
+      if(!scroller || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+      const t = e.target;
+      if(t !== document.body && t !== document.documentElement) return;
+      const page = scroller.clientHeight;
+      let top = null;
+      switch(e.key){
+        case 'ArrowDown': top = scroller.scrollTop + 80; break;
+        case 'ArrowUp': top = scroller.scrollTop - 80; break;
+        case 'PageDown': top = scroller.scrollTop + page * 0.9; break;
+        case 'PageUp': top = scroller.scrollTop - page * 0.9; break;
+        case ' ': top = scroller.scrollTop + (e.shiftKey ? -1 : 1) * page * 0.9; break;
+        case 'Home': top = 0; break;
+        case 'End': top = scroller.scrollHeight; break;
+        default: return;
+      }
+      e.preventDefault();
+      scroller.scrollTo({ top, behavior: 'smooth' });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Same story for the mouse wheel: the fixed nav sits OUTSIDE the scroll
+  // container, so wheeling while the cursor rests on the banner would
+  // otherwise scroll nothing. Forward it to the scroller.
+  useEffect(() => {
+    const nav = rootRef.current?.querySelector('.lp-nav');
+    if(!nav) return;
+    const onWheel = (e) => {
+      scrollerRef.current?.scrollBy({ top: e.deltaY, left: 0 });
+    };
+    nav.addEventListener('wheel', onWheel, { passive: true });
+    return () => nav.removeEventListener('wheel', onWheel);
+  }, []);
 
   // Draw rings in on mount (double-rAF, as in the mockup).
   useEffect(() => {
@@ -62,7 +126,7 @@ export default function StagedLanding({ offline }){
       entries.forEach((e) => {
         if(e.isIntersecting) setScene(e.target.dataset.scene);
       });
-    }, { root: null, rootMargin: '-45% 0px -45% 0px', threshold: 0 });
+    }, { root: scrollerRef.current, rootMargin: '-45% 0px -45% 0px', threshold: 0 });
     panels.forEach((p) => io.observe(p));
     return () => io.disconnect();
   }, []);
@@ -82,15 +146,21 @@ export default function StagedLanding({ offline }){
         <BlobLayer />
         <Nav offline={offline} onHoverCore={pulseCore} />
 
-        <StageCanvas scene={scene} corePulse={corePulse} />
+        <StageCanvas scene={scene} corePulse={corePulse} scrollerRef={scrollerRef} />
 
-        {/* Real scrolling content — one panel per scene. This IS the page's
-            scroll flow (unlike v4's invisible spacers): normal document,
-            normal scrollbar, normal browser find-in-page / reader mode. */}
-        <main className="lp-scroller">
+        {/* Real scrolling content — one panel per scene, in a scroll
+            container clamped to the zone below the fixed nav (see
+            .lp-scroller in landing.css): content clips at the banner's
+            bottom edge and the range hard-locks at both ends. tabIndex=0
+            keeps this scrollable region keyboard-focusable/scrollable
+            (axe: scrollable-region-focusable). id="top" on the first panel
+            keeps the brand link's href="#top" working now that the document
+            itself no longer scrolls. */}
+        <main className="lp-scroller" ref={scrollerRef} tabIndex={0}>
           {SCENE_TICKS.map((label, i) => (
             <section
               key={i}
+              id={i === 0 ? 'top' : undefined}
               ref={(el) => { panelRefs.current[i] = el; }}
               data-scene={`s${i + 1}`}
               className="lp-panel"
@@ -127,10 +197,10 @@ export default function StagedLanding({ offline }){
 }
 
 // Fixed decorative ring canvas + its scroll-linked continuous motion
-// (rotation/drift/glow/pointer-lean) — reads document scroll now, since the
-// scroller is the real page, not a nested container.
-function StageCanvas({ scene, corePulse }){
-  const { scrollYProgress } = useScroll();
+// (rotation/drift/glow/pointer-lean) — reads the .lp-scroller container's
+// scroll (the real scroll surface; the document itself no longer scrolls).
+function StageCanvas({ scene, corePulse, scrollerRef }){
+  const { scrollYProgress } = useScroll({ container: scrollerRef });
 
   const ringRotate = useSpring(useTransform(scrollYProgress, [0, 1], [0, 35]), { stiffness: 100, damping: 30 });
   const scale = useSpring(useTransform(scrollYProgress, [0, 0.5, 1], [1, 1.04, 0.96]), { stiffness: 100, damping: 30 });
