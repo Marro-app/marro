@@ -7,6 +7,17 @@
    the active panel, which poses the canvas via [data-scene] rules below.
    prefers-reduced-motion renders a plain stacked static document instead
    (.lp-static, unchanged from v4). */
+/* Themed document scrollbar for the paths that scroll the document itself
+   (mobile dot-dissolve, reduced-motion static stack) — desktop's own scroll
+   region is themed separately via .lp-scroller below. Scoped via :has() so
+   it only applies while a .lp element is on screen, never leaking into the
+   signed-in app's own document scroll. */
+html:has(.lp){scrollbar-width:thin;scrollbar-color:rgba(246,239,221,.28) transparent}
+html:has(.lp)::-webkit-scrollbar{width:6px}
+html:has(.lp)::-webkit-scrollbar-track{background:transparent}
+html:has(.lp)::-webkit-scrollbar-thumb{background:rgba(246,239,221,.28);border-radius:6px}
+html:has(.lp)::-webkit-scrollbar-thumb:hover{background:rgba(246,239,221,.45)}
+
 .lp{
   --lp-bg:#0C0E0C; --lp-stage:#14150F; --lp-cream:#FBF6E8; --lp-cream63:rgba(248,242,226,.82);
   --lp-cream40:rgba(248,242,226,.58); --lp-gold:#DDA528; --lp-blue:#82AEDB; --lp-clay:#E08A6B;
@@ -214,8 +225,12 @@
    the true end of the last panel (inner scrollers honor it everywhere,
    unlike the root scroller in Safari). tabIndex=0 on the element (see
    StagedLanding.jsx) keeps the region keyboard-scrollable per WCAG. */
-.lp-scroller{position:fixed;top:var(--lp-nav-h);left:0;right:0;bottom:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:none;z-index:20}
+.lp-scroller{position:fixed;top:var(--lp-nav-h);left:0;right:0;bottom:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:none;z-index:20;scrollbar-width:thin;scrollbar-color:rgba(246,239,221,.28) transparent}
 .lp-scroller:focus-visible{outline:2px solid var(--lp-cream);outline-offset:-3px}
+.lp-scroller::-webkit-scrollbar{width:6px}
+.lp-scroller::-webkit-scrollbar-track{background:transparent}
+.lp-scroller::-webkit-scrollbar-thumb{background:rgba(246,239,221,.28);border-radius:6px}
+.lp-scroller::-webkit-scrollbar-thumb:hover{background:rgba(246,239,221,.45)}
 /* Panels fill the scroll container (100% of its fixed height), not 100dvh —
    the container is nav-height shorter than the viewport, so 100dvh panels
    would drift scene boundaries by 73px per panel. Top padding drops from
