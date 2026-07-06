@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { C, applyTheme, THEMES } from './lib/theme.js';
-import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY } from './lib/data.js';
+import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed, logEvent, exportUserData, deleteAccount, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY } from './lib/data.js';
 import { fmt, fmtS, fmtD, fmtDay, fmtA, moTotal, todayStr, getMonday, getSunday, daysUntil, subMonthlyTotal, getYearMonthStr, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE } from './lib/format.js';
 import { BRANDS, BRAND_DOMAINS, getBrandDomain, getBrand } from './lib/brands.js';
 import { US_MED_SCHOOLS, degreeForSchool, DO_DUAL, dualOptionsForSchool } from './lib/schools.js';
@@ -60,6 +60,7 @@ export function App() {
   const [syncStatus, setSyncStatus] = useState(null); // null|"syncing"|"synced"|"offline"|"conflict"
   const [pendingConflict, setPendingConflict] = useState(null);
   const [session, setSession] = useState(undefined); // undefined=restoring, null=logged out, obj=logged in
+  const [accessDenied, setAccessDenied] = useState(false); // closed-beta gate: signed in but not on allowed_emails
   const [profile, setProfile] = useState(null);      // {school} | null (no row yet → ProfileModal)
   const [editSchool, setEditSchool] = useState(false); // settings → reopen ProfileModal to change school
   const [editProgram, setEditProgram] = useState(false); // settings → edit program track (ProgramModal)
@@ -111,6 +112,12 @@ export function App() {
   const [yearUndo, setYearUndo] = useState(null); // last soft-deleted year, for the Undo toast
   useEffect(()=>{ if(!yearUndo) return; const t=setTimeout(()=>setYearUndo(null),8000); return ()=>clearTimeout(t); },[yearUndo]);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false); // settings → "Delete my account"
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteAccountError, setDeleteAccountError] = useState(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [exportingData, setExportingData] = useState(false);
+  const [exportDataError, setExportDataError] = useState(null);
   const [nyStart, setNyStart] = useState("");
   const [nyEnd, setNyEnd] = useState("");
 
@@ -139,6 +146,9 @@ export function App() {
       });
       const {data:{subscription}} = sb.auth.onAuthStateChange((evt, s)=>{
         setSession(s ?? null);
+        if(evt==="SIGNED_IN"){
+          logEvent('login', {});
+        }
         if(evt==="SIGNED_OUT"){
           localStorage.removeItem("marro_v8");
           localStorage.removeItem(SYNC_BASE_KEY);
@@ -158,6 +168,16 @@ export function App() {
     if(!session){ return; }           // signed out → LoginScreen
     (async()=>{
       try{
+        // Closed-beta invite gate (supabase/allowed_emails.sql). Checked once per
+        // fresh session, before anything reads/writes the user's data.
+        if(!(await isEmailAllowed())){
+          const sb = await getSupabase();
+          await sb.auth.signOut();
+          setAccessDenied(true);
+          return;
+        }
+        setAccessDenied(false);
+
         const uid = session.user.id;
         // Shared-device guard: if a different user's data is cached locally, drop it
         // before loading so the migration rule can't upload user A's data to user B.
@@ -273,6 +293,9 @@ export function App() {
   const bloomTimer = React.useRef();
   const triggerBloom = () => { setBloom(true); clearTimeout(bloomTimer.current); bloomTimer.current = setTimeout(()=>setBloom(false), 9000); };
   useEffect(()=>{ if(data){ applyTheme(data.darkMode); setThemeTick(t=>t+1); } },[data && data.darkMode]);
+
+  // Usage logging: fire once per actual tab change (not on every render).
+  useEffect(()=>{ logEvent('tab_view', {tab}); },[tab]);
 
   // Auto-select the correct academic year and month once data is loaded
   useEffect(()=>{
@@ -419,6 +442,15 @@ export function App() {
 
   const loadingScreen = <div style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"#101210",zIndex:2000}}><MarroIntro size={360}/></div>;
   if(session===undefined) return loadingScreen;
+  if(accessDenied) return (
+    <main style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,color:C.text,padding:24}}>
+      <div style={{maxWidth:420,textAlign:"center"}}>
+        <h1 style={{fontSize:20,fontWeight:700,margin:"0 0 10px",fontFamily:"'Newsreader', Georgia, serif"}}>Marro is invite-only right now</h1>
+        <p style={{fontSize:14,color:C.sub,lineHeight:1.5,margin:"0 0 20px"}}>That Google account isn&apos;t on the beta invite list yet. Reach out to request access, or try again if you think this is a mistake.</p>
+        <button className="btn-fill" onClick={()=>{setAccessDenied(false);}} style={{padding:"10px 20px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.teal,color:C.bg,cursor:"pointer",minHeight:44}}>Back to sign in</button>
+      </div>
+    </main>
+  );
   if(session===null) return (
     <React.Suspense fallback={loadingScreen}>
       <LandingPage offline={!navigator.onLine}/>
@@ -709,6 +741,7 @@ export function App() {
       else { const dyr2=d.years.find(y=>y.id===ay)||d.years[0]; const ov=dyr2.monthlyOverrides?.[MONTH_NAMES[eMonthIdx]]?.[c.id]; planned += (ov!==undefined?ov:(Number(dyr2.monthly[c.id])||0)); }
     });
     const deficit=Math.round(planned+unb-moSpendable);
+    logEvent('expense_logged', {});
     return {deficit, isUnbudgeted, catLabel:catObj?.label, monthIdx:eMonthIdx};
   };
 
@@ -719,6 +752,7 @@ export function App() {
     d.categories.push({id,label:newCatName.trim(),...(newCatIcon&&newCatIcon!=="dot"?{icon:newCatIcon}:{})});
     d.years.forEach(y=>{y.monthly[id]=0;});
     upd(d);setNewCatName("");setNewCatIcon("dot");
+    logEvent('category_added', {});
   };
   const reorderCats = (fromId, toId) => {
     if(fromId===toId) return;
@@ -870,6 +904,54 @@ export function App() {
           <button className="btn-fill" onClick={()=>{upd(JSON.parse(JSON.stringify(DEFAULT_STATE)));setConfirmReset(false);}} style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:`1px solid ${C.dangerMid}`,borderRadius:8,background:C.dangerLight,color:C.danger,cursor:"pointer"}}>Reset everything</button>
         </div>
       </Modal>}
+      {confirmDeleteAccount && <Modal title="Delete your account?" onClose={()=>{if(!deletingAccount)setConfirmDeleteAccount(false);}} width={380}>
+        <div style={{fontSize:13,color:C.textMid,marginBottom:12,lineHeight:1.6}}>This permanently deletes your account and <strong>all</strong> your Marro data — budget, weekly entries, savings, subscriptions, and profile. <strong>This cannot be undone.</strong></div>
+        <div style={{fontSize:12,color:C.textMid,marginBottom:8}}>
+          If you want a copy of your data first, close this and use <strong>Export my data</strong> in Settings.
+        </div>
+        <label style={{display:"block",fontSize:11,fontWeight:600,color:C.textMid,marginBottom:6}} htmlFor="delete-confirm-input">
+          Type <strong>DELETE</strong> to confirm
+        </label>
+        <input
+          id="delete-confirm-input"
+          autoFocus
+          value={deleteConfirmText}
+          onChange={e=>setDeleteConfirmText(e.target.value)}
+          disabled={deletingAccount}
+          placeholder="DELETE"
+          style={{width:"100%",boxSizing:"border-box",padding:"9px 10px",fontSize:13,borderRadius:8,border:`1px solid ${C.border}`,background:C.surface,color:C.text,marginBottom:14,outline:"none"}}
+        />
+        {deleteAccountError && <div role="alert" style={{fontSize:12,color:C.danger,marginBottom:12}}>{deleteAccountError}</div>}
+        <div style={{display:"flex",gap:8}}>
+          <button className="btn-fill" disabled={deletingAccount} onClick={()=>setConfirmDeleteAccount(false)} style={{flex:1.4,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.creamSoft,color:C.text,cursor:deletingAccount?"default":"pointer",opacity:deletingAccount?0.6:1}}>Cancel</button>
+          <button
+            className="btn-fill"
+            disabled={deleteConfirmText.trim().toUpperCase()!=="DELETE" || deletingAccount}
+            onClick={async()=>{
+              setDeletingAccount(true);setDeleteAccountError(null);
+              const r = await deleteAccount();
+              if(!r.ok){
+                setDeletingAccount(false);
+                setDeleteAccountError(r.error||"Failed to delete account. Please try again.");
+                return;
+              }
+              // Mirror the SIGNED_OUT cleanup below, then sign out (which also
+              // triggers that handler) — belt-and-suspenders in case sign-out
+              // is slow/offline after the account row is already gone server-side.
+              localStorage.removeItem("marro_v8");
+              localStorage.removeItem(SYNC_BASE_KEY);
+              localStorage.removeItem("marro_uid");
+              const sb = await getSupabase();
+              await sb.auth.signOut();
+              setConfirmDeleteAccount(false);
+              setDeletingAccount(false);
+            }}
+            style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:`1px solid ${C.dangerMid}`,borderRadius:8,background:C.dangerLight,color:C.danger,cursor:(deleteConfirmText.trim().toUpperCase()!=="DELETE"||deletingAccount)?"not-allowed":"pointer",opacity:(deleteConfirmText.trim().toUpperCase()!=="DELETE"||deletingAccount)?0.5:1}}
+          >
+            {deletingAccount?"Deleting…":"Delete account"}
+          </button>
+        </div>
+      </Modal>}
       {confirmYearRemove!==null && <Modal title="Remove year" onClose={()=>setConfirmYearRemove(null)} width={350}>
         <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>Remove <strong>{data.years.find(y=>y.id===confirmYearRemove)?.label}</strong>? Its budget data is kept — you can reinstate this year anytime from <strong>Add year</strong>, and its numbers come right back.</div>
         <div style={{display:"flex",gap:8}}>
@@ -1011,6 +1093,21 @@ export function App() {
                       <Icon name="subs" size={14}/>
                       Reset defaults
                     </button>
+                    <button className="menu-row" disabled={exportingData} onClick={async()=>{
+                      setExportingData(true);setExportDataError(null);
+                      const r = await exportUserData();
+                      setExportingData(false);
+                      if(!r.ok) setExportDataError(r.error||"Couldn't export your data. Please try again.");
+                      else setSettingsOpen(false);
+                    }} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:500,cursor:exportingData?"default":"pointer",textAlign:"left",transition:"background .15s",opacity:exportingData?0.6:1}}>
+                      <Icon name="live" size={14}/>
+                      {exportingData?"Exporting…":"Export my data"}
+                    </button>
+                    {exportDataError && <div role="alert" style={{padding:"0 10px 6px",fontSize:11,color:C.danger}}>{exportDataError}</div>}
+                    <button className="menu-row" onClick={()=>{setSettingsOpen(false);setDeleteConfirmText("");setDeleteAccountError(null);setConfirmDeleteAccount(true);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.danger,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
+                      <Icon name="subs" size={14}/>
+                      Delete my account
+                    </button>
                   </div>
                   {/* Footer — legal + sign out */}
                   <div style={{borderTop:`1px solid ${C.border}`,padding:"4px 0 2px"}}>
@@ -1019,7 +1116,7 @@ export function App() {
                       <span style={{fontSize:10.5,color:C.border,padding:"0 5px"}}>·</span>
                       <a href="/privacy.html" target="_blank" rel="noopener" style={{fontSize:10.5,color:C.gray,textDecoration:"none",borderBottom:`1px solid ${C.border}`}}>Privacy</a>
                     </div>
-                    <button className="menu-row" onClick={async()=>{setSettingsOpen(false);const sb=await getSupabase();sb.auth.signOut();}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:600,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
+                    <button className="menu-row" onClick={async()=>{setSettingsOpen(false);logEvent('sign_out', {});const sb=await getSupabase();sb.auth.signOut();}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:600,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
                       <Icon name="live" size={14}/>
                       Sign out
                     </button>

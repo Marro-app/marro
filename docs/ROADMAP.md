@@ -20,10 +20,10 @@
 
 **Track B — doors + trust (paperwork; start day 1, the queues are long):**
 - ✓ **Landing redesign** (2026-07-03, branch `landing-redesign`) — scrollytelling "Growth Rings" public landing page (`src/landing/`), replacing the old plain login screen for signed-out visitors. Feeds directly into the OAuth verification requirement below (Google needs a real public home page, not a login wall). Details in `PRODUCT_DECISIONS.md` 2026-07-03.
-- ✓ **Submit Google OAuth verification** (custom auth domain, logo, out of Testing mode) — done 2026-07-05; verified and out of Testing mode.
-- Enable the **`allowed_emails` invite gate** at publish time (SQL ready: `supabase/allowed_emails.sql`).
-- **Usage/event logging:** an `events` table (RLS write-own — policies or it reads empty, CLAUDE.md rule 4) + ~10 key events (login, setup finish, check-in done, tab views). No dashboard UI — SQL views only.
-- **Account deletion + data export** (first serverless fn; also the privacy.html promise + GDPR/CCPA).
+- ✓ **Google OAuth verification** — approved 2026-07-05 (custom auth domain, logo, out of Testing mode; Publishing status confirmed In production, not capped at 100 test users).
+- ✓ **`allowed_emails` invite gate** — enabled 2026-07-06. SQL sections 1–3 run in Supabase Studio (table + RLS + `is_email_allowed()`, owner seeded); app-side check wired in `src/App.jsx` (calls `isEmailAllowed()` from `src/lib/data.js` right after session established — fails closed, signs out + shows an invite-only screen if the email isn't on the list). To invite someone: `insert into allowed_emails (email, note) values ('their@email.com', 'note') on conflict do nothing;` in Supabase SQL Editor.
+- ✓ **Usage/event logging** (2026-07-06) — `events` table (RLS write-own, `supabase/events.sql`) + 8 key events (login, setup finish, tab views, category/subscription/savings-goal added, expense logged, sign out; no check-in flow exists yet to hook). No dashboard UI — SQL views only. Details in `PRODUCT_DECISIONS.md` 2026-07-06.
+- ✓ **Account deletion + data export** (2026-07-06) — first serverless fn (`api/delete-account.js`, service-role, verifies the caller's own access token server-side — never trusts a client-supplied uid); export is client-side only (own `app_state`/`profiles` rows, already RLS-readable → JSON download). Settings menu: "Export my data" + "Delete my account" (type-DELETE-to-confirm modal). Fulfills the privacy.html promise + GDPR/CCPA. Details in `PRODUCT_DECISIONS.md` 2026-07-06.
 - Send `privacy.html`/`terms.html` to the **UCI clinic** for human review.
 
 **Done when:** 3 visible tabs + settings; a stranger can join unaided (pending Google); usage is visible; users can leave with their data.

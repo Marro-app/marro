@@ -5,6 +5,7 @@ import { fmt, fmtS, fmtDay, todayStr, MONTH_NAMES, getMonday, getSunday } from '
 import { Card, SectionTitle, EmptyState, Pill, RingProgress, XBtn, Modal } from '../components/primitives.jsx';
 import { DateField } from '../components/pickers.jsx';
 import { useApp } from '../context/AppContext.js';
+import { logEvent } from '../lib/data.js';
 
 // Savings — STEP exam goals, deposit history, custom goals, growth projector,
 // recommendations. Private state: the log-deposit modal, the add-goal modal, and
@@ -138,6 +139,7 @@ export function SavingsTab(){
               const d=JSON.parse(JSON.stringify(data));
               d.savingsGoals.push({id:"sg_"+Date.now(),label:newGoalLabel.trim(),targetAmount:parseFloat(newGoalTarget)||0,saved:0,monthlyContribution:parseFloat(newGoalMonthly)||0,targetDate:newGoalDate});
               upd(d);setShowAddSavingsGoal(false);setNewGoalLabel("");setNewGoalTarget("");setNewGoalDate("");setNewGoalMonthly("");
+              logEvent('savings_goal_added', {});
             }} disabled={!newGoalLabel.trim()||!(parseFloat(newGoalTarget)>0)} style={{padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:(!newGoalLabel.trim()||!(parseFloat(newGoalTarget)>0))?C.surface:C.teal,color:(!newGoalLabel.trim()||!(parseFloat(newGoalTarget)>0))?C.gray:C.bg,cursor:(!newGoalLabel.trim()||!(parseFloat(newGoalTarget)>0))?"not-allowed":"pointer",marginTop:4}}>
               Add goal
             </button>
