@@ -59,6 +59,24 @@ function makeSprites(){
   });
 }
 
+// Measures 100svh directly via a throwaway probe element instead of trusting
+// window.innerHeight at whatever moment size() first runs. innerHeight at
+// that moment reflects WHATEVER chrome state the browser happens to be in
+// (e.g. a mid-page reload/bfcache-restore, or an in-app browser, can already
+// have the URL bar collapsed) — baking that transient value in as the
+// "stable" baseVH would permanently disagree with the spacer's own 100svh
+// CSS basis for the rest of the session, shifting every section boundary.
+// Falls back to plain vh (then innerHeight) where svh isn't supported.
+function measureSvh(){
+  if (typeof document === 'undefined') return 0;
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;top:0;left:0;width:0;visibility:hidden;pointer-events:none;height:100vh;height:100svh;';
+  document.documentElement.appendChild(probe);
+  const h = probe.getBoundingClientRect().height;
+  probe.remove();
+  return h || (typeof window !== 'undefined' ? window.innerHeight : 0);
+}
+
 function pickColor(isFig){
   const r = Math.random();
   if (isFig){ // figures get occasional blue/clay data dots
@@ -108,7 +126,6 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
   // continuous even when the underlying scroll signal isn't.
   let pSmooth = 0, pSmoothInit = false;
   let lastNow = 0;
-  let lastTarget = 0;   // previous frame's raw scroll target (detects "at rest")
   // Rest-resolve LATCH: the raw scroll target captured at the moment scroll
   // came to rest (-1 = not resting). While latched, the lerp goal is pinned to
   // the nearest HOLD-band center and STAYS there until the user actually
@@ -123,6 +140,22 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
   // text's opacity/translate — the continuous "jitter after the text forms"
   // bug (and the rAF loop never slept).
   let restLatch = -1;
+  // How long since the last actual scroll EVENT before we treat the user as
+  // truly at rest (ms). This must be keyed on scroll-event arrival, NOT a
+  // per-frame position-delta threshold: a numeric delta threshold can't tell
+  // "stopped" apart from "still scrolling, just very slowly" — sufficiently
+  // slow continuous scrolling produces individual frames whose delta dips
+  // below any fixed threshold, so a delta-based check falsely reports "at
+  // rest" mid-scroll. That falsely engages the latch (pulling the goal to
+  // the HOLD-band center), the next bit of real movement then breaks it
+  // again (see the 0.02 unlatch threshold below), and repeating that
+  // engage/disengage cycle every couple of frames is what reads as the text
+  // JITTERING right as it lands, instead of settling once cleanly. Real
+  // scroll events keep arriving as long as input is ongoing regardless of
+  // speed, so gating on "no scroll event for REST_DELAY ms" is speed-
+  // independent and only fires once input has genuinely stopped.
+  const REST_DELAY = 90;
+  let lastScrollEvent = 0;
 
   // Grid-sample the alpha channel of whatever was just drawn into offCtx, but
   // ONLY within the given rect, at the given step. `tag` decides particle color:
@@ -160,18 +193,20 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
     }
   }
 
-  // Stroke the concentric Marro ring mark (rings r 216/150/86 + gold core r26,
-  // per the 512 viewBox) into offCtx, scaled/positioned to the SVG's on-screen
+  // Stroke a concentric Marro ring mark (default rings r 216/150/86, or the
+  // caller-supplied `rings` — the founder-sig mark uses smaller 172/118/64
+  // rings at the same 512 viewBox, so it can't share the hero logo's radii)
+  // + gold core r26, into offCtx, scaled/positioned to the SVG's on-screen
   // rect. Sampled synchronously — no async image decode. Returns the core's
   // screen rect so the caller can sample it separately (always-gold).
-  function paintRingLogo(svg){
+  function paintRingLogo(svg, rings){
+    rings = rings || [216, 150, 86];
     const r = svg.getBoundingClientRect();
     const s = r.width / 512;               // viewBox is 0..512
     const ccx = r.left + r.width / 2, ccy = r.top + r.height / 2;
     offCtx.save();
     offCtx.strokeStyle = '#fff'; offCtx.fillStyle = '#fff';
     offCtx.lineWidth = Math.max(1.5, 14 * s);
-    const rings = [216, 150, 86];
     for (let i = 0; i < rings.length; i++){
       offCtx.globalAlpha = i === 2 ? 0.72 : 1;
       offCtx.beginPath();
@@ -202,6 +237,15 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
   // small text). The CTA is excluded (see isExcluded).
   function sampleSection(section){
     const inner = section.firstElementChild || section;
+    // A resize-triggered rebuild can catch a layer mid-transition, still
+    // carrying the residual translateY that setLayerStyle applies to a
+    // freshly-incoming layer (frame()'s `(1 - inO) * 10`). Measuring rects
+    // with that offset still applied would permanently bake the shifted
+    // position into this section's particle targets. Reset to the rest pose
+    // for the measurement, then restore — the engine's own per-frame
+    // setLayerStyle owns the live value and isn't affected either way.
+    const prevTransform = inner.style.transform;
+    inner.style.transform = '';
     const pts = [];
 
     // 1) SVG marks (hero ring logo, founder-sig ring, log-row dots). Each is
@@ -214,8 +258,9 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
       const rect = svg.getBoundingClientRect();
       if (rect.width < 2 || rect.height < 2) continue;
       const isLogo = svg.classList.contains('lpd-logo');
+      const isSig = svg.classList.contains('lpd-sig-mark');
       offCtx.clearRect(0, 0, vw, vh);
-      const coreRect = paintRingLogo(svg);   // works for both ring marks
+      const coreRect = paintRingLogo(svg, isSig ? [172, 118, 64] : [216, 150, 86]);
       const img = offCtx.getImageData(0, 0, vw, vh).data;
       const step = isLogo ? STEP_FINE : STEP_MID;
       gridSampleRect(img, rect, step, 'ring', pts);
@@ -264,6 +309,7 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
       const j = (Math.random() * (i + 1)) | 0, t = pts[i]; pts[i] = pts[j]; pts[j] = t;
     }
     if (pts.length > CAP) pts.length = CAP;
+    inner.style.transform = prevTransform;
     return pts;
   }
 
@@ -380,7 +426,17 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
     if (N < 2){ wake(); return; }
     // Use baseVH (stable), NOT the live `vh` — see baseVH comment above size().
     const segPx = segVH * baseVH;
-    const pTarget = clamp(window.scrollY / segPx, 0, N - 1);
+    let pTarget = clamp(window.scrollY / segPx, 0, N - 1);
+    // Guard: the segPx math assumes the svh basis, but the browser's actual
+    // scrollable range is documentHeight − the LIVE window.innerHeight. If
+    // chrome has collapsed (innerHeight now taller than the svh basis), the
+    // true max scrollY is shorter than segPx*(N-1) implies, so the user can
+    // hit the physical bottom of the page while pTarget is still short of
+    // N-1 — the final section gets stuck mid-dissolve with no scroll
+    // distance left to finish resolving it. Once truly at the document's
+    // bottom, force full resolution regardless of what the segPx math says.
+    const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+    if (window.scrollY >= maxScroll - 1) pTarget = N - 1;
 
     // Lerp the smoothed progress toward the raw scroll target each frame
     // (exponential decay, framerate-independent via dt). This absorbs the
@@ -388,7 +444,7 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
     // reads as continuous instead of hitching in step with each scroll tick.
     const dt = lastNow ? Math.min(now - lastNow, 48) : 16.7;
     lastNow = now;
-    if (!pSmoothInit){ pSmooth = pTarget; lastTarget = pTarget; pSmoothInit = true; }
+    if (!pSmoothInit){ pSmooth = pTarget; lastScrollEvent = now; pSmoothInit = true; }
     const rate = 0.018; // ms time-constant-ish factor; ~90% caught up in ~120ms
     const followed = 1 - Math.pow(1 - rate, dt);
 
@@ -402,17 +458,18 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
     //    — there's no scroll motion left to drive t. These two goals are
     //    MUTUALLY EXCLUSIVE (one lerp target, never both) so they can't fight
     //    and stall the cloud halfway.
-    const moved = Math.abs(pTarget - lastTarget) >= 0.0004;
-    lastTarget = pTarget;
     // Break the latch only on REAL scrolling: a deliberate change of scroll
     // position (> ~2% of a segment, ≈11–14px), not sub-pixel scroll noise or
     // pSmooth's own easing (which must never be able to unlatch the goal —
     // see restLatch declaration for the oscillation this prevents).
     if (restLatch >= 0 && Math.abs(pTarget - restLatch) > 0.02) restLatch = -1;
-    // Engage once: scroll target stopped changing AND the smoothed progress
-    // has mostly caught up (while it's still far behind — e.g. a long fling —
-    // keep scrubbing toward the raw target first, exactly as before).
-    if (restLatch < 0 && !moved && Math.abs(pTarget - pSmooth) < 0.5) restLatch = pTarget;
+    // Engage once: no scroll EVENT has arrived for REST_DELAY ms (speed-
+    // independent — see lastScrollEvent/REST_DELAY declaration) AND the
+    // smoothed progress has mostly caught up (while it's still far behind —
+    // e.g. a long fling — keep scrubbing toward the raw target first, as
+    // before).
+    if (restLatch < 0 && now - lastScrollEvent >= REST_DELAY
+        && Math.abs(pTarget - pSmooth) < 0.5) restLatch = pTarget;
     let goal = pTarget;
     if (restLatch >= 0){
       const seg = clamp(Math.round(restLatch), 0, N - 1);
@@ -479,7 +536,7 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
     // NOT shift the progress-math denominator (segPx) or the scroll-driven
     // section boundaries would jump mid-gesture (see baseVH declaration above
     // for the full rationale / symptom mapping).
-    if (!baseVH || newVW !== vw) baseVH = vh;
+    if (!baseVH || newVW !== vw) baseVH = measureSvh();
     vw = newVW;
     cx = vw / 2; cy = vh / 2;
     dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -487,6 +544,11 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
     canvas.style.width = vw + 'px'; canvas.style.height = vh + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     off.width = vw; off.height = vh;
+  }
+
+  function onScroll(){
+    lastScrollEvent = performance.now();
+    wake();
   }
 
   let resizeTimer = 0;
@@ -503,38 +565,50 @@ export function createDotsEngine({ canvas, getSections, segVH, onActiveSection }
     }, 250);
   }
 
+  let retryTimer = 0;
+
   return {
     attach(){
       size();
       // some embedded viewports report 0 briefly at load — retry a few times
       (function retrySize(n){
-        if (vw && vh) return;
+        if (destroyed || (vw && vh)) return;
         size();
-        if ((!vw || !vh) && n > 0) setTimeout(function(){ retrySize(n - 1); }, 100);
+        if ((!vw || !vh) && n > 0) retryTimer = setTimeout(function(){ retrySize(n - 1); }, 100);
       })(30);
       window.addEventListener('resize', onResize, { passive: true });
-      window.addEventListener('scroll', wake, { passive: true });
+      window.addEventListener('scroll', onScroll, { passive: true });
+      // Don't build particle targets until the hero logo's entrance animation
+      // (lpDotsLogoIn, 1.1s scale+fade — dotsLanding.css) has actually
+      // finished. buildTargets() samples each element's live rendered rect;
+      // firing as soon as fonts resolve (often well inside that 1.1s window)
+      // would sample the logo mid-animation — still scaled down/faded in —
+      // and bake that smaller/offset pose into section 0's dot targets for
+      // the rest of the session. Gated on the real animationend, with a
+      // fixed-delay safety net in case it never fires.
+      const armFontsReady = function(){
+        const sections = getSections();
+        const logo = sections[0] && sections[0].querySelector('.lpd-logo');
+        if (!logo){ fontsLoaded = true; wake(); return; }
+        let done = false;
+        const finish = function(){ if (done) return; done = true; fontsLoaded = true; wake(); };
+        logo.addEventListener('animationend', finish, { once: true });
+        setTimeout(finish, 1200);
+      };
       if (document.fonts && document.fonts.ready){
-        document.fonts.ready.then(function(){ fontsLoaded = true; wake(); });
+        document.fonts.ready.then(armFontsReady);
       } else {
-        fontsLoaded = true;
+        armFontsReady();
       }
       wake();
     },
-    // segment height in px, for DotsLanding to size the scroll spacer.
-    // Uses the same stable baseVH as the progress math (not live innerHeight)
-    // so the spacer's total scrollable height can never disagree with the
-    // section-boundary math above — both must move together or not at all.
-    segPx(){ return segVH * (baseVH || window.innerHeight || 1); },
-    rebuild(){ if (ready) buildTargets(); wake(); },
     destroy(){
       destroyed = true;
       cancelAnimationFrame(raf);
       clearTimeout(resizeTimer);
+      clearTimeout(retryTimer);
       window.removeEventListener('resize', onResize);
-      window.removeEventListener('scroll', wake);
+      window.removeEventListener('scroll', onScroll);
     }
   };
 }
-
-export { HOLD };

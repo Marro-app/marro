@@ -49,9 +49,15 @@ export default function StagedLanding({ offline }){
     // threshold:0.55 can never be reached by a panel that is exactly 100vh tall
     // (it tops out at ~0.5 visible), so scene changes used to stick/lag —
     // especially on mobile, where that lag left a panel's text overlapping the
-    // wrong scene's ring pose. A symmetric -50%/-50% rootMargin collapses the
-    // root to a 1px band at the screen's middle, so exactly one panel is
-    // "intersecting" at any scroll offset and the active scene tracks cleanly.
+    // wrong scene's ring pose. A symmetric rootMargin shrinks the effective
+    // root to a thin band at the screen's middle so exactly one panel is
+    // "intersecting" at any scroll offset. It's -45%, deliberately NOT the
+    // exact -50%/-50% that would collapse the root to a literal 0px-tall
+    // line: with zero root height the intersection area is structurally
+    // zero for every entry, so intersectionRatio can never exceed 0 and
+    // isIntersecting may never fire at all in some browsers — the observer
+    // would silently stop updating the scene. -45% keeps a small (~10vh)
+    // but non-zero band so the ratio is always a real, comparable number.
     const io = new IntersectionObserver((entries) => {
       entries.forEach((e) => {
         if(e.isIntersecting) setScene(e.target.dataset.scene);
