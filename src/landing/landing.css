@@ -12,6 +12,13 @@
   --lp-cream40:rgba(248,242,226,.58); --lp-gold:#DDA528; --lp-blue:#82AEDB; --lp-clay:#E08A6B;
   --lp-border:rgba(246,239,221,.12); --lp-glass:rgba(246,239,221,.045);
   --lp-ease:cubic-bezier(.22,1,.36,1);
+  /* Height of the fixed .lp-nav banner. 73px = 44px buttons + 14px×2 padding
+     + 1px border at default text size; StagedLanding keeps it exact at
+     runtime via a ResizeObserver (so text zoom / wrapping can't desync it).
+     The desktop scroll container (.lp-scroller) starts at this line, so
+     scrollable content is clamped to end right under the banner instead of
+     running up behind it. */
+  --lp-nav-h:73px;
   /* Ambient blob tokens re-pinned to the app's DARK theme values (from
      index.html :root) — the landing is always dark, but the app theme on
      <html data-theme> may be light, which would otherwise recolor the
@@ -198,8 +205,23 @@
    the right half via its stagewrap's 46% left margin, so the two never
    overlap); full-width on mobile with the canvas as a fixed top band and a
    readability scrim (see the mobile media query). */
-.lp-scroller{position:relative;z-index:20}
-.lp-panel{min-height:100dvh;display:flex;align-items:center;padding:96px 6vw 48px}
+/* The scroller is a REAL scroll container clamped to the zone below the
+   fixed nav (top:var(--lp-nav-h) → viewport bottom), not the document —
+   so (a) scrollable content is clipped at the banner's bottom edge and can
+   never slide up behind the glass nav, and (b) the scroll range hard-locks
+   at both ends: the document itself never scrolls (the page is exactly
+   100dvh tall), and overscroll-behavior:none stops rubber-band drift past
+   the true end of the last panel (inner scrollers honor it everywhere,
+   unlike the root scroller in Safari). tabIndex=0 on the element (see
+   StagedLanding.jsx) keeps the region keyboard-scrollable per WCAG. */
+.lp-scroller{position:fixed;top:var(--lp-nav-h);left:0;right:0;bottom:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:none;z-index:20}
+.lp-scroller:focus-visible{outline:2px solid var(--lp-cream);outline-offset:-3px}
+/* Panels fill the scroll container (100% of its fixed height), not 100dvh —
+   the container is nav-height shorter than the viewport, so 100dvh panels
+   would drift scene boundaries by 73px per panel. Top padding drops from
+   96px (which used to clear the nav) to a symmetric 48px, since the nav now
+   sits entirely outside the scrollable zone. */
+.lp-panel{min-height:100%;display:flex;align-items:center;padding:48px 6vw}
 
 /* ===== PROGRESS TICKS ===== */
 /* One ring-shaped tick per scene, fixed at the right edge. Real buttons:
