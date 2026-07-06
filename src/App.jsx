@@ -443,11 +443,12 @@ export function App() {
   const loadingScreen = <div style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"#101210",zIndex:2000}}><MarroIntro size={360}/></div>;
   if(session===undefined) return loadingScreen;
   if(accessDenied) return (
-    <main style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,color:C.text,padding:24}}>
-      <div style={{maxWidth:420,textAlign:"center"}}>
-        <h1 style={{fontSize:20,fontWeight:700,margin:"0 0 10px",fontFamily:"'Newsreader', Georgia, serif"}}>Marro is invite-only right now</h1>
-        <p style={{fontSize:14,color:C.sub,lineHeight:1.5,margin:"0 0 20px"}}>That Google account isn&apos;t on the beta invite list yet. Reach out to request access, or try again if you think this is a mistake.</p>
-        <button className="btn-fill" onClick={()=>{setAccessDenied(false);}} style={{padding:"10px 20px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.teal,color:C.bg,cursor:"pointer",minHeight:44}}>Back to sign in</button>
+    <main style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"transparent",color:C.text,padding:24}}>
+      <div style={{maxWidth:420,textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center"}}>
+        <div style={{marginBottom:20}}><MarroLogo size={64}/></div>
+        <h1 style={{fontSize:22,fontWeight:600,margin:"0 0 10px",letterSpacing:"-0.02em",fontFamily:"'Newsreader', Georgia, serif"}}>Marro is invite-only<span style={{color:C.marigold}}>.</span></h1>
+        <p style={{fontSize:14,color:C.sub,lineHeight:1.5,margin:"0 0 24px"}}>That account isn&apos;t on the beta invite list yet. Reach out to request access, or try again if you think this is a mistake.</p>
+        <button className="btn-fill" onClick={()=>{setAccessDenied(false);}} style={{padding:"10px 24px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.teal,color:C.bg,cursor:"pointer",minHeight:44}}>Back to sign in</button>
       </div>
     </main>
   );
