@@ -301,6 +301,113 @@ export const deleteAccount = async () => {
   }
 };
 
+// ── Invite codes + waitlist (supabase/invites_waitlist.sql) ──────────────────────
+// Same fail-closed / never-throw posture as isEmailAllowed above: any RPC error
+// (network hiccup, cold start) resolves to the safest "nothing happened" value
+// rather than surfacing a raw exception to the caller.
+
+// Redeems an invite code for the current session. → the rpc's {status} object,
+// where status is one of 'ok'|'already_used'|'revoked'|'invalid'|'locked'.
+// On a genuine network/client error (not a real server response) we fall back
+// to {status:'invalid'} so InviteGate can show its generic error copy.
+export const redeemInviteCode = async (code) => {
+  try {
+    const sb = await getSupabase();
+    const {data, error} = await sb.rpc('redeem_invite_code', {p_code: code});
+    if (error || !data) return {status:'invalid'};
+    return data;
+  } catch { return {status:'invalid'}; }
+};
+
+// Effective invite quota for the current user (5, 15, or an admin override). → number.
+export const myInviteQuota = async () => {
+  try {
+    const sb = await getSupabase();
+    const {data, error} = await sb.rpc('my_invite_quota');
+    if (error || typeof data !== 'number') return 0;
+    return data;
+  } catch { return 0; }
+};
+
+// Generates a new invite code owned by the current user. → the rpc object:
+// {status:'ok', code} | {status:'quota_exhausted', quota}.
+export const generateInviteCode = async () => {
+  try {
+    const sb = await getSupabase();
+    const {data, error} = await sb.rpc('generate_invite_code');
+    if (error || !data) return {status:'quota_exhausted'};
+    return data;
+  } catch { return {status:'quota_exhausted'}; }
+};
+
+// The current user's own invite codes (RLS: own rows only), newest first. → array.
+export const myInviteCodes = async () => {
+  try {
+    const sb = await getSupabase();
+    const {data, error} = await sb.from('invite_codes').select('*').order('created_at', {ascending:false});
+    if (error || !data) return [];
+    return data;
+  } catch { return []; }
+};
+
+// Joins (or updates) the waitlist for the current user — upsert on user_id (PK),
+// so re-submitting is idempotent. → {ok:boolean}.
+export const joinWaitlist = async (reason) => {
+  try {
+    const sb = await getSupabase();
+    const {data:{user}} = await sb.auth.getUser();
+    if (!user) return {ok:false};
+    const {error} = await sb.from('waitlist').upsert({user_id:user.id, email:user.email, reason: reason || null});
+    return {ok: !error};
+  } catch { return {ok:false}; }
+};
+
+// The current user's own waitlist row, if any. → row object | null.
+export const myWaitlist = async () => {
+  try {
+    const sb = await getSupabase();
+    const {data, error} = await sb.from('waitlist').select('*').maybeSingle();
+    if (error || !data) return null;
+    return data;
+  } catch { return null; }
+};
+
+// Whether the current user is an admin (server re-checks on every admin action —
+// this is only used client-side to decide whether to show the Admin tab). → boolean.
+export const isAdmin = async () => {
+  try {
+    const sb = await getSupabase();
+    const {data, error} = await sb.rpc('is_admin');
+    return !error && data === true;
+  } catch { return false; }
+};
+
+// Shared helper for the admin backend (api/admin.js). Bearer-auth'd, same
+// pattern as deleteAccount above. `action` + any extra params are forwarded
+// as-is in the JSON body; the server re-validates admin status itself, so
+// this is just transport — never trust the client's isAdmin() as a gate.
+// → parsed JSON {ok, ...} on any response, or {ok:false, error} on failure.
+export const adminCall = async (action, params = {}) => {
+  try {
+    const sb = await getSupabase();
+    const {data:{session}} = await sb.auth.getSession();
+    const token = session?.access_token;
+    if (!token) return {ok:false, error:"Not signed in."};
+
+    const res = await fetch("/api/admin", {
+      method: "POST",
+      headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
+      body: JSON.stringify({action, ...params}),
+    });
+    let body = null;
+    try { body = await res.json(); } catch { /* non-JSON error body */ }
+    if (!res.ok) return {ok:false, error: body?.error || "Request failed. Please try again."};
+    return body || {ok:true};
+  } catch {
+    return {ok:false, error:"Network error — please check your connection and try again."};
+  }
+};
+
 // ── 3-way merge engine ─────────────────────────────────────────────────────────
 export const SYNC_BASE_KEY = "marro_v8_base";
 

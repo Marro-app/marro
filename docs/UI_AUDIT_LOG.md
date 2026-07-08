@@ -2,6 +2,9 @@
 
 Newest first. One line per finding: severity · what · fix.
 
+## 2026-07-07 — invite codes + waitlist + admin console (new build)
+Built to spec against the project a11y rules (rule 7). `<InviteGate>` verified in a standalone in-preview render (both code + waitlist modes, mobile 375px): labeled code input + textarea, generic-error path announced via `role="alert"`, ≥44px hit targets, Back-left/primary-right button order, semantic `<button>`s, uses the theme `C` object (contrast inherits the app's audited tokens both themes). `AdminTab` + `InviteFriendsModal` built to the same rules (labeled inputs, `role="alert"` messages, `<th scope>` on tables, ambassador toggle as `role="switch"` with `aria-checked`, copy buttons `aria-label`'d) but **not yet keyboard/axe-verified in-browser** — behind the admin/signed-in gates, pending the SQL apply + a real session in the owner's Chrome. Follow-up: full keyboard + axe pass on AdminTab and the referral modal once reachable.
+
 ## 2026-06-23 (chunk 2) — ADA P1: first-run onboarding + manual keyboard / AX-tree / 200%-zoom on the signed-in app
 
 Method: axe-core 4.10 **plus** the manual passes axe can't do (programmatic selected-state, keyboard roving, focus-trap, accessible-name/AX-tree as a VoiceOver proxy). Onboarding audited via an **isolated mock mount** of `OnboardingFlow` (first-run props, no-op `upd`/`onDone`) so the owner's real synced data was never touched (verified: 0 `upd`/0 `onDone` calls). All steps scanned both themes (axe-clean throughout). Three real findings surfaced beyond axe — all remediated + re-verified in-browser. End state after fixes: **app axe-clean both themes, no console errors, no visual regression; arrow-key + focus-trap + selected-state all confirmed working.**

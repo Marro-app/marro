@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { C, applyTheme, THEMES } from './lib/theme.js';
-import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed, logEvent, exportUserData, exportUserDataExcel, deleteAccount, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY } from './lib/data.js';
+import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed, isAdmin, logEvent, exportUserData, exportUserDataExcel, deleteAccount, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY } from './lib/data.js';
+import { InviteGate } from './landing/InviteGate.jsx';
+import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { fmt, fmtS, fmtD, fmtDay, fmtA, moTotal, todayStr, getMonday, getSunday, daysUntil, subMonthlyTotal, getYearMonthStr, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE } from './lib/format.js';
 import { BRANDS, BRAND_DOMAINS, getBrandDomain, getBrand } from './lib/brands.js';
 import { US_MED_SCHOOLS, degreeForSchool, DO_DUAL, dualOptionsForSchool } from './lib/schools.js';
@@ -42,6 +44,7 @@ const ChartsTab = React.lazy(() => import('./tabs/ChartsTab.jsx').then(m => ({ d
 const WeeklyTab = React.lazy(() => import('./tabs/WeeklyTab.jsx').then(m => ({ default: m.WeeklyTab })));
 const BudgetTab = React.lazy(() => import('./tabs/BudgetTab.jsx').then(m => ({ default: m.BudgetTab })));
 const CustomizeTab = React.lazy(() => import('./tabs/CustomizeTab.jsx').then(m => ({ default: m.CustomizeTab })));
+const AdminTab = React.lazy(() => import('./tabs/AdminTab.jsx'));
 
 let markedFirstRender = false;
 let markedSessionDecided = false;
@@ -61,6 +64,9 @@ export function App() {
   const [pendingConflict, setPendingConflict] = useState(null);
   const [session, setSession] = useState(undefined); // undefined=restoring, null=logged out, obj=logged in
   const [accessDenied, setAccessDenied] = useState(false); // closed-beta gate: signed in but not on allowed_emails
+  const [admin, setAdmin] = useState(false); // is_admin() → shows the Admin tab (server re-checks every action)
+  const [gateNonce, setGateNonce] = useState(0); // bumped after a successful invite redemption to re-run the boot/load effect
+  const [inviteOpen, setInviteOpen] = useState(false); // "Invite friends" referral modal
   const [profile, setProfile] = useState(null);      // {school} | null (no row yet → ProfileModal)
   const [editSchool, setEditSchool] = useState(false); // settings → reopen ProfileModal to change school
   const [editProgram, setEditProgram] = useState(false); // settings → edit program track (ProgramModal)
@@ -170,14 +176,20 @@ export function App() {
     (async()=>{
       try{
         // Closed-beta invite gate (supabase/allowed_emails.sql). Checked once per
-        // fresh session, before anything reads/writes the user's data.
+        // fresh session, before anything reads/writes the user's data. On failure
+        // we KEEP the session alive (no signOut) and show <InviteGate>, so the
+        // user can redeem an invite code — redemption RPCs need auth.uid()/email.
+        // This is safe: every data table is RLS'd to their own user_id and nothing
+        // below runs until they're allowed. onRedeemed() bumps gateNonce to re-run
+        // this effect, which then passes the gate and boots them into the app.
         if(!(await isEmailAllowed())){
-          const sb = await getSupabase();
-          await sb.auth.signOut();
           setAccessDenied(true);
           return;
         }
         setAccessDenied(false);
+        // Resolve admin status (drives Admin-tab visibility only; api/admin.js
+        // re-verifies on every request, so this flag is never a security border).
+        isAdmin().then(setAdmin);
 
         const uid = session.user.id;
         // Shared-device guard: if a different user's data is cached locally, drop it
@@ -283,7 +295,7 @@ export function App() {
       setReady(true);
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[session]);
+  },[session, gateNonce]);
 
   // Theme follows data.darkMode from every path (toggle, sync pull, conflict resolution).
   // applyTheme mutates C outside React, so tick a render afterwards — the render that
@@ -444,14 +456,11 @@ export function App() {
   const loadingScreen = <div style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"#101210",zIndex:2000}}><MarroIntro size={360}/></div>;
   if(session===undefined) return loadingScreen;
   if(accessDenied) return (
-    <main style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"transparent",color:C.text,padding:24}}>
-      <div style={{maxWidth:420,textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center"}}>
-        <div style={{marginBottom:20}}><MarroLogo size={64}/></div>
-        <h1 style={{fontSize:22,fontWeight:600,margin:"0 0 10px",letterSpacing:"-0.02em",fontFamily:"'Newsreader', Georgia, serif"}}>Marro is invite-only<span style={{color:C.marigold}}>.</span></h1>
-        <p style={{fontSize:14,color:C.sub,lineHeight:1.5,margin:"0 0 24px"}}>That account isn&apos;t on the beta invite list yet. Reach out to request access, or try again if you think this is a mistake.</p>
-        <button className="btn-fill" onClick={()=>{setAccessDenied(false);}} style={{padding:"10px 24px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.teal,color:C.bg,cursor:"pointer",minHeight:44}}>Back to sign in</button>
-      </div>
-    </main>
+    <InviteGate
+      C={C}
+      onRedeemed={()=>{ setAccessDenied(false); setGateNonce(n=>n+1); }}
+      onBack={async()=>{ const sb=await getSupabase(); await sb.auth.signOut(); setAccessDenied(false); }}
+    />
   );
   if(session===null) return (
     <React.Suspense fallback={loadingScreen}>
@@ -1091,6 +1100,10 @@ export function App() {
                       <span key={data.darkMode?"sun":"moon"} style={{display:"inline-flex",animation:"iconSwap 220ms cubic-bezier(0.23,1,0.32,1)"}}><Icon name={data.darkMode?"sun":"moon"} size={14}/></span>
                       {data.darkMode?"Light mode":"Dark mode"}
                     </button>
+                    <button className="menu-row" onClick={()=>{setSettingsOpen(false);setInviteOpen(true);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
+                      <Icon name="live" size={14}/>
+                      Invite friends
+                    </button>
                     <button className="menu-row" onClick={()=>{setConfirmReset(true);setSettingsOpen(false);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.danger,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
                       <Icon name="subs" size={14}/>
                       Reset defaults
@@ -1156,6 +1169,7 @@ export function App() {
       {editSchool && <ProfileModal uid={session.user.id} onSaved={s=>{setProfile({school:s});setEditSchool(false);}} onClose={()=>setEditSchool(false)}/>}
       {editProgram && <ProgramModal data={data} upd={upd} school={profile.school} onClose={()=>setEditProgram(false)}/>}
       {editAvatar && <AvatarModal data={data} upd={upd} user={session.user} onClose={()=>setEditAvatar(false)}/>}
+      {inviteOpen && <InviteFriendsModal onClose={()=>setInviteOpen(false)}/>}
 
       {/* ── Renewal alerts ── */}
       {renewalsDue.map(s=>(
@@ -1214,6 +1228,7 @@ export function App() {
           ["aid","Aid & Detail",0],
           ["subscriptions","Subscriptions",renewalsDue.length],
           ["customize","Categories"],
+          ...(admin ? [["admin","Admin"]] : []),
         ].filter(([id])=>!HIDDEN_TABS[id]).map(([id,lbl,badge])=><TabBtn key={id} id={id} label={lbl} active={tab===id} onClick={()=>setTab(id)} badge={badge||0}/>)}
       </ChoiceGroup>
 
@@ -1241,6 +1256,9 @@ export function App() {
 
         {/* ══════════════ CUSTOMIZE ══════════════ */}
         {tab==="customize" && <CustomizeTab/>}
+
+        {/* ══════════════ ADMIN (admins only; tab hidden otherwise) ══════════════ */}
+        {tab==="admin" && admin && <AdminTab/>}
       </React.Suspense>
     </div>
     </AppContext.Provider>
