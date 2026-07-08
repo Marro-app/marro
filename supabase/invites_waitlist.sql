@@ -51,11 +51,18 @@ create table if not exists public.invite_codes (
   redeemed_at      timestamptz,
   revoked_at       timestamptz,
   issued_by_admin  boolean not null default false,
-  archived_at      timestamptz
+  archived_at      timestamptz,
+  -- bound_email: when set, ONLY this email may redeem the code. Used for
+  -- admin-targeted invites (invite_from_waitlist) so a code emailed to a
+  -- specific person can't be redeemed by anyone else who gets hold of it.
+  -- NULL = unbound/shareable (normal member-generated codes stay this way).
+  bound_email      text
 );
 alter table public.invite_codes add column if not exists issued_by_admin boolean not null default false;
 alter table public.invite_codes add column if not exists archived_at timestamptz;
+alter table public.invite_codes add column if not exists bound_email text;
 create index if not exists invite_codes_owner_idx on public.invite_codes(owner_id);
+create index if not exists invite_codes_bound_email_idx on public.invite_codes(bound_email);
 comment on table public.invite_codes is
   'Single-use invite codes. Owners SELECT their own (RLS); generation/redemption/revocation go through SECURITY DEFINER RPCs / api/admin.js. redeemed_at (not redeemed_by) is the durable "used" marker — see C1 fix in redeem_invite_code(). See supabase/invites_waitlist.sql.';
 
@@ -71,9 +78,13 @@ create table if not exists public.waitlist (
   email      text not null,
   reason     text,
   created_at timestamptz not null default now(),
-  invited_at timestamptz
+  invited_at timestamptz,           -- FIRST time an admin sent this person a code (never re-clobbered)
+  invite_count integer not null default 0,  -- how many times invited (re-invites included)
+  last_invited_at timestamptz       -- most recent invite send
 );
 alter table public.waitlist add column if not exists invited_at timestamptz;
+alter table public.waitlist add column if not exists invite_count integer not null default 0;
+alter table public.waitlist add column if not exists last_invited_at timestamptz;
 comment on table public.waitlist is
   'In-app beta waitlist. Users insert/select their own row (RLS); admins read/manage all via api/admin.js (service role). See supabase/invites_waitlist.sql.';
 
@@ -122,7 +133,7 @@ create table if not exists public.invite_attempts (
   id         bigserial primary key,
   user_id    uuid not null references auth.users(id) on delete cascade,
   code_tried text,
-  outcome    text,          -- 'invalid' | 'already_used' | 'revoked'
+  outcome    text,          -- 'invalid' | 'already_used' | 'revoked' | 'wrong_email'
   created_at timestamptz not null default now()
 );
 create index if not exists invite_attempts_user_time_idx
@@ -300,7 +311,7 @@ revoke all on function public.revoke_own_code(text) from public;
 grant execute on function public.revoke_own_code(text) to authenticated;
 
 -- 3e. redeem_invite_code(p_code) — THE CRITICAL ONE.
---     Returns one of: {status:'ok'} | 'already_used' | 'revoked' | 'invalid' | 'locked'.
+--     Returns one of: {status:'ok'} | 'already_used' | 'revoked' | 'wrong_email' | 'invalid' | 'locked'.
 --
 --     • Atomic claim (no TOCTOU race): the single UPDATE ... WHERE redeemed_at
 --       IS NULL AND revoked_at IS NULL RETURNING is the only place a code flips
@@ -334,6 +345,8 @@ declare
   v_fails       int;
   v_redeemed_at timestamptz;
   v_revoked     timestamptz;
+  v_bound_email text;
+  v_exists      boolean;
 begin
   if v_email is null or v_code = '' then
     return jsonb_build_object('status', 'invalid');
@@ -354,6 +367,7 @@ begin
    where code = v_code
      and redeemed_at is null
      and revoked_at is null
+     and (bound_email is null or bound_email = v_email)
   returning owner_id, issued_by_admin into v_owner, v_admin_code;
 
   if found then
@@ -378,7 +392,13 @@ begin
   end if;
 
   -- (3) Claim failed — classify why, log the attempt (throttling), return status.
-  select redeemed_at, revoked_at into v_redeemed_at, v_revoked
+  --     Order matters: a used/revoked code is reported as such regardless of
+  --     binding (those states are terminal); only a still-live code that failed
+  --     purely because it's bound to a different email returns 'wrong_email'.
+  --     If the code doesn't exist at all, both timestamps stay null and
+  --     v_bound_email/v_exists tell invalid apart from a bound mismatch.
+  select true, redeemed_at, revoked_at, bound_email
+    into v_exists, v_redeemed_at, v_revoked, v_bound_email
     from public.invite_codes where code = v_code;
 
   if v_redeemed_at is not null then
@@ -389,6 +409,11 @@ begin
     insert into public.invite_attempts(user_id, code_tried, outcome)
       values (auth.uid(), v_code, 'revoked');
     return jsonb_build_object('status', 'revoked');        -- generic in UI
+  elsif coalesce(v_exists, false) and v_bound_email is not null and v_bound_email <> v_email then
+    -- Code is live and unrevoked, but reserved for a different email.
+    insert into public.invite_attempts(user_id, code_tried, outcome)
+      values (auth.uid(), v_code, 'wrong_email');
+    return jsonb_build_object('status', 'wrong_email');    -- generic in UI
   else
     insert into public.invite_attempts(user_id, code_tried, outcome)
       values (auth.uid(), v_code, 'invalid');

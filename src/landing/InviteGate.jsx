@@ -106,6 +106,8 @@ export function InviteGate({ C, onRedeemed, onBack }){
     if (status === 'ok'){ onRedeemed(); return; } // leave `redeeming` true — the view is about to change
     if (status === 'already_used'){
       setRedeemError({ text:"That code's already been used. Ask whoever invited you for a fresh one." });
+    } else if (status === 'wrong_email'){
+      setRedeemError({ text:"This code was sent to a different email address. Ask whoever invited you to send a new one to your address." });
     } else if (status === 'locked'){
       setRedeemError({ text:"Too many tries. Please wait a bit before trying again." });
     } else {

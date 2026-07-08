@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { C } from '../lib/theme.js';
 import { Modal } from './primitives.jsx';
 import { myInviteQuota, myInviteCodes, generateInviteCode, revokeOwnCode, sendInviteEmail } from '../lib/data.js';
@@ -36,53 +36,79 @@ function CopyBtn({value}){
 // Small icon button that expands into an inline "email this code" popover —
 // friend's email + optional note, sent via sendInviteEmail (rate-limited and
 // ownership-checked server-side, so this is purely a transport UI).
+// Opens a small nested <Modal> (a DOM child of the outer Invite-friends modal,
+// so it stacks above everything and is immune to the scroll-clipping that an
+// absolutely-positioned popover suffers inside the outer modal's overflow:auto
+// panel — see docs/PRODUCT_DECISIONS.md "Nested modals").
 function EmailCodeBtn({code}){
   const [open, setOpen] = useState(false);
   const [to, setTo] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null); // {text, tone}
+  const closeTimer = useRef(null);
+
+  useEffect(()=>()=>{ if(closeTimer.current) clearTimeout(closeTimer.current); },[]);
+
+  const openModal = () => { setMsg(null); setOpen(true); };
+  const close = () => {
+    if(busy) return;
+    if(closeTimer.current){ clearTimeout(closeTimer.current); closeTimer.current = null; }
+    setOpen(false); setMsg(null); setTo(""); setNote("");
+  };
 
   const send = async () => {
     if(busy || !to.trim()) return;
     setBusy(true); setMsg(null);
     const res = await sendInviteEmail(code, to.trim(), note.trim() || undefined);
+    setBusy(false);
     if(res.ok){
+      // Confirm briefly, then auto-close so the user isn't left staring at a
+      // form that already did its job (matches the auto-clear success pattern).
       setMsg({text:"Sent!", tone:"success"});
       setTo(""); setNote("");
+      closeTimer.current = setTimeout(()=>{ setOpen(false); setMsg(null); closeTimer.current = null; }, 1500);
     } else {
       setMsg({text: res.error || "Couldn't send that email. Please try again.", tone:"error"});
     }
-    setBusy(false);
   };
 
   return (
-    <span style={{position:"relative", display:"inline-flex"}}>
-      <button type="button" className="xbtn" aria-label={`Email code ${code}`} title="Email this code" aria-expanded={open}
-        onClick={()=>setOpen(o=>!o)}
+    <>
+      <button type="button" className="xbtn" aria-label={`Email code ${code}`} title="Email this code" aria-haspopup="dialog"
+        onClick={openModal}
         style={{width:32,height:32,borderRadius:16,border:`1px solid ${open?C.sel:C.border}`,background:open?C.selBg:"transparent",color:C.text,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-        <span aria-hidden="true" style={{fontSize:13,lineHeight:1}}>✉</span>
+        <span aria-hidden="true" style={{fontSize:18,lineHeight:1}}>✉</span>
       </button>
       {open && (
-        <div role="group" aria-label={`Email code ${code}`} style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:50,width:240,padding:12,background:C.glassTooltip,backdropFilter:"blur(50px) saturate(200%)",WebkitBackdropFilter:"blur(50px) saturate(200%)",border:`1px solid ${C.borderDark}`,borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.40)"}}>
-          <label htmlFor={`invite-email-${code}`} style={{display:"block",fontSize:10.5,color:C.gray,marginBottom:4,fontWeight:500}}>Friend&apos;s email</label>
-          <input id={`invite-email-${code}`} type="email" placeholder="friend@school.edu" value={to} disabled={busy}
+        <Modal title="Email this code" onClose={close} width={380}>
+          <p style={{fontSize:12.5,color:C.textMid,lineHeight:1.5,margin:"0 0 14"}}>
+            We&apos;ll email <span style={{fontFamily:"monospace",fontWeight:700,color:C.text}}>{code}</span> straight to your friend.
+          </p>
+          <label htmlFor={`invite-email-${code}`} style={{display:"block",fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Friend&apos;s email</label>
+          <input id={`invite-email-${code}`} type="email" placeholder="friend@school.edu" value={to} disabled={busy} autoFocus
             onChange={e=>setTo(e.target.value)}
-            style={{width:"100%",fontSize:12.5,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px",background:C.bg,color:C.text,boxSizing:"border-box",marginBottom:8,minHeight:32}}/>
-          <label htmlFor={`invite-note-${code}`} style={{display:"block",fontSize:10.5,color:C.gray,marginBottom:4,fontWeight:500}}>Note (optional)</label>
+            style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px",background:C.bg,color:C.text,boxSizing:"border-box",marginBottom:12,minHeight:44}}/>
+          <label htmlFor={`invite-note-${code}`} style={{display:"block",fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Note (optional)</label>
           <textarea id={`invite-note-${code}`} placeholder="Hey — thought you'd like this" value={note} disabled={busy} rows={2}
             onChange={e=>setNote(e.target.value)}
-            style={{width:"100%",fontSize:12.5,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 8px",background:C.bg,color:C.text,boxSizing:"border-box",marginBottom:8,resize:"vertical",fontFamily:"inherit"}}/>
-          {msg && <div role={msg.tone==="error"?"alert":"status"} style={{fontSize:11,color:msg.tone==="error"?C.danger:C.green,marginBottom:8}}>{msg.text}</div>}
-          <button type="button" className="btn-fill" disabled={busy || !to.trim()} onClick={send}
-            style={{width:"100%",padding:"8px 0",fontSize:12,fontWeight:600,border:"none",borderRadius:8,minHeight:36,
-              background:(busy||!to.trim())?C.surface:C.teal, color:(busy||!to.trim())?C.gray:C.bg,
-              cursor:(busy||!to.trim())?"not-allowed":"pointer"}}>
-            {busy ? "Sending…" : "Send"}
-          </button>
-        </div>
+            style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px",background:C.bg,color:C.text,boxSizing:"border-box",marginBottom:12,resize:"vertical",fontFamily:"inherit"}}/>
+          {msg && <div role={msg.tone==="error"?"alert":"status"} style={{fontSize:12,color:msg.tone==="error"?C.danger:C.green,marginBottom:12}}>{msg.text}</div>}
+          <div style={{display:"flex",gap:8}}>
+            <button type="button" className="btn-fill" disabled={busy} onClick={close}
+              style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,minHeight:44,background:C.creamSoft,color:C.text,cursor:busy?"default":"pointer",opacity:busy?0.6:1}}>
+              Cancel
+            </button>
+            <button type="button" className="btn-fill" disabled={busy || !to.trim()} onClick={send}
+              style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,minHeight:44,
+                background:(busy||!to.trim())?C.surface:C.teal, color:(busy||!to.trim())?C.gray:C.bg,
+                cursor:(busy||!to.trim())?"not-allowed":"pointer"}}>
+              {busy ? "Sending…" : "Send"}
+            </button>
+          </div>
+        </Modal>
       )}
-    </span>
+    </>
   );
 }
 
@@ -107,8 +133,12 @@ export function InviteFriendsModal({onClose}){
   // even though the server would still happily generate one.
   const personalCodes = codes.filter(c=>!c.issued_by_admin);
   const active = personalCodes.filter(c=>!c.revoked_at).length;    // used + unused count against limit
+  // Admins get an absurdly large sentinel quota (≥1,000,000) meaning "no real
+  // ceiling" — showing the raw number ("9999995 invites left") is meaningless,
+  // so for admins we hide the counter line entirely (founder directive).
+  const unlimited = quota!=null && quota >= 1000000;
   const remaining = quota==null ? null : Math.max(0, quota - active);
-  const atQuota = remaining!==null && remaining<=0;
+  const atQuota = !unlimited && remaining!==null && remaining<=0;
 
   const generate = async()=>{
     if(busy || atQuota) return;
@@ -143,9 +173,11 @@ export function InviteFriendsModal({onClose}){
       </p>
 
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:16}}>
-        <span role="status" style={{fontSize:13,color:C.text,fontWeight:600}}>
-          {remaining==null ? "Loading your invites…" : `${remaining} invite${remaining===1?"":"s"} left`}
-        </span>
+        {unlimited
+          ? <span/>
+          : <span role="status" style={{fontSize:13,color:C.text,fontWeight:600}}>
+              {remaining==null ? "Loading your invites…" : `${remaining} invite${remaining===1?"":"s"} left`}
+            </span>}
         <button type="button" className="btn-fill" onClick={generate} disabled={busy||atQuota||quota==null}
           style={{padding:"10px 18px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,minHeight:44,
             background:(busy||atQuota||quota==null)?C.surface:C.teal, color:(busy||atQuota||quota==null)?C.gray:C.bg,

@@ -31,18 +31,33 @@ export function NotificationBanner(){
   };
 
   return (
-    <div role="status" style={{
-      background:"rgba(134,178,204,0.12)", border:"1px solid rgba(134,178,204,0.30)",
-      borderRadius:8, padding:"10px 14px", marginBottom:16,
-      fontSize:12.5, color:C.blue, display:"flex", gap:10, alignItems:"flex-start",
-      backdropFilter:"blur(20px)", WebkitBackdropFilter:"blur(20px)",
+    <div role="status" className="notif-banner" style={{
+      position:"relative", overflow:"hidden",
+      display:"flex", gap:12, alignItems:"flex-start",
+      padding:"14px 16px", marginBottom:16, borderRadius:12,
+      background:C.glassTooltip, border:`1px solid ${C.border}`,
+      backdropFilter:"blur(20px) saturate(180%)", WebkitBackdropFilter:"blur(20px) saturate(180%)",
+      boxShadow:"0 4px 16px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.10)",
     }}>
-      <div style={{flex:1, lineHeight:1.6, color:C.text}}>
-        {current.message}
-        {queue.length>1 && <span style={{color:C.gray, fontSize:11, marginLeft:8}}>+{queue.length-1} more</span>}
+      <style>{`
+        .notif-banner{animation:notifIn 320ms cubic-bezier(0.23,1,0.32,1)}
+        @media (prefers-reduced-motion: reduce){.notif-banner{animation:none}}
+        @keyframes notifIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+      `}</style>
+      {/* top highlight — glass depth, mirrors MetricTile */}
+      <div style={{position:"absolute", left:"6%", right:"6%", top:0, height:1, background:"linear-gradient(90deg,transparent,rgba(255,255,255,0.35),transparent)", pointerEvents:"none"}}/>
+      {/* brand ring accent disc */}
+      <span aria-hidden="true" style={{flexShrink:0, width:30, height:30, borderRadius:15, background:C.blueLight, display:"inline-flex", alignItems:"center", justifyContent:"center", marginTop:1}}>
+        <svg width="17" height="17" viewBox="0 0 26 26" fill="none" stroke={C.blue} strokeWidth="1.4">
+          <g transform="translate(13,13)"><circle r="10"/><circle r="6"/><circle r="1.7" fill={C.marigold} stroke="none"/></g>
+        </svg>
+      </span>
+      <div style={{flex:1, minWidth:0, marginTop:1}}>
+        <div style={{fontSize:13, lineHeight:1.5, color:C.text, fontWeight:500}}>{current.message}</div>
+        {queue.length>1 && <div style={{color:C.gray, fontSize:11, marginTop:3}}>+{queue.length-1} more</div>}
       </div>
       <button type="button" className="xbtn" aria-label="Dismiss" onClick={dismiss}
-        style={{width:28,height:28,borderRadius:14,border:"none",background:"transparent",color:C.blue,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,padding:0}}>
+        style={{width:28,height:28,borderRadius:14,border:"none",background:"transparent",color:C.gray,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,padding:0}}>
         <Icon name="close" size={13}/>
       </button>
     </div>

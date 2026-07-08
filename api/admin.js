@@ -85,10 +85,10 @@ export default async function handler(req, res) {
         // can render rich cards without a second round trip.
         const [codes, waitlist, roles, admins, allowed] = await Promise.all([
           admin.from('invite_codes')
-            .select('code, owner_id, created_at, redeemed_by, redeemed_email, redeemed_at, revoked_at, issued_by_admin, archived_at')
+            .select('code, owner_id, created_at, redeemed_by, redeemed_email, redeemed_at, revoked_at, issued_by_admin, archived_at, bound_email')
             .order('created_at', { ascending: false }).limit(LIST_LIMIT),
           admin.from('waitlist')
-            .select('user_id, email, reason, created_at, invited_at')
+            .select('user_id, email, reason, created_at, invited_at, invite_count, last_invited_at')
             .order('created_at', { ascending: false }).limit(LIST_LIMIT),
           admin.from('user_roles')
             .select('email, is_ambassador, quota_override, note, school, updated_by, updated_at')
@@ -191,15 +191,30 @@ export default async function handler(req, res) {
         // table). Admins/ambassadors get access without a row here (is_email_
         // allowed() also checks admins/user_roles) so they're flagged
         // separately rather than listed as "members" to avoid double-counting.
+        // Real role signals for each member, cross-referenced from the roles/
+        // admins data already fetched above (no extra queries). The frontend
+        // renders proper badges from these — it must NOT infer role from the
+        // free-text `note` field anymore (note is now only ever admin-typed).
+        const ambassadorEmails = new Set(
+          (roles.data || [])
+            .filter(r => r.is_ambassador === true)
+            .map(r => (r.email || '').toLowerCase())
+        );
+        const adminEmails = new Set(
+          (admins.data || []).map(a => (a.email || '').toLowerCase())
+        );
         const members = (allowed.data || []).map(m => {
           const u = byEmail[m.email];
           const inviter = m.invited_by ? byId[m.invited_by] : null;
+          const emailLc = (m.email || '').toLowerCase();
           return {
             email: m.email,
             name: u?.name || null,
             avatar: u?.avatar || null,
             joined: !!u,
             note: m.note || null,
+            is_ambassador: ambassadorEmails.has(emailLc),
+            is_admin: adminEmails.has(emailLc),
             invited_by_email: inviter?.email || null,
             created_at: m.created_at,
           };
@@ -276,33 +291,72 @@ export default async function handler(req, res) {
       }
 
       case 'invite_from_waitlist': {
-        // Mint one admin-issued code for this waitlisted person and email it
-        // to them. Keeps the waitlist row (stamped invited_at) so the admin
-        // can see who's already been sent a code rather than losing track of
-        // them; remove_from_waitlist is the separate explicit "drop them".
+        // Mint one admin-issued code BOUND to this waitlisted person's email
+        // (only they can redeem it) and email it to them. Keeps the waitlist
+        // row (stamped with invite history) so the admin can see who's already
+        // been reached; remove_from_waitlist is the separate "drop them".
         const email = String(body.email || '').toLowerCase().trim();
         if (!email) return res.status(400).json({ error: 'Missing email' });
+
+        // Re-invite hygiene: revoke any still-outstanding code we previously
+        // sent THIS person from THIS action, so they never accumulate multiple
+        // live codes. Only unredeemed + unrevoked admin-bound codes are touched.
+        let reinvite = false;
+        {
+          const { data: revokedRows, error: revokeErr } = await admin
+            .from('invite_codes')
+            .update({ revoked_at: new Date().toISOString() })
+            .eq('bound_email', email)
+            .eq('issued_by_admin', true)
+            .is('redeemed_at', null)
+            .is('revoked_at', null)
+            .select('code');
+          if (revokeErr) {
+            // Non-critical cleanup — log and continue with the fresh mint.
+            console.error('admin invite_from_waitlist: prior-code revoke failed', email, revokeErr.message);
+          } else {
+            reinvite = (revokedRows && revokedRows.length) > 0;
+          }
+        }
 
         let code;
         for (let attempt = 0; attempt < 5; attempt++) {
           const candidate = randomCode(8);
           const { error } = await admin.from('invite_codes')
-            .insert({ code: candidate, owner_id: callerId, issued_by_admin: true });
+            .insert({ code: candidate, owner_id: callerId, issued_by_admin: true, bound_email: email });
           if (!error) { code = candidate; break; }
           if (!/duplicate key|unique/i.test(error.message)) throw error;
         }
         if (!code) throw new Error('Could not mint a unique code');
 
-        await admin.from('waitlist').update({ invited_at: new Date().toISOString() }).eq('email', email);
+        // Stamp invite history: first-invite timestamp is set once and never
+        // clobbered; invite_count increments; last_invited_at tracks the most
+        // recent send. Best-effort — the code is already minted/emailed either way.
+        const nowIso = new Date().toISOString();
+        const { data: wlRow, error: wlReadErr } = await admin.from('waitlist')
+          .select('invited_at, invite_count').eq('email', email).maybeSingle();
+        if (wlReadErr) {
+          console.error('admin invite_from_waitlist: waitlist read failed', email, wlReadErr.message);
+        }
+        const { error: wlUpdErr } = await admin.from('waitlist')
+          .update({
+            invited_at: wlRow?.invited_at || nowIso,
+            last_invited_at: nowIso,
+            invite_count: (wlRow?.invite_count || 0) + 1,
+          })
+          .eq('email', email);
+        if (wlUpdErr) console.error('admin invite_from_waitlist: waitlist update failed', email, wlUpdErr.message);
 
         const { ok: emailed } = await sendEmail({
           to: email,
           subject: "You're off the waitlist — welcome to Marro",
           html: waitlistInviteEmail({ code }),
         });
-        await notify(admin, email, 'access', "You're off the waitlist! Check your email for an invite code.", { code });
+        // No in-app notify() here: the recipient has no app access yet (they
+        // haven't redeemed), so they can never sign in to see it. The email
+        // (waitlistInviteEmail via Resend) IS the notification channel.
 
-        return res.status(200).json({ ok: true, code, emailed });
+        return res.status(200).json({ ok: true, code, emailed, reinvite });
       }
 
       case 'grant_access': {
@@ -313,6 +367,10 @@ export default async function handler(req, res) {
         const { error } = await admin.from('allowed_emails')
           .upsert({ email, note: body.note || 'admin granted', invited_by: callerId }, { onConflict: 'email' });
         if (error) throw error;
+        // They have access now — clear any waitlist row so they don't still
+        // show as "waiting". Best-effort: never fail the grant over this.
+        const { error: wlErr } = await admin.from('waitlist').delete().eq('email', email);
+        if (wlErr) console.error('admin grant_access: waitlist cleanup failed', email, wlErr.message);
         await notify(admin, email, 'access', "You're in! Welcome to Marro.");
         return res.status(200).json({ ok: true });
       }
@@ -421,9 +479,18 @@ export default async function handler(req, res) {
         // as a side effect (revoke_access is the explicit, intentional way
         // to do that).
         if (becameAmbassador) {
+          // note:null — with ignoreDuplicates this only ever inserts a FRESH
+          // row (never touches an existing manually-typed note). Role status is
+          // exposed separately via list_overview's is_ambassador flag; it must
+          // NOT be stashed as free-text in the note field (that leaked the
+          // literal word "ambassador" into the Members note column and went
+          // stale on role change).
           const { error: allowErr } = await admin.from('allowed_emails')
-            .upsert({ email, note: 'ambassador', invited_by: callerId }, { onConflict: 'email', ignoreDuplicates: true });
+            .upsert({ email, note: null, invited_by: callerId }, { onConflict: 'email', ignoreDuplicates: true });
           if (allowErr) console.error('admin set_role: allowed_emails upsert failed', email, allowErr.message);
+          // They have access now — clear any waitlist row (best-effort).
+          const { error: wlErr } = await admin.from('waitlist').delete().eq('email', email);
+          if (wlErr) console.error('admin set_role: waitlist cleanup failed', email, wlErr.message);
         }
 
         if (becameAmbassador) {
@@ -456,9 +523,16 @@ export default async function handler(req, res) {
         // let "remove admin" (demotion from the console) double as a silent
         // full app lockout for someone who only ever had access via the
         // admins table.
+        // note:null — see set_role's ambassador grant: with ignoreDuplicates
+        // this only inserts a FRESH row and never overwrites a manually-typed
+        // note. Admin status is exposed via list_overview's is_admin flag, not
+        // stashed as free-text.
         const { error: allowErr } = await admin.from('allowed_emails')
-          .upsert({ email, note: 'admin', invited_by: callerId }, { onConflict: 'email', ignoreDuplicates: true });
+          .upsert({ email, note: null, invited_by: callerId }, { onConflict: 'email', ignoreDuplicates: true });
         if (allowErr) console.error('admin add_admin: allowed_emails upsert failed', email, allowErr.message);
+        // They have access now — clear any waitlist row (best-effort).
+        const { error: wlErr } = await admin.from('waitlist').delete().eq('email', email);
+        if (wlErr) console.error('admin add_admin: waitlist cleanup failed', email, wlErr.message);
         await notify(admin, email, 'admin', 'You now have admin access to Marro.');
         return res.status(200).json({ ok: true });
       }

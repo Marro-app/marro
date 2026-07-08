@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { C } from '../lib/theme.js';
 import { Card, SectionTitle, EmptyState, Divider, Modal, ChoiceGroup, ProgressBar } from '../components/primitives.jsx';
 import { radioProps } from '../lib/ui-helpers.js';
@@ -38,10 +38,33 @@ function codeStatus(c) {
 }
 // The admin-unlimited sentinel is an absurdly large number server-side —
 // anything in the thousands+ reads as "no real ceiling" to a human.
+// Threshold matches the admin-unlimited sentinel from my_invite_quota() (SQL) —
+// keep in sync so a legitimately large human-entered override (e.g. 1000 for a
+// top ambassador) never gets mislabeled "Unlimited".
 function fmtLimit(n) {
   if (n == null) return "Default";
-  if (n >= 1000) return "Unlimited";
+  if (n >= 1000000) return "Unlimited";
   return String(n);
+}
+
+// Message state that auto-clears SUCCESS-toned messages after a few seconds so
+// they don't sit on screen forever (error-toned messages persist until the next
+// action, which is expected — the user needs time to read a failure). The timer
+// is cleared on unmount and reset on every new message so timers never stack or
+// fire after a message was already replaced. Shape: {text, tone}.
+function useFlashMsg(delay = 3500) {
+  const [msg, setMsgRaw] = useState(null);
+  const timer = useRef(null);
+  const clear = () => { if (timer.current) { clearTimeout(timer.current); timer.current = null; } };
+  const setMsg = useCallback((m) => {
+    clear();
+    setMsgRaw(m);
+    if (m && m.tone === "success") {
+      timer.current = setTimeout(() => { setMsgRaw(null); timer.current = null; }, delay);
+    }
+  }, [delay]);
+  useEffect(() => clear, []);
+  return [msg, setMsg];
 }
 
 // Small inline status/announcement line — mirrors the role="alert" pattern used
@@ -190,6 +213,7 @@ function RevokeAccessModal({email, onClose, onDone}) {
           </label>
           <input id="revoke-confirm-input" autoFocus value={confirmText} disabled={busy} placeholder="DELETE"
             onChange={e=>setConfirmText(e.target.value)}
+            onKeyDown={e=>{ if(e.key==="Enter" && canConfirm){ e.preventDefault(); confirm(); } }}
             style={{width:"100%", boxSizing:"border-box", padding:"9px 10px", fontSize:13, borderRadius:8, border:`1px solid ${C.border}`, background:C.surface, color:C.text, outline:"none"}}/>
         </div>
       )}
@@ -197,8 +221,8 @@ function RevokeAccessModal({email, onClose, onDone}) {
       <InlineMsg text={err} tone="error"/>
 
       <div style={{display:"flex", gap:8, marginTop:14}}>
-        <button type="button" className="btn-fill" disabled={busy} onClick={onClose}
-          style={{flex:1.4, padding:"10px", fontSize:13, fontWeight:600, border:"none", borderRadius:8, background:C.creamSoft, color:C.text, cursor:busy?"default":"pointer", opacity:busy?0.6:1, minHeight:44}}>
+        <button type="button" className="btn-pop" disabled={busy} onClick={onClose}
+          style={{flex:1.4, padding:"10px", fontSize:13, fontWeight:600, border:`1px solid ${C.border}`, borderRadius:8, background:"transparent", color:C.text, cursor:busy?"default":"pointer", opacity:busy?0.6:1, minHeight:44}}>
           Cancel
         </button>
         <button type="button" className="btn-fill" disabled={!canConfirm} onClick={confirm}
@@ -218,7 +242,7 @@ function RevokeAccessModal({email, onClose, onDone}) {
 function AmbassadorsSection({ambassadors, codes, callerEmail, onChanged}) {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState(null);
+  const [msg, setMsg] = useFlashMsg();
   const [profileEmail, setProfileEmail] = useState(null);
   const [revokeEmail, setRevokeEmail] = useState(null);
 
@@ -273,11 +297,11 @@ function AmbassadorsSection({ambassadors, codes, callerEmail, onChanged}) {
       }
 
       {profile && (
-        <AmbassadorProfileModal ambassador={profile} codes={codes.filter(c=>c.owner_email===profile.email)}
+        <AmbassadorProfileModal key={profile.email} ambassador={profile} codes={codes.filter(c=>c.owner_email===profile.email)}
           onClose={()=>setProfileEmail(null)} onChanged={onChanged}/>
       )}
       {revokeEmail && (
-        <RevokeAccessModal email={revokeEmail} onClose={()=>setRevokeEmail(null)}
+        <RevokeAccessModal key={revokeEmail} email={revokeEmail} onClose={()=>setRevokeEmail(null)}
           onDone={()=>{ setRevokeEmail(null); onChanged(); }}/>
       )}
     </Card>
@@ -348,7 +372,7 @@ function AmbassadorCard({a, rank, isSelf, onChanged, onViewProfile, onRevoke}) {
       <InlineMsg text={err} tone="error"/>
 
       <div style={{display:"flex", gap:8, flexWrap:"wrap", position:"relative"}}>
-        <button type="button" className="btn-pop" onClick={()=>setStepOpen(o=>!o)} aria-expanded={stepOpen}
+        <button type="button" className="btn-pop" onClick={()=>{ setErr(null); setStepOpen(true); }} aria-haspopup="dialog"
           style={{fontSize:11, padding:"6px 12px", minHeight:32, borderRadius:8, border:`1px solid ${C.border}`, background:"transparent", color:C.text, cursor:"pointer", fontWeight:600}}>
           Increase invites
         </button>
@@ -368,27 +392,32 @@ function AmbassadorCard({a, rank, isSelf, onChanged, onViewProfile, onRevoke}) {
         )}
 
         {stepOpen && (
-          <div role="group" aria-label={`Increase invites for ${a.email}`} style={{position:"absolute", top:"calc(100% + 6px)", left:0, zIndex:20, width:220, padding:12, background:C.glassTooltip, backdropFilter:"blur(50px) saturate(200%)", WebkitBackdropFilter:"blur(50px) saturate(200%)", border:`1px solid ${C.borderDark}`, borderRadius:12, boxShadow:"0 8px 32px rgba(0,0,0,0.40)"}}>
-            <div style={{display:"flex", gap:6, marginBottom:8}}>
+          <Modal title={`Increase invites for ${a.name || a.email}`} onClose={()=>{ if(!busy){ setStepOpen(false); setCustom(""); } }} width={360}>
+            <div style={{fontSize:13, color:C.textMid, marginBottom:14, lineHeight:1.5}}>
+              Currently <strong style={{color:C.text}}>{fmtLimit(limit)}</strong>. Bump it up or set an exact number.
+            </div>
+            <div style={{display:"flex", gap:8, marginBottom:16}}>
               {[5,10].map(step=>(
                 <button key={step} type="button" className="btn-pop" disabled={busy} onClick={()=>setLimit((limit||0)+step)}
-                  style={{flex:1, fontSize:12, padding:"8px 0", minHeight:36, borderRadius:8, border:`1px solid ${C.border}`, background:"transparent", color:C.text, cursor:busy?"not-allowed":"pointer", fontWeight:600}}>
+                  style={{flex:1, fontSize:13, padding:"10px 0", minHeight:44, borderRadius:8, border:`1px solid ${C.border}`, background:"transparent", color:C.text, cursor:busy?"not-allowed":"pointer", fontWeight:600}}>
                   +{step}
                 </button>
               ))}
             </div>
-            <label htmlFor={`amb-custom-${a.email}`} style={{display:"block", fontSize:10.5, color:C.gray, marginBottom:4}}>Set exact limit</label>
-            <div style={{display:"flex", gap:6}}>
-              <input id={`amb-custom-${a.email}`} type="number" inputMode="numeric" min={0} placeholder={String(limit ?? "")} value={custom}
+            <label htmlFor={`amb-custom-${a.email}`} style={{display:"block", fontSize:11, color:C.gray, marginBottom:4, fontWeight:500}}>Set exact limit</label>
+            <div style={{display:"flex", gap:8}}>
+              <input id={`amb-custom-${a.email}`} type="number" inputMode="numeric" min={0} autoFocus placeholder={String(limit ?? "")} value={custom}
                 onChange={e=>setCustom(e.target.value)}
-                style={{flex:1, minWidth:0, fontSize:13, border:`1px solid ${C.border}`, borderRadius:8, padding:"7px 8px", background:C.bg, color:C.text, boxSizing:"border-box", minHeight:36}}/>
+                onKeyDown={e=>{ if(e.key==="Enter" && !busy && custom.trim()!==""){ e.preventDefault(); setLimit(parseInt(custom,10)); } }}
+                style={{flex:1, minWidth:0, fontSize:13, border:`1px solid ${C.border}`, borderRadius:8, padding:"10px", background:C.bg, color:C.text, boxSizing:"border-box", minHeight:44}}/>
               <button type="button" className="btn-fill" disabled={busy || custom.trim()===""} onClick={()=>setLimit(parseInt(custom,10))}
-                style={{fontSize:12, padding:"7px 12px", minHeight:36, borderRadius:8, border:"none",
+                style={{fontSize:13, padding:"10px 18px", minHeight:44, borderRadius:8, border:"none",
                   background: (busy||custom.trim()==="") ? C.surface : C.teal, color:(busy||custom.trim()==="") ? C.gray : C.bg, cursor:(busy||custom.trim()==="")?"not-allowed":"pointer", fontWeight:600}}>
                 Set
               </button>
             </div>
-          </div>
+            <InlineMsg text={err} tone="error"/>
+          </Modal>
         )}
       </div>
     </div>
@@ -399,8 +428,14 @@ function AmbassadorProfileModal({ambassador, codes, onClose, onChanged}) {
   const [note, setNote] = useState(ambassador.note || "");
   const [school, setSchool] = useState(ambassador.school || "");
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState(null);
+  const [msg, setMsg] = useFlashMsg();
   const [actingCode, setActingCode] = useState(null);
+
+  // Belt-and-suspenders against stale state leaking between ambassadors: even
+  // though this modal is remounted per-open at the call site (and given a
+  // key={ambassador.email}), reset the editable fields if the ambassador prop
+  // ever changes under a reused instance.
+  useEffect(()=>{ setNote(ambassador.note || ""); setSchool(ambassador.school || ""); }, [ambassador.email]);
 
   const save = async () => {
     setBusy(true); setMsg(null);
@@ -500,7 +535,7 @@ function MembersSection({members, callerEmail, onChanged}) {
   const [grantEmail, setGrantEmail] = useState("");
   const [grantNote, setGrantNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState(null);
+  const [msg, setMsg] = useFlashMsg();
   const [revokeEmail, setRevokeEmail] = useState(null);
   const [editingNote, setEditingNote] = useState(null); // email currently being edited
   const [noteText, setNoteText] = useState("");
@@ -557,42 +592,71 @@ function MembersSection({members, callerEmail, onChanged}) {
 
       {sorted.length === 0
         ? <EmptyState>No members yet.</EmptyState>
-        : sorted.map((m,i)=>(
-          <div key={m.email} style={{display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", padding:"9px 0", borderBottom: i<sorted.length-1 ? `1px solid ${C.border}` : "none"}}>
-            <Avatar avatar={m.avatar} name={m.name} email={m.email} size={32}/>
-            <div style={{minWidth:0, flex:"1 1 160px"}}>
-              <div style={{fontSize:13, fontWeight:600, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{m.name || m.email}</div>
-              {m.name && <div style={{fontSize:11, color:C.gray}}>{m.email}</div>}
-            </div>
-            {!m.joined && <span style={{fontSize:10, padding:"2px 9px", borderRadius:999, background:C.amberLight, color:C.amber, fontWeight:600, flexShrink:0}}>Invited — hasn&apos;t joined</span>}
-            <div style={{flex:"1 1 160px", minWidth:120}}>
-              {editingNote === m.email ? (
-                <div style={{display:"flex", gap:4}}>
-                  <label htmlFor={`member-note-${m.email}`} style={{position:"absolute", width:1, height:1, overflow:"hidden", clip:"rect(0,0,0,0)"}}>Note for {m.email}</label>
-                  <input id={`member-note-${m.email}`} autoFocus value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Note"
-                    style={{flex:1, minWidth:0, fontSize:12, border:`1px solid ${C.sel}`, borderRadius:6, padding:"5px 8px", background:C.selBg, color:C.text}}/>
-                  <button type="button" className="txt-act" disabled={savingNote} onClick={()=>saveNote(m.email)} style={{border:"none", background:"transparent", color:C.teal, fontSize:11, fontWeight:600, cursor:"pointer"}}>Save</button>
-                  <button type="button" className="xbtn" aria-label="Cancel editing note" onClick={()=>setEditingNote(null)} style={{border:"none", background:"transparent", color:C.gray, fontSize:11, cursor:"pointer"}}>✕</button>
-                </div>
-              ) : (
-                <button type="button" className="txt-act" onClick={()=>{ setEditingNote(m.email); setNoteText(m.note || ""); }}
-                  style={{border:"none", background:"transparent", padding:0, cursor:"pointer", textAlign:"left", fontSize:11.5, color: m.note ? C.textMid : C.gray, fontStyle: m.note ? "normal" : "italic"}}>
-                  {m.note || "Add note"}
-                </button>
-              )}
-            </div>
-            {(!callerEmail || m.email !== callerEmail) && (
-              <button type="button" className="btn-pop" onClick={()=>setRevokeEmail(m.email)}
-                style={{fontSize:11, padding:"6px 12px", minHeight:32, borderRadius:8, border:`1px solid ${C.dangerMid}`, background:"transparent", color:C.danger, cursor:"pointer", fontWeight:600, flexShrink:0}}>
-                Revoke access
-              </button>
-            )}
+        : (
+          <div className="av-scroll" style={{overflowX:"auto"}}>
+            <table style={{width:"100%", borderCollapse:"collapse", fontSize:12}}>
+              <thead>
+                <tr>
+                  <th scope="col" style={{textAlign:"left", padding:"6px 8px", color:C.gray, fontWeight:600, fontSize:11, borderBottom:`1px solid ${C.border}`}}>Member</th>
+                  <th scope="col" style={{textAlign:"left", padding:"6px 8px", color:C.gray, fontWeight:600, fontSize:11, borderBottom:`1px solid ${C.border}`, width:150}}>Role</th>
+                  <th scope="col" style={{textAlign:"left", padding:"6px 8px", color:C.gray, fontWeight:600, fontSize:11, borderBottom:`1px solid ${C.border}`, width:200}}>Note</th>
+                  <th scope="col" style={{textAlign:"right", padding:"6px 8px", color:C.gray, fontWeight:600, fontSize:11, borderBottom:`1px solid ${C.border}`, width:130}}><span className="sr-only" style={{position:"absolute",width:1,height:1,overflow:"hidden",clip:"rect(0,0,0,0)"}}>Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map(m=>(
+                  <tr key={m.email}>
+                    <td style={{padding:"8px", borderBottom:`1px solid ${C.border}`}}>
+                      <div style={{display:"flex", alignItems:"center", gap:10, minWidth:0}}>
+                        <Avatar avatar={m.avatar} name={m.name} email={m.email} size={32}/>
+                        <div style={{minWidth:0}}>
+                          <div style={{fontSize:13, fontWeight:600, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{m.name || m.email}</div>
+                          {m.name && <div style={{fontSize:11, color:C.gray, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{m.email}</div>}
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{padding:"8px", borderBottom:`1px solid ${C.border}`}}>
+                      <span style={{display:"inline-flex", gap:4, flexWrap:"wrap"}}>
+                        {m.is_admin && <span style={{fontSize:10, padding:"2px 9px", borderRadius:999, background:C.blueLight, color:C.blue, fontWeight:600, whiteSpace:"nowrap"}}>Admin</span>}
+                        {m.is_ambassador && <span style={{fontSize:10, padding:"2px 9px", borderRadius:999, background:C.amberLight, color:C.amber, fontWeight:600, whiteSpace:"nowrap"}}>Ambassador</span>}
+                        {!m.joined && <span style={{fontSize:10, padding:"2px 9px", borderRadius:999, background:C.surface, color:C.textMid, fontWeight:600, whiteSpace:"nowrap"}}>Not joined</span>}
+                      </span>
+                    </td>
+                    <td style={{padding:"8px", borderBottom:`1px solid ${C.border}`}}>
+                      {editingNote === m.email ? (
+                        <div style={{display:"flex", gap:4, alignItems:"center"}}>
+                          <label htmlFor={`member-note-${m.email}`} style={{position:"absolute", width:1, height:1, overflow:"hidden", clip:"rect(0,0,0,0)"}}>Note for {m.email}</label>
+                          <input id={`member-note-${m.email}`} autoFocus value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Note"
+                            onKeyDown={e=>{ if(e.key==="Enter" && !savingNote){ e.preventDefault(); saveNote(m.email); } }}
+                            style={{flex:1, minWidth:0, fontSize:12, border:`1px solid ${C.sel}`, borderRadius:6, padding:"5px 8px", background:C.selBg, color:C.text}}/>
+                          <button type="button" className="txt-act" disabled={savingNote} onClick={()=>saveNote(m.email)} style={{border:"none", background:"transparent", color:C.teal, fontSize:11, fontWeight:600, cursor:"pointer"}}>Save</button>
+                          <button type="button" className="xbtn" aria-label="Cancel editing note" onClick={()=>setEditingNote(null)} style={{border:"none", background:"transparent", color:C.gray, fontSize:11, cursor:"pointer"}}>✕</button>
+                        </div>
+                      ) : (
+                        <button type="button" className="txt-act" onClick={()=>{ setEditingNote(m.email); setNoteText(m.note || ""); }}
+                          style={{border:"none", background:"transparent", padding:0, cursor:"pointer", textAlign:"left", fontSize:11.5, color: m.note ? C.textMid : C.gray, fontStyle: m.note ? "normal" : "italic"}}>
+                          {m.note || "Add note"}
+                        </button>
+                      )}
+                    </td>
+                    <td style={{padding:"8px", borderBottom:`1px solid ${C.border}`, textAlign:"right"}}>
+                      {(!callerEmail || m.email !== callerEmail) && (
+                        <button type="button" className="btn-pop" onClick={()=>setRevokeEmail(m.email)}
+                          style={{fontSize:11, padding:"6px 12px", minHeight:32, borderRadius:8, border:`1px solid ${C.dangerMid}`, background:"transparent", color:C.danger, cursor:"pointer", fontWeight:600, whiteSpace:"nowrap"}}>
+                          Revoke access
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        ))
+        )
       }
 
       {revokeEmail && (
-        <RevokeAccessModal email={revokeEmail} onClose={()=>setRevokeEmail(null)}
+        <RevokeAccessModal key={revokeEmail} email={revokeEmail} onClose={()=>setRevokeEmail(null)}
           onDone={()=>{ setRevokeEmail(null); onChanged(); }}/>
       )}
     </Card>
@@ -603,7 +667,7 @@ function MembersSection({members, callerEmail, onChanged}) {
 function InviteCodesSection({codes, onChanged}) {
   const [count, setCount] = useState("5");
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState(null); // {text, tone}
+  const [msg, setMsg] = useFlashMsg(); // {text, tone}
   const [revokingCode, setRevokingCode] = useState(null);
   const [archivingCode, setArchivingCode] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -704,6 +768,7 @@ function InviteCodesSection({codes, onChanged}) {
                           {c.code}
                           <CopyBtn value={c.code}/>
                         </span>
+                        {c.bound_email && <div style={{fontSize:10.5, color:C.gray, marginTop:2}}>for {c.bound_email}</div>}
                       </td>
                       <td style={{padding:"8px", borderBottom:`1px solid ${C.border}`}}>
                         <span style={{display:"inline-flex", gap:4, alignItems:"center", flexWrap:"wrap"}}>
@@ -746,18 +811,34 @@ function InviteCodesSection({codes, onChanged}) {
 function WaitlistSection({waitlist, onChanged}) {
   const [busyEmail, setBusyEmail] = useState(null);
   const [rowMsg, setRowMsg] = useState({}); // email -> {text, tone}
+  const timers = useRef({});
+
+  // Set a per-row message; success-toned ones auto-clear after a few seconds
+  // (errors persist). Any pending timer for that row is cleared first so they
+  // never stack or fire after the message was replaced.
+  const setRow = (email, m) => {
+    if (timers.current[email]) { clearTimeout(timers.current[email]); delete timers.current[email]; }
+    setRowMsg(prev=>({...prev, [email]: m}));
+    if (m && m.tone === "success") {
+      timers.current[email] = setTimeout(()=>{ setRowMsg(p=>({...p, [email]: null})); delete timers.current[email]; }, 3500);
+    }
+  };
+  useEffect(()=>()=>{ Object.values(timers.current).forEach(clearTimeout); }, []);
 
   const invite = async (email) => {
     setBusyEmail(email);
-    setRowMsg(m=>({...m, [email]: null}));
+    setRow(email, null);
     const res = await adminCall('invite_from_waitlist', {email});
     if (!res || res.ok === false || res.error) {
-      setRowMsg(m=>({...m, [email]: {text: res?.error || "Couldn't send an invite. Please try again.", tone:"error"}}));
+      setRow(email, {text: res?.error || "Couldn't send an invite. Please try again.", tone:"error"});
     } else if (res.emailed === false) {
-      setRowMsg(m=>({...m, [email]: {text: `Code minted but the email failed to send — share this code manually: ${res.code}`, tone:"error"}}));
+      setRow(email, {text: `Code minted but the email failed to send — share this code manually: ${res.code}`, tone:"error"});
+      onChanged();
+    } else if (res.reinvite) {
+      setRow(email, {text: "Re-invited — a new code was emailed to them (their old code was revoked).", tone:"success"});
       onChanged();
     } else {
-      setRowMsg(m=>({...m, [email]: {text: "Invited — the code was emailed to them.", tone:"success"}}));
+      setRow(email, {text: "Invited — the code was emailed to them.", tone:"success"});
       onChanged();
     }
     setBusyEmail(null);
@@ -766,14 +847,25 @@ function WaitlistSection({waitlist, onChanged}) {
   const remove = async (email) => {
     if (!window.confirm(`Remove ${email} from the waitlist?`)) return;
     setBusyEmail(email);
-    setRowMsg(m=>({...m, [email]: null}));
+    setRow(email, null);
     const res = await adminCall('remove_from_waitlist', {email});
     if (!res || res.ok === false || res.error) {
-      setRowMsg(m=>({...m, [email]: {text: res?.error || "Couldn't remove them. Please try again.", tone:"error"}}));
+      setRow(email, {text: res?.error || "Couldn't remove them. Please try again.", tone:"error"});
     } else {
       onChanged();
     }
     setBusyEmail(null);
+  };
+
+  // Compact invite history: "Invited Jul 8" for a single send, or
+  // "First invited Jul 8 · Re-invited 2× · Last: Jul 9" once re-invited.
+  const inviteHistory = (w) => {
+    const count = w.invite_count || 0;
+    if (count <= 0) return null;
+    if (count === 1) return `Invited ${fmtDate(w.invited_at)}`;
+    const parts = [`First invited ${fmtDate(w.invited_at)}`, `Re-invited ${count-1}×`];
+    if (w.last_invited_at) parts.push(`Last: ${fmtDate(w.last_invited_at)}`);
+    return parts.join(" · ");
   };
 
   const sorted = [...waitlist].sort((a,b)=> new Date(b.created_at) - new Date(a.created_at));
@@ -787,11 +879,11 @@ function WaitlistSection({waitlist, onChanged}) {
             <div style={{display:"flex", justifyContent:"space-between", gap:10, alignItems:"center", flexWrap:"wrap"}}>
               <span style={{fontSize:13, color:C.text, fontWeight:600}}>{w.email}</span>
               <div style={{display:"flex", alignItems:"center", gap:8, flexWrap:"wrap"}}>
-                {w.invited_at && <span style={{fontSize:10, padding:"2px 9px", borderRadius:999, background:C.blueLight, color:C.blue, fontWeight:600, whiteSpace:"nowrap"}}>Invited {fmtDate(w.invited_at)}</span>}
+                {(w.invite_count > 0 || w.invited_at) && <span style={{fontSize:10, padding:"2px 9px", borderRadius:999, background:C.blueLight, color:C.blue, fontWeight:600, whiteSpace:"nowrap"}}>Invited</span>}
                 <span style={{color:C.gray, fontWeight:400, fontSize:11, whiteSpace:"nowrap"}}>{fmtDate(w.created_at)}</span>
                 <button type="button" className="btn-pop" onClick={()=>invite(w.email)} disabled={busyEmail===w.email}
                   style={{fontSize:11, padding:"6px 12px", minHeight:32, borderRadius:8, border:`1px solid ${C.border}`, background:"transparent", color:C.text, cursor: busyEmail===w.email ? "not-allowed" : "pointer", fontWeight:600}}>
-                  {busyEmail===w.email ? "Working…" : (w.invited_at ? "Invite again" : "Invite")}
+                  {busyEmail===w.email ? "Working…" : ((w.invite_count > 0 || w.invited_at) ? "Invite again" : "Invite")}
                 </button>
                 <button type="button" className="btn-pop" onClick={()=>remove(w.email)} disabled={busyEmail===w.email}
                   style={{fontSize:11, padding:"6px 12px", minHeight:32, borderRadius:8, border:`1px solid ${C.dangerMid}`, background:"transparent", color:C.danger, cursor: busyEmail===w.email ? "not-allowed" : "pointer", fontWeight:600}}>
@@ -799,6 +891,7 @@ function WaitlistSection({waitlist, onChanged}) {
                 </button>
               </div>
             </div>
+            {inviteHistory(w) && <div style={{fontSize:11, color:C.gray}}>{inviteHistory(w)}</div>}
             {w.reason && <div style={{fontSize:12, color:C.textMid}}>{w.reason}</div>}
             <InlineMsg text={rowMsg[w.email]?.text} tone={rowMsg[w.email]?.tone}/>
           </div>
@@ -812,7 +905,7 @@ function WaitlistSection({waitlist, onChanged}) {
 function AdminsSection({admins, onChanged}) {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState(null);
+  const [msg, setMsg] = useFlashMsg();
   const [removingEmail, setRemovingEmail] = useState(null);
 
   const canAdd = email.trim() && !busy;
