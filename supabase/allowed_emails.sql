@@ -37,6 +37,15 @@ alter table public.allowed_emails enable row level security;
 --    A SECURITY DEFINER function lets a signed-in user check ONLY their own email
 --    without being able to read the rest of the list. The app calls this right
 --    after login: sb.rpc('is_email_allowed').
+--
+--    Ambassador/admin overhaul: an email is now also allowed if it's in
+--    public.admins or is an ambassador in public.user_roles (features "adding
+--    someone as admin/ambassador should just give them app access" — no
+--    separate allowed_emails row needed). This closes audit H3 (a newly-added
+--    admin used to be locked out at the InviteGate since add_admin never wrote
+--    to allowed_emails). Depends on public.admins / public.user_roles existing
+--    — run supabase/invites_waitlist.sql before (or after; only EXECUTION of
+--    this function requires those tables, not its creation) enabling this gate.
 create or replace function public.is_email_allowed()
 returns boolean
 language sql
@@ -44,10 +53,11 @@ security definer
 set search_path = public
 stable
 as $$
-  select exists (
-    select 1 from public.allowed_emails
-    where email = lower(auth.jwt() ->> 'email')
-  );
+  select
+    exists (select 1 from public.allowed_emails where email = lower(auth.jwt() ->> 'email'))
+    or exists (select 1 from public.admins where email = lower(auth.jwt() ->> 'email'))
+    or exists (select 1 from public.user_roles
+                 where email = lower(auth.jwt() ->> 'email') and is_ambassador = true);
 $$;
 
 revoke all on function public.is_email_allowed() from public;

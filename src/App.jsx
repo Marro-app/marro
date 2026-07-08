@@ -3,6 +3,7 @@ import { C, applyTheme, THEMES } from './lib/theme.js';
 import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed, isAdmin, logEvent, exportUserData, exportUserDataExcel, deleteAccount, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY } from './lib/data.js';
 import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
+import { NotificationBanner } from './components/NotificationBanner.jsx';
 import { fmt, fmtS, fmtD, fmtDay, fmtA, moTotal, todayStr, getMonday, getSunday, daysUntil, subMonthlyTotal, getYearMonthStr, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE } from './lib/format.js';
 import { BRANDS, BRAND_DOMAINS, getBrandDomain, getBrand } from './lib/brands.js';
 import { US_MED_SCHOOLS, degreeForSchool, DO_DUAL, dualOptionsForSchool } from './lib/schools.js';
@@ -1138,6 +1139,9 @@ export function App() {
         );
       })()}
 
+      {/* ── Notifications banner — "something changed" / referral joins, any signed-in user ── */}
+      <NotificationBanner/>
+
       {/* ── Offline banner ── */}
       {syncStatus==="offline" && (
         <Banner type="warn">
@@ -1276,7 +1280,7 @@ export function App() {
         {tab==="customize" && <CustomizeTab/>}
 
         {/* ══════════════ ADMIN (admins only; tab hidden otherwise) ══════════════ */}
-        {tab==="admin" && admin && <AdminTab/>}
+        {tab==="admin" && admin && <AdminTab callerEmail={session?.user?.email}/>}
       </React.Suspense>
     </div>
     </AppContext.Provider>

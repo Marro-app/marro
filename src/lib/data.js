@@ -341,6 +341,9 @@ export const generateInviteCode = async () => {
 };
 
 // The current user's own invite codes (RLS: own rows only), newest first. → array.
+// Includes admin-issued codes if any happen to be owned by this user (an admin
+// viewing their own referral list) — the UI is expected to filter those out
+// via issued_by_admin if it only wants to show PERSONAL codes.
 export const myInviteCodes = async () => {
   try {
     const sb = await getSupabase();
@@ -348,6 +351,41 @@ export const myInviteCodes = async () => {
     if (error || !data) return [];
     return data;
   } catch { return []; }
+};
+
+// Revokes one of the current user's OWN unused codes (feature: revoking an
+// unused code refunds the invite — automatic, since generate_invite_code()
+// only counts non-revoked codes). → {status:'ok'|'not_found'}.
+export const revokeOwnCode = async (code) => {
+  try {
+    const sb = await getSupabase();
+    const {data, error} = await sb.rpc('revoke_own_code', {p_code: code});
+    if (error || !data) return {status:'not_found'};
+    return data;
+  } catch { return {status:'not_found'}; }
+};
+
+// Emails one of the current user's own unused codes to someone, via the
+// server (api/send-invite.js — verifies ownership + rate-limits server-side).
+// → {ok:boolean, error?}.
+export const sendInviteEmail = async (code, toEmail, message) => {
+  try {
+    const sb = await getSupabase();
+    const {data:{session}} = await sb.auth.getSession();
+    const token = session?.access_token;
+    if (!token) return {ok:false, error:"Not signed in."};
+    const res = await fetch("/api/send-invite", {
+      method: "POST",
+      headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
+      body: JSON.stringify({code, to_email: toEmail, message}),
+    });
+    let body = null;
+    try { body = await res.json(); } catch { /* non-JSON error body */ }
+    if (!res.ok) return {ok:false, error: body?.error || "Request failed. Please try again."};
+    return {ok:true, ...body};
+  } catch {
+    return {ok:false, error:"Network error — please check your connection and try again."};
+  }
 };
 
 // Joins (or updates) the waitlist for the current user — upsert on user_id (PK),
@@ -380,6 +418,32 @@ export const isAdmin = async () => {
     const {data, error} = await sb.rpc('is_admin');
     return !error && data === true;
   } catch { return false; }
+};
+
+// ── In-app notifications (supabase/notifications.sql) ────────────────────────
+// The "something changed" banner: when an admin action affects a user (invite
+// limit raised, ambassador granted, code revoked, someone they invited
+// joined...), a row lands here for them to see next time they open the app.
+
+// The current user's own undismissed notifications, newest first. → array.
+export const myNotifications = async () => {
+  try {
+    const sb = await getSupabase();
+    const {data, error} = await sb.from('user_notifications')
+      .select('*').is('dismissed_at', null).order('created_at', {ascending:false});
+    if (error || !data) return [];
+    return data;
+  } catch { return []; }
+};
+
+// Dismisses one of the current user's own notifications. → {status:'ok'|'not_found'}.
+export const dismissNotification = async (id) => {
+  try {
+    const sb = await getSupabase();
+    const {data, error} = await sb.rpc('dismiss_notification', {p_id: id});
+    if (error || !data) return {status:'not_found'};
+    return data;
+  } catch { return {status:'not_found'}; }
 };
 
 // Shared helper for the admin backend (api/admin.js). Bearer-auth'd, same

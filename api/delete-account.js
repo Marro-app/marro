@@ -17,19 +17,35 @@
 //   - SUPABASE_SERVICE_ROLE_KEY is a Vercel environment variable, read only from
 //     process.env — never hardcoded, never logged, never echoed in a response.
 //
-// Deletes, in order: `app_state` row, `profiles` row, `allowed_emails` row (by the
-// user's verified email), then the `auth.users` row via the Admin API. Best-effort
-// on the data-table deletes (log + continue) so a transient error on one table can't
-// leave an orphaned auth user with no way to ever re-delete their remaining rows —
-// but the final admin.deleteUser call's result IS the thing we report to the caller.
+// Deletes, in order: `app_state` row, `profiles` row, `waitlist` row,
+// `user_notifications` rows, then the `auth.users` row via the Admin API.
+//
+// PRODUCT CHOICE (owner decision, ambassador/admin overhaul): `allowed_emails`
+// is deliberately KEPT, not deleted. If this person signs back in later with the
+// same email, they skip the invite gate — deleting your account isn't supposed
+// to cost you your spot. (Their app data does NOT come back, though: app_state/
+// profiles are gone and a fresh signup gets a brand-new auth uid with no link
+// back to the old one — "keep the gate open, not the data.")
+//
+// C2 SECURITY FIX (audit): `admins` and `user_roles` (ambassador flag / invite
+// overrides) ARE deleted here, unlike allowed_emails. Both are keyed by email
+// with no FK to auth.users, so previously a deleted admin's or ambassador's
+// privilege silently persisted and reactivated the moment that email signed up
+// again — a privilege-persistence hole. Access surviving deletion is a product
+// choice; ADMIN/AMBASSADOR RIGHTS surviving deletion is a security bug, so
+// those two always get wiped regardless of the allowed_emails choice above.
+//
+// Best-effort on all pre-auth-delete steps (log + continue) so a transient error
+// on one table can't leave an orphaned auth user with no way to ever re-delete
+// their remaining rows — but the final admin.deleteUser call's result IS the
+// thing we report to the caller.
 
 import { createClient } from '@supabase/supabase-js';
-// Reuse the single source of truth for the publishable URL/key (src/lib/data.js)
-// instead of duplicating the literal here — same value already hardcoded in
-// index.html / src/lib/data.js, safe to reuse (RLS-gated, not secret; see
-// CLAUDE.md rule 4). This import only pulls the two string constants, not the
-// lazy getSupabase()/client-only helpers in that file.
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../src/lib/data.js';
+// Side-effect-free config mirror (audit M3) — see api/_config.js for why this
+// is no longer imported from src/lib/data.js (that module's bottom IIFE runs a
+// window-referencing setInterval at import time, which throws in the Node
+// serverless runtime).
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './_config.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -77,9 +93,21 @@ export default async function handler(req, res) {
   const { error: profileErr } = await admin.from('profiles').delete().eq('user_id', uid);
   if (profileErr) console.error('delete-account: profiles delete failed', uid, profileErr.message);
 
+  const { error: waitlistErr } = await admin.from('waitlist').delete().eq('user_id', uid);
+  if (waitlistErr) console.error('delete-account: waitlist delete failed', uid, waitlistErr.message);
+
+  // allowed_emails is INTENTIONALLY NOT deleted — see the product-choice note
+  // at the top of this file. admins/user_roles/user_notifications ARE deleted
+  // regardless (C2 fix — privilege must never silently survive deletion).
   if (email) {
-    const { error: allowedErr } = await admin.from('allowed_emails').delete().eq('email', email);
-    if (allowedErr) console.error('delete-account: allowed_emails delete failed', email, allowedErr.message);
+    const { error: rolesErr } = await admin.from('user_roles').delete().eq('email', email);
+    if (rolesErr) console.error('delete-account: user_roles delete failed', email, rolesErr.message);
+
+    const { error: adminsErr } = await admin.from('admins').delete().eq('email', email);
+    if (adminsErr) console.error('delete-account: admins delete failed', email, adminsErr.message);
+
+    const { error: notifErr } = await admin.from('user_notifications').delete().eq('email', email);
+    if (notifErr) console.error('delete-account: user_notifications delete failed', email, notifErr.message);
   }
 
   const { error: adminDeleteErr } = await admin.auth.admin.deleteUser(uid);

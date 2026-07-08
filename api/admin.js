@@ -21,9 +21,10 @@
 //     api/delete-account.js); read only from process.env, never hardcoded/logged.
 
 import { createClient } from '@supabase/supabase-js';
-// Reuse the single source of truth for the publishable URL/key (safe to reuse —
-// RLS-gated, not secret; see CLAUDE.md rule 4 and api/delete-account.js).
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../src/lib/data.js';
+// Side-effect-free config mirror (audit M3) — see api/_config.js for why this
+// is no longer imported from src/lib/data.js.
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './_config.js';
+import { sendEmail, inviteCodeEmail, waitlistInviteEmail } from './_email.js';
 
 // Bounded reads so the overview payload can't blow up as the beta grows.
 const LIST_LIMIT = 500;
@@ -79,51 +80,147 @@ export default async function handler(req, res) {
   try {
     switch (action) {
       case 'list_overview': {
-        // A snapshot for the console: codes (+ redemption status), waitlist,
-        // roles, and the admin list. Bounded; newest first.
-        const [codes, waitlist, roles, admins] = await Promise.all([
+        // A snapshot for the console: codes, waitlist, ambassadors, members,
+        // and admins — enriched with names/avatars/computed stats so the UI
+        // can render rich cards without a second round trip.
+        const [codes, waitlist, roles, admins, allowed] = await Promise.all([
           admin.from('invite_codes')
-            .select('code, owner_id, created_at, redeemed_by, redeemed_email, redeemed_at, revoked_at')
+            .select('code, owner_id, created_at, redeemed_by, redeemed_email, redeemed_at, revoked_at, issued_by_admin, archived_at')
             .order('created_at', { ascending: false }).limit(LIST_LIMIT),
           admin.from('waitlist')
-            .select('user_id, email, reason, created_at')
+            .select('user_id, email, reason, created_at, invited_at')
             .order('created_at', { ascending: false }).limit(LIST_LIMIT),
           admin.from('user_roles')
-            .select('email, is_ambassador, quota_override, updated_at')
+            .select('email, is_ambassador, quota_override, note, school, updated_by, updated_at')
             .order('updated_at', { ascending: false }).limit(LIST_LIMIT),
           admin.from('admins')
             .select('email, added_by, created_at')
             .order('created_at', { ascending: true }).limit(LIST_LIMIT),
+          admin.from('allowed_emails')
+            .select('email, note, invited_by, created_at')
+            .order('created_at', { ascending: false }).limit(LIST_LIMIT),
         ]);
-        const firstErr = codes.error || waitlist.error || roles.error || admins.error;
+        const firstErr = codes.error || waitlist.error || roles.error || admins.error || allowed.error;
         if (firstErr) throw firstErr;
 
-        // Resolve each code's owner_id → email so the console shows a human name
-        // instead of a raw uuid. Best-effort: one paged listUsers (fine for the
-        // closed beta's user count); on any failure we just omit owner_email and
-        // the client falls back to the truncated id.
-        const codeRows = codes.data || [];
-        let ownerEmailById = {};
-        if (codeRows.length) {
-          try {
-            const { data: usersPage } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
-            for (const u of usersPage?.users || []) ownerEmailById[u.id] = u.email;
-          } catch (e) {
-            console.error('admin: listUsers for owner emails failed', e?.message);
+        // Resolve every known user's email → {id, name, avatar} once so the
+        // console can show human names/pictures instead of raw uuids/bare
+        // emails everywhere (owner, redeemer, waitlist, ambassador, member).
+        // Best-effort: on any failure we omit the enrichment and the client
+        // falls back to showing the raw email/id.
+        let byEmail = {};
+        let byId = {};
+        try {
+          const { data: usersPage } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+          for (const u of usersPage?.users || []) {
+            const meta = u.user_metadata || {};
+            const info = {
+              id: u.id,
+              email: (u.email || '').toLowerCase(),
+              name: meta.full_name || meta.name || null,
+              avatar: meta.avatar_url || meta.picture || null,
+            };
+            if (info.email) byEmail[info.email] = info;
+            byId[u.id] = info;
           }
+        } catch (e) {
+          console.error('admin: listUsers for name/avatar enrichment failed', e?.message);
         }
-        const codesWithOwner = codeRows.map(c => ({ ...c, owner_email: ownerEmailById[c.owner_id] || null }));
+
+        const codeRows = codes.data || [];
+        const codesWithOwner = codeRows.map(c => {
+          const owner = byId[c.owner_id];
+          return {
+            ...c,
+            owner_email: owner?.email || null,
+            owner_name: owner?.name || null,
+            owner_avatar: owner?.avatar || null,
+          };
+        });
+
+        const waitlistEnriched = (waitlist.data || []).map(w => {
+          const u = byEmail[(w.email || '').toLowerCase()];
+          return { ...w, name: u?.name || null, avatar: u?.avatar || null };
+        });
+
+        const adminsEnriched = (admins.data || []).map(a => {
+          const u = byEmail[a.email];
+          return { ...a, name: u?.name || null, avatar: u?.avatar || null };
+        });
+
+        // Per-owner code stats for the ambassador cards: PERSONAL codes only
+        // (issued_by_admin = false) — console-minted bulk codes don't belong
+        // to anyone's personal invite stats (audit H4 fix).
+        const statsByEmail = {};
+        for (const c of codeRows) {
+          if (c.issued_by_admin) continue;
+          const owner = byId[c.owner_id];
+          const email = owner?.email;
+          if (!email) continue;
+          if (!statsByEmail[email]) statsByEmail[email] = { issued: 0, used: 0 };
+          if (!c.revoked_at) statsByEmail[email].issued++;
+          if (c.redeemed_at) statsByEmail[email].used++;
+        }
+
+        // Ambassadors: anyone with a user_roles row (ambassador flag and/or a
+        // custom invite-limit override). "brought_in" = how many of their
+        // personal codes were actually redeemed — the real measure of an
+        // ambassador, not how many codes they hold.
+        const ambassadors = (roles.data || []).map(r => {
+          const u = byEmail[r.email];
+          const stats = statsByEmail[r.email] || { issued: 0, used: 0 };
+          const effectiveLimit = r.quota_override != null ? r.quota_override : (r.is_ambassador ? 15 : 5);
+          return {
+            email: r.email,
+            name: u?.name || null,
+            avatar: u?.avatar || null,
+            joined: !!u,
+            is_ambassador: r.is_ambassador,
+            invite_limit: effectiveLimit,
+            codes_issued: stats.issued,
+            codes_used: stats.used,
+            brought_in: stats.used,
+            note: r.note || null,
+            school: r.school || null,
+            updated_by: r.updated_by,
+            updated_at: r.updated_at,
+          };
+        });
+
+        // Members: everyone with app access via allowed_emails (the gate
+        // table). Admins/ambassadors get access without a row here (is_email_
+        // allowed() also checks admins/user_roles) so they're flagged
+        // separately rather than listed as "members" to avoid double-counting.
+        const members = (allowed.data || []).map(m => {
+          const u = byEmail[m.email];
+          const inviter = m.invited_by ? byId[m.invited_by] : null;
+          return {
+            email: m.email,
+            name: u?.name || null,
+            avatar: u?.avatar || null,
+            joined: !!u,
+            note: m.note || null,
+            invited_by_email: inviter?.email || null,
+            created_at: m.created_at,
+          };
+        });
 
         return res.status(200).json({
           ok: true,
-          codes: codesWithOwner, waitlist: waitlist.data,
-          roles: roles.data, admins: admins.data,
+          codes: codesWithOwner,
+          waitlist: waitlistEnriched,
+          roles: roles.data,
+          admins: adminsEnriched,
+          ambassadors,
+          members,
         });
       }
 
       case 'generate_codes': {
-        // Mint N codes attributed to the admin who created them. These are
-        // admin-issued (not counted against anyone's member quota).
+        // Mint N codes attributed to the admin who created them, flagged
+        // issued_by_admin so they don't eat the admin's PERSONAL referral
+        // invites (audit H4 — these used to silently count against the
+        // minting admin's own 5/15 limit).
         const count = Math.max(1, Math.min(MAX_GENERATE, parseInt(body.count, 10) || 1));
         const minted = [];
         // Insert one at a time so a collision on one code can't fail the batch;
@@ -132,7 +229,7 @@ export default async function handler(req, res) {
           for (let attempt = 0; attempt < 5; attempt++) {
             const code = randomCode(8);
             const { error } = await admin.from('invite_codes')
-              .insert({ code, owner_id: callerId });
+              .insert({ code, owner_id: callerId, issued_by_admin: true });
             if (!error) { minted.push(code); break; }
             if (!/duplicate key|unique/i.test(error.message)) throw error;
           }
@@ -146,25 +243,206 @@ export default async function handler(req, res) {
         // Only unredeemed codes can be revoked (revoking a used one is meaningless).
         const { data, error } = await admin.from('invite_codes')
           .update({ revoked_at: new Date().toISOString() })
-          .eq('code', code).is('redeemed_by', null).is('revoked_at', null)
+          .eq('code', code).is('redeemed_at', null).is('revoked_at', null)
+          .select('code, owner_id, issued_by_admin');
+        if (error) throw error;
+        const revokedRow = data && data[0];
+        if (revokedRow && !revokedRow.issued_by_admin) {
+          const owner = await resolveEmail(admin, revokedRow.owner_id);
+          if (owner) await notify(admin, owner, 'role', 'An invite code you created was revoked by an admin.', { code });
+        }
+        return res.status(200).json({ ok: true, revoked: !!revokedRow });
+      }
+
+      case 'archive_code': {
+        // Hide a revoked code from the console's default view. Only revoked
+        // codes can be archived (nothing else needs hiding).
+        const code = String(body.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (!code) return res.status(400).json({ error: 'Missing code' });
+        const { data, error } = await admin.from('invite_codes')
+          .update({ archived_at: new Date().toISOString() })
+          .eq('code', code).not('revoked_at', 'is', null).is('archived_at', null)
           .select('code');
         if (error) throw error;
-        return res.status(200).json({ ok: true, revoked: (data && data.length) > 0 });
+        return res.status(200).json({ ok: true, archived: (data && data.length) > 0 });
+      }
+
+      case 'remove_from_waitlist': {
+        const email = String(body.email || '').toLowerCase().trim();
+        if (!email) return res.status(400).json({ error: 'Missing email' });
+        const { error } = await admin.from('waitlist').delete().eq('email', email);
+        if (error) throw error;
+        return res.status(200).json({ ok: true });
+      }
+
+      case 'invite_from_waitlist': {
+        // Mint one admin-issued code for this waitlisted person and email it
+        // to them. Keeps the waitlist row (stamped invited_at) so the admin
+        // can see who's already been sent a code rather than losing track of
+        // them; remove_from_waitlist is the separate explicit "drop them".
+        const email = String(body.email || '').toLowerCase().trim();
+        if (!email) return res.status(400).json({ error: 'Missing email' });
+
+        let code;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const candidate = randomCode(8);
+          const { error } = await admin.from('invite_codes')
+            .insert({ code: candidate, owner_id: callerId, issued_by_admin: true });
+          if (!error) { code = candidate; break; }
+          if (!/duplicate key|unique/i.test(error.message)) throw error;
+        }
+        if (!code) throw new Error('Could not mint a unique code');
+
+        await admin.from('waitlist').update({ invited_at: new Date().toISOString() }).eq('email', email);
+
+        const { ok: emailed } = await sendEmail({
+          to: email,
+          subject: "You're off the waitlist — welcome to Marro",
+          html: waitlistInviteEmail({ code }),
+        });
+        await notify(admin, email, 'access', "You're off the waitlist! Check your email for an invite code.", { code });
+
+        return res.status(200).json({ ok: true, code, emailed });
+      }
+
+      case 'grant_access': {
+        // Directly allow an email in, bypassing the code flow (e.g. a manual
+        // one-off invite from the Members section).
+        const email = String(body.email || '').toLowerCase().trim();
+        if (!email) return res.status(400).json({ error: 'Missing email' });
+        const { error } = await admin.from('allowed_emails')
+          .upsert({ email, note: body.note || 'admin granted', invited_by: callerId }, { onConflict: 'email' });
+        if (error) throw error;
+        await notify(admin, email, 'access', "You're in! Welcome to Marro.");
+        return res.status(200).json({ ok: true });
+      }
+
+      case 'set_member_note': {
+        // Review fix: the Members section's note field is about a MEMBER
+        // (an allowed_emails row) and must write there — it must NOT go
+        // through set_role/user_roles like the Ambassador profile's note
+        // does, or two bugs follow: (1) the note silently doesn't show up
+        // (Members reads allowed_emails.note, not user_roles.note) and
+        // (2) it creates a stray user_roles row that makes an ordinary
+        // member spuriously appear in the Ambassadors list (which has no
+        // is_ambassador filter — any user_roles row qualifies).
+        const email = String(body.email || '').toLowerCase().trim();
+        if (!email) return res.status(400).json({ error: 'Missing email' });
+        const note = typeof body.note === 'string' ? (body.note.trim() || null) : null;
+        const { error } = await admin.from('allowed_emails').update({ note }).eq('email', email);
+        if (error) throw error;
+        return res.status(200).json({ ok: true });
+      }
+
+      case 'revoke_access': {
+        // Revoke a member's access. delete_data:false ("keep") just removes
+        // their allowed_emails/user_roles/admins rows — their auth account and
+        // app data (app_state/profiles) stay intact, so re-inviting them
+        // (grant_access or a fresh code) restores everything exactly as it
+        // was. delete_data:true is the full, irreversible wipe (mirrors
+        // api/delete-account.js's own-account flow, but admin-triggered).
+        const email = String(body.email || '').toLowerCase().trim();
+        const deleteData = body.delete_data === true;
+        if (!email) return res.status(400).json({ error: 'Missing email' });
+        if (email === callerEmail) {
+          return res.status(400).json({ error: "You can't revoke your own access." });
+        }
+
+        const { error: allowedErr } = await admin.from('allowed_emails').delete().eq('email', email);
+        if (allowedErr) throw allowedErr;
+        const { error: rolesErr } = await admin.from('user_roles').delete().eq('email', email);
+        if (rolesErr) throw rolesErr;
+        const { error: adminsErr } = await admin.from('admins').delete().eq('email', email);
+        if (adminsErr) throw adminsErr;
+
+        if (!deleteData) {
+          return res.status(200).json({ ok: true, mode: 'kept' });
+        }
+
+        // Full delete: resolve their uid, wipe app data + auth user.
+        const { data: usersPage } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+        const user = (usersPage?.users || []).find(u => (u.email || '').toLowerCase() === email);
+        if (user) {
+          const uid = user.id;
+          const { error: stateErr } = await admin.from('app_state').delete().eq('user_id', uid);
+          if (stateErr) console.error('admin revoke_access: app_state delete failed', uid, stateErr.message);
+          const { error: profileErr } = await admin.from('profiles').delete().eq('user_id', uid);
+          if (profileErr) console.error('admin revoke_access: profiles delete failed', uid, profileErr.message);
+          const { error: waitlistErr } = await admin.from('waitlist').delete().eq('user_id', uid);
+          if (waitlistErr) console.error('admin revoke_access: waitlist delete failed', uid, waitlistErr.message);
+          const { error: notifDelErr } = await admin.from('user_notifications').delete().eq('email', email);
+          if (notifDelErr) console.error('admin revoke_access: notifications delete failed', email, notifDelErr.message);
+          const { error: deleteErr } = await admin.auth.admin.deleteUser(uid);
+          if (deleteErr) {
+            // access/role rows are already gone at this point (deleted above) —
+            // report success with a warning rather than a hard error, so the
+            // console still refreshes and shows them as revoked instead of
+            // silently going stale (review fix: a 500 here used to make the
+            // client skip onDone()/onChanged(), leaving a already-revoked
+            // member looking untouched in the UI).
+            console.error('admin revoke_access: deleteUser failed', uid, deleteErr.message);
+            return res.status(200).json({ ok: true, mode: 'deleted', warning: "Access was revoked, but the account itself couldn't be fully deleted. Try again if this repeats." });
+          }
+        }
+        return res.status(200).json({ ok: true, mode: 'deleted' });
       }
 
       case 'set_role': {
         const email = String(body.email || '').toLowerCase().trim();
         if (!email) return res.status(400).json({ error: 'Missing email' });
         const row = { email, updated_by: callerEmail, updated_at: new Date().toISOString() };
-        if (typeof body.is_ambassador === 'boolean') row.is_ambassador = body.is_ambassador;
-        if (body.quota_override === null) row.quota_override = null;
+        let becameAmbassador = false;
+        if (typeof body.is_ambassador === 'boolean') {
+          row.is_ambassador = body.is_ambassador;
+          becameAmbassador = body.is_ambassador;
+        }
+        let limitChanged = false;
+        if (body.quota_override === null) { row.quota_override = null; limitChanged = true; }
         else if (body.quota_override !== undefined) {
           const q = parseInt(body.quota_override, 10);
           if (Number.isNaN(q) || q < 0) return res.status(400).json({ error: 'Invalid quota' });
           row.quota_override = q;
+          limitChanged = true;
         }
+        if (typeof body.note === 'string') row.note = body.note.trim() || null;
+        if (typeof body.school === 'string') row.school = body.school.trim() || null;
+
         const { error } = await admin.from('user_roles').upsert(row, { onConflict: 'email' });
         if (error) throw error;
+
+        // Review fix: an ambassador granted ONLY via user_roles (never having
+        // redeemed a code or been separately granted access) has no
+        // allowed_emails row — is_email_allowed() was giving them access
+        // live off is_ambassador=true, but clear_role() (un-ambassador) then
+        // deletes that row outright and silently locks them out of the whole
+        // app, even though the UI frames "remove ambassador" as just losing
+        // referral perks. Make ambassador status ALWAYS also grant durable
+        // membership, so revoking the role later can never revoke app access
+        // as a side effect (revoke_access is the explicit, intentional way
+        // to do that).
+        if (becameAmbassador) {
+          const { error: allowErr } = await admin.from('allowed_emails')
+            .upsert({ email, note: 'ambassador', invited_by: callerId }, { onConflict: 'email', ignoreDuplicates: true });
+          if (allowErr) console.error('admin set_role: allowed_emails upsert failed', email, allowErr.message);
+        }
+
+        if (becameAmbassador) {
+          await notify(admin, email, 'role', "You're now a Marro ambassador.");
+        } else if (limitChanged) {
+          const effective = row.quota_override != null ? row.quota_override : (body.is_ambassador ? 15 : 5);
+          await notify(admin, email, 'limit', `Your invite limit is now ${effective}.`);
+        }
+        return res.status(200).json({ ok: true });
+      }
+
+      case 'clear_role': {
+        // Remove ambassador status / custom invite limit entirely (back to
+        // the plain default of 5).
+        const email = String(body.email || '').toLowerCase().trim();
+        if (!email) return res.status(400).json({ error: 'Missing email' });
+        const { error } = await admin.from('user_roles').delete().eq('email', email);
+        if (error) throw error;
+        await notify(admin, email, 'role', 'Your ambassador role was updated.');
         return res.status(200).json({ ok: true });
       }
 
@@ -174,6 +452,14 @@ export default async function handler(req, res) {
         const { error } = await admin.from('admins')
           .insert({ email, added_by: callerEmail });
         if (error && !/duplicate key|unique/i.test(error.message)) throw error;
+        // Same durable-access fix as set_role's ambassador grant above: don't
+        // let "remove admin" (demotion from the console) double as a silent
+        // full app lockout for someone who only ever had access via the
+        // admins table.
+        const { error: allowErr } = await admin.from('allowed_emails')
+          .upsert({ email, note: 'admin', invited_by: callerId }, { onConflict: 'email', ignoreDuplicates: true });
+        if (allowErr) console.error('admin add_admin: allowed_emails upsert failed', email, allowErr.message);
+        await notify(admin, email, 'admin', 'You now have admin access to Marro.');
         return res.status(200).json({ ok: true });
       }
 
@@ -206,4 +492,32 @@ function randomCode(n) {
   let out = '';
   for (let i = 0; i < n; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)];
   return out;
+}
+
+// Best-effort in-app notification insert (mirrors public.notify() in
+// supabase/notifications.sql, but from the service-role side since these
+// actions aren't running as the notified user). Never throws — a failed
+// notification shouldn't fail the admin action that triggered it.
+async function notify(admin, email, kind, message, metadata) {
+  if (!email) return;
+  try {
+    const { error } = await admin.from('user_notifications')
+      .insert({ email: email.toLowerCase(), kind, message, metadata: metadata || null });
+    if (error) console.error('admin: notify insert failed', email, error.message);
+  } catch (e) {
+    console.error('admin: notify failed', email, e?.message);
+  }
+}
+
+// Resolve an auth uid to its email via the Admin API. Used sparingly (single
+// lookups), unlike list_overview's bulk listUsers pass.
+async function resolveEmail(admin, uid) {
+  if (!uid) return null;
+  try {
+    const { data, error } = await admin.auth.admin.getUserById(uid);
+    if (error) return null;
+    return (data?.user?.email || '').toLowerCase() || null;
+  } catch {
+    return null;
+  }
 }
