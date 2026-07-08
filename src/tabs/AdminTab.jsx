@@ -864,22 +864,27 @@ function InviteCodesSection({codes, onChanged}) {
           onToggleDir={()=>setSortDir(d=>d==="asc"?"desc":"asc")} options={CODE_SORT_OPTIONS}/>
       </div>
 
-      <div style={{display:"flex", alignItems:"flex-end", gap:8, flexWrap:"wrap", marginBottom:14}}>
-        <div>
-          <label htmlFor="admin-gen-count" style={{display:"block", fontSize:11, color:C.gray, marginBottom:4, fontWeight:500}}>Number of codes</label>
-          <input id="admin-gen-count" type="number" inputMode="numeric" min={1} max={100} value={count}
-            aria-describedby="admin-gen-count-hint"
-            onChange={e=>setCount(e.target.value)}
-            style={{width:90, fontSize:13, border:`1px solid ${raw>100 ? C.dangerMid : C.border}`, borderRadius:8, padding:"8px 10px", background:C.bg, color:C.text, boxSizing:"border-box", minHeight:44}}/>
-          <div id="admin-gen-count-hint" style={{fontSize:10.5, color: raw>100 ? C.danger : C.gray, marginTop:4}}>
-            {raw>100 ? "Max 100 per batch." : "Up to 100 per batch."}
+      <div style={{marginBottom:14}}>
+        {/* Caption sits BELOW the row (not inside the input's own column) so
+            adding it doesn't grow that column's height and throw off the
+            flex-end alignment between the input box and the button next to it. */}
+        <div style={{display:"flex", alignItems:"flex-end", gap:8, flexWrap:"wrap"}}>
+          <div>
+            <label htmlFor="admin-gen-count" style={{display:"block", fontSize:11, color:C.gray, marginBottom:4, fontWeight:500}}>Number of codes</label>
+            <input id="admin-gen-count" type="number" inputMode="numeric" min={1} max={100} value={count}
+              aria-describedby="admin-gen-count-hint"
+              onChange={e=>setCount(e.target.value)}
+              style={{width:90, fontSize:13, border:`1px solid ${raw>100 ? C.dangerMid : C.border}`, borderRadius:8, padding:"8px 10px", background:C.bg, color:C.text, boxSizing:"border-box", minHeight:44}}/>
           </div>
+          <button type="button" className="btn-fill" onClick={generate} disabled={!canGenerate}
+            style={{padding:"10px 18px", fontSize:13, fontWeight:600, border:"none", borderRadius:8, minHeight:44,
+              background: canGenerate ? C.teal : C.surface, color: canGenerate ? C.bg : C.gray, cursor: canGenerate ? "pointer" : "not-allowed"}}>
+            {busy ? "Generating…" : `Generate ${n||""} code${n===1?"":"s"}`}
+          </button>
         </div>
-        <button type="button" className="btn-fill" onClick={generate} disabled={!canGenerate}
-          style={{padding:"10px 18px", fontSize:13, fontWeight:600, border:"none", borderRadius:8, minHeight:44,
-            background: canGenerate ? C.teal : C.surface, color: canGenerate ? C.bg : C.gray, cursor: canGenerate ? "pointer" : "not-allowed"}}>
-          {busy ? "Generating…" : `Generate ${n||""} code${n===1?"":"s"}`}
-        </button>
+        <div id="admin-gen-count-hint" style={{fontSize:10.5, color: raw>100 ? C.danger : C.gray, marginTop:6}}>
+          {raw>100 ? "Max 100 per batch." : "Up to 100 per batch."}
+        </div>
       </div>
       <InlineMsg text={msg?.text} tone={msg?.tone}/>
 
