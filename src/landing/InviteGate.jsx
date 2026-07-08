@@ -145,8 +145,8 @@ export function InviteGate({ C, onRedeemed, onBack }){
     boxShadow:"0 14px 44px rgba(0,0,0,0.30)", textAlign:"left",
   };
   const heading = { fontSize:21, fontWeight:600, margin:"0 0 8", letterSpacing:"-0.02em", textAlign:"center", fontFamily:"'Newsreader', Georgia, serif" };
-  const sub = { fontSize:14, color:C.sub, lineHeight:1.5, margin:"0 0 22", textAlign:"center" };
-  const label = { display:"block", fontSize:12.5, fontWeight:600, color:C.sub, marginBottom:8 };
+  const sub = { fontSize:14, color:C.textMid, lineHeight:1.5, margin:"0 0 22", textAlign:"center" };
+  const label = { display:"block", fontSize:12.5, fontWeight:600, color:C.textMid, marginBottom:8 };
   const errorBox = { marginTop:12, padding:"10px 12px", borderRadius:10, background:C.dangerLight, border:`1px solid ${C.dangerMid}`, color:C.danger, fontSize:13, lineHeight:1.4 };
   const primaryBtn = (disabled) => ({
     width:"100%", minHeight:48, marginTop:16, border:"none", borderRadius:12,
@@ -154,11 +154,11 @@ export function InviteGate({ C, onRedeemed, onBack }){
     cursor:disabled?"not-allowed":"pointer", opacity:disabled?0.5:1,
   });
   const ghostBtn = { width:"100%", minHeight:46, border:`1px solid ${C.border}`, borderRadius:12, background:"transparent", color:C.text, fontSize:14, fontWeight:600, cursor:"pointer" };
-  const backLink = { display:"block", margin:"16px auto 0", minHeight:44, border:"none", background:"transparent", color:C.sub, fontSize:13, cursor:"pointer" };
+  const backLink = { display:"block", margin:"16px auto 0", minHeight:44, border:"none", background:"transparent", color:C.textMid, fontSize:13, cursor:"pointer" };
   const codeComplete = code.trim().length === CODE_LEN;
 
   return (
-    <main style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"transparent",color:C.text,padding:24,overflowY:"auto"}}>
+    <main style={{position:"fixed",inset:0,display:"flex",flexDirection:"column",alignItems:"center",background:"transparent",color:C.text,padding:24,overflowY:"auto",boxSizing:"border-box"}}>
       <style>{`
         .ig-rise{opacity:0;transform:translateY(10px);transition:opacity .5s cubic-bezier(.22,1,.36,1),transform .5s cubic-bezier(.22,1,.36,1)}
         .ig-rise.in{opacity:1;transform:none}
@@ -169,7 +169,7 @@ export function InviteGate({ C, onRedeemed, onBack }){
         @media (prefers-reduced-motion: reduce){.ig-rise{transition:none;opacity:1;transform:none}}
       `}</style>
 
-      <div className={`ig-rise${mounted?' in':''}`} style={{maxWidth:396,width:"100%",display:"flex",flexDirection:"column",alignItems:"center"}}>
+      <div className={`ig-rise${mounted?' in':''}`} style={{maxWidth:396,width:"100%",margin:"auto 0",display:"flex",flexDirection:"column",alignItems:"center"}}>
         <div style={{marginBottom:22}}><MarroLogo size={56}/></div>
 
         {mode === 'code' ? (
@@ -198,7 +198,7 @@ export function InviteGate({ C, onRedeemed, onBack }){
 
               <div style={{display:"flex",alignItems:"center",gap:12,margin:"18px 0 14px"}}>
                 <span style={{flex:1,height:1,background:C.border}}/>
-                <span style={{fontSize:11,color:C.sub}}>no code?</span>
+                <span style={{fontSize:11,color:C.textMid}}>no code?</span>
                 <span style={{flex:1,height:1,background:C.border}}/>
               </div>
 
