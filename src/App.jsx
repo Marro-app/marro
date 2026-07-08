@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { C, applyTheme, THEMES } from './lib/theme.js';
-import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed, isAdmin, logEvent, exportUserData, exportUserDataExcel, deleteAccount, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY } from './lib/data.js';
+import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed, isAdmin, logEvent, exportUserData, exportUserDataExcel, deleteAccount, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY, takePendingInviteCode, redeemInviteCode } from './lib/data.js';
 import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
+import { NotificationBanner } from './components/NotificationBanner.jsx';
 import { fmt, fmtS, fmtD, fmtDay, fmtA, moTotal, todayStr, getMonday, getSunday, daysUntil, subMonthlyTotal, getYearMonthStr, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE } from './lib/format.js';
 import { BRANDS, BRAND_DOMAINS, getBrandDomain, getBrand } from './lib/brands.js';
 import { US_MED_SCHOOLS, degreeForSchool, DO_DUAL, dualOptionsForSchool } from './lib/schools.js';
@@ -183,7 +184,20 @@ export function App() {
         // This is safe: every data table is RLS'd to their own user_id and nothing
         // below runs until they're allowed. onRedeemed() bumps gateNonce to re-run
         // this effect, which then passes the gate and boots them into the app.
-        if(!(await isEmailAllowed())){
+        // If a sign-up-time invite code is waiting (stashed because no session
+        // existed yet at signup — see EmailPasswordForm.jsx/AuthModal.jsx),
+        // redeem it now that a real session exists, before the allow-list
+        // check. takePendingInviteCode() removes it from storage regardless of
+        // outcome, so this only ever fires once; any failure (already_used/
+        // revoked/wrong_email/invalid/locked) just falls through to the normal
+        // isEmailAllowed() check below, same as if no code had been stashed.
+        const pendingCode = takePendingInviteCode();
+        let redeemedOk = false;
+        if(pendingCode){
+          const { status } = await redeemInviteCode(pendingCode);
+          redeemedOk = status === 'ok';
+        }
+        if(!redeemedOk && !(await isEmailAllowed())){
           setAccessDenied(true);
           return;
         }
@@ -1040,6 +1054,11 @@ export function App() {
             <button className="btn-pop" onClick={()=>setShowQuickAdd(true)} aria-label="Quick add expense" title="Quick add expense" style={{minWidth:44,minHeight:44,padding:"0 14px",borderRadius:22,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",color:C.text,display:"inline-flex",alignItems:"center",gap:6,fontSize:13,fontWeight:600,transition:"all .15s"}}>
               <Icon name="plus" size={14}/> Quick add
             </button>
+            {/* Invite friends — surfaced directly in the header (was buried in the
+                Settings menu, easy to miss) so referral is discoverable at a glance. */}
+            <button className="btn-pop" onClick={()=>setInviteOpen(true)} aria-label="Invite friends" title="Invite friends" style={{minWidth:44,minHeight:44,padding:"0 14px",borderRadius:22,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",color:C.text,display:"inline-flex",alignItems:"center",gap:6,fontSize:13,fontWeight:600,transition:"all .15s"}}>
+              <Icon name="social" size={14}/> Invite
+            </button>
             {/* Settings menu */}
             <div style={{position:"relative"}}>
               <button className="btn-pop" onClick={()=>setSettingsOpen(o=>!o)} aria-label="Settings" aria-haspopup="true" aria-expanded={settingsOpen} title="Settings" style={{width:32,height:32,borderRadius:8,border:`1px solid ${settingsOpen?C.sel:C.border}`,background:settingsOpen?C.selBg:"transparent",cursor:"pointer",color:C.textMid,display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .15s"}}>
@@ -1101,10 +1120,6 @@ export function App() {
                       <span key={data.darkMode?"sun":"moon"} style={{display:"inline-flex",animation:"iconSwap 220ms cubic-bezier(0.23,1,0.32,1)"}}><Icon name={data.darkMode?"sun":"moon"} size={14}/></span>
                       {data.darkMode?"Light mode":"Dark mode"}
                     </button>
-                    <button className="menu-row" onClick={()=>{setSettingsOpen(false);setInviteOpen(true);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
-                      <Icon name="live" size={14}/>
-                      Invite friends
-                    </button>
                     <button className="menu-row" onClick={()=>{setConfirmReset(true);setSettingsOpen(false);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.danger,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
                       <Icon name="subs" size={14}/>
                       Reset defaults
@@ -1137,6 +1152,9 @@ export function App() {
         </div>
         );
       })()}
+
+      {/* ── Notifications banner — "something changed" / referral joins, any signed-in user ── */}
+      <NotificationBanner/>
 
       {/* ── Offline banner ── */}
       {syncStatus==="offline" && (
@@ -1276,7 +1294,7 @@ export function App() {
         {tab==="customize" && <CustomizeTab/>}
 
         {/* ══════════════ ADMIN (admins only; tab hidden otherwise) ══════════════ */}
-        {tab==="admin" && admin && <AdminTab/>}
+        {tab==="admin" && admin && <AdminTab callerEmail={session?.user?.email}/>}
       </React.Suspense>
     </div>
     </AppContext.Provider>

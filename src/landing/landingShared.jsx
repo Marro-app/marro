@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AuthModal } from './AuthModal.jsx';
 
 // Shared, motion-free pieces used by both StaticLanding (mobile /
@@ -48,6 +48,21 @@ function useAuthModal(offline){
 
 export function Nav({ offline, onHoverCore }){
   const { modal, open } = useAuthModal(offline);
+
+  // Deep-linked invite emails (api/_email.js's ctaButton) land on
+  // /?invite=CODE — auto-open straight into the sign-up tab instead of making
+  // the user find the button themselves. Nav is the one mount point common to
+  // every landing variant (StagedLanding/DotsLanding/LandingPage), so this is
+  // the single place to handle it. The code itself is picked up by
+  // AuthModal's own `?invite=` read on mount (see AuthModal.jsx) — this effect
+  // only needs to trigger the open.
+  useEffect(() => {
+    try {
+      if (new URLSearchParams(location.search).get('invite')) open('signup')();
+    } catch { /* URL parsing best-effort only */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <nav className="lp-nav" aria-label="Main">
       <a className="lp-navbrand" href="#top">
