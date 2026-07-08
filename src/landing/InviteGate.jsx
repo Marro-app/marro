@@ -85,7 +85,6 @@ export function InviteGate({ C, onRedeemed, onBack }){
   const [mode, setMode] = useState('code'); // 'code' | 'waitlist'
   const [mounted, setMounted] = useState(false);
   const uid = useId();
-  const reasonId = `${uid}-reason`;
   const codeErrId = `${uid}-code-err`;
 
   // Enhance-only entrance: a passive effect (runs after the first paint, and —
@@ -116,25 +115,25 @@ export function InviteGate({ C, onRedeemed, onBack }){
   };
 
   // ── Waitlist ────────────────────────────────────────────────────────────────
-  const [reason, setReason] = useState('');
+  // No fields to fill: the signed-in session already carries the user's email,
+  // so joining is a single tap that records it (joinWaitlist reads auth.getUser).
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState(null);
-  const [joined, setJoined] = useState(null); // null=unknown, obj=joined, false=not joined
+  const [joined, setJoined] = useState(null); // null=unknown, true=joined, false=not joined
 
   useEffect(() => {
     let cancelled = false;
-    (async () => { const row = await myWaitlist(); if (!cancelled) setJoined(row || false); })();
+    (async () => { const row = await myWaitlist(); if (!cancelled) setJoined(!!row); })();
     return () => { cancelled = true; };
   }, []);
 
-  const submitWaitlist = async (e) => {
-    e.preventDefault();
+  const submitWaitlist = async () => {
     if (joining) return;
     setJoining(true);
     setJoinError(null);
-    const { ok } = await joinWaitlist(reason.trim());
+    const { ok } = await joinWaitlist();
     setJoining(false);
-    if (ok) setJoined({ reason: reason.trim() || null });
+    if (ok) setJoined(true);
     else setJoinError("Couldn't join the waitlist. Please try again.");
   };
 
@@ -225,27 +224,11 @@ export function InviteGate({ C, onRedeemed, onBack }){
                 </>
               ) : joined === false ? (
                 <>
-                  <p style={sub}>We&apos;ll email you when a spot opens up.</p>
-                  <form onSubmit={submitWaitlist} noValidate>
-                    <label htmlFor={reasonId} style={label}>What brings you to Marro? <span style={{fontWeight:400,color:C.sub}}>(optional)</span></label>
-                    <textarea
-                      id={reasonId}
-                      value={reason}
-                      onChange={e=>setReason(e.target.value)}
-                      rows={3}
-                      disabled={joining}
-                      placeholder="e.g. planning my budget for the year"
-                      style={{
-                        width:"100%", boxSizing:"border-box", padding:"12px 14px", borderRadius:12,
-                        background:C.bg, color:C.text, fontSize:14, fontFamily:"inherit", lineHeight:1.5,
-                        border:`1.5px solid ${C.border}`, resize:"vertical", minHeight:84, outline:"none",
-                      }}
-                    />
-                    {joinError && <div role="alert" style={errorBox}>{joinError}</div>}
-                    <button type="submit" className="ig-primary" disabled={joining} aria-busy={joining} style={primaryBtn(joining)}>
-                      {joining ? "Joining…" : "Join the waitlist"}
-                    </button>
-                  </form>
+                  <p style={sub}>No code? Join the waitlist and we&apos;ll email you the moment a spot opens up.</p>
+                  {joinError && <div role="alert" style={{...errorBox, marginTop:0, marginBottom:4}}>{joinError}</div>}
+                  <button type="button" className="ig-primary" onClick={submitWaitlist} disabled={joining} aria-busy={joining} style={primaryBtn(joining)}>
+                    {joining ? "Joining…" : "Join the waitlist"}
+                  </button>
                   <button type="button" className="ig-link" onClick={()=>setMode('code')} style={{...backLink, color:C.teal, fontWeight:600}}>
                     I have a code
                   </button>
