@@ -1054,6 +1054,11 @@ export function App() {
             <button className="btn-pop" onClick={()=>setShowQuickAdd(true)} aria-label="Quick add expense" title="Quick add expense" style={{minWidth:44,minHeight:44,padding:"0 14px",borderRadius:22,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",color:C.text,display:"inline-flex",alignItems:"center",gap:6,fontSize:13,fontWeight:600,transition:"all .15s"}}>
               <Icon name="plus" size={14}/> Quick add
             </button>
+            {/* Invite friends — surfaced directly in the header (was buried in the
+                Settings menu, easy to miss) so referral is discoverable at a glance. */}
+            <button className="btn-pop" onClick={()=>setInviteOpen(true)} aria-label="Invite friends" title="Invite friends" style={{minWidth:44,minHeight:44,padding:"0 14px",borderRadius:22,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",color:C.text,display:"inline-flex",alignItems:"center",gap:6,fontSize:13,fontWeight:600,transition:"all .15s"}}>
+              <Icon name="social" size={14}/> Invite
+            </button>
             {/* Settings menu */}
             <div style={{position:"relative"}}>
               <button className="btn-pop" onClick={()=>setSettingsOpen(o=>!o)} aria-label="Settings" aria-haspopup="true" aria-expanded={settingsOpen} title="Settings" style={{width:32,height:32,borderRadius:8,border:`1px solid ${settingsOpen?C.sel:C.border}`,background:settingsOpen?C.selBg:"transparent",cursor:"pointer",color:C.textMid,display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .15s"}}>
@@ -1114,10 +1119,6 @@ export function App() {
                     <button className="menu-row" onClick={()=>{const d=JSON.parse(JSON.stringify(data));d.darkMode=!d.darkMode;upd(d);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
                       <span key={data.darkMode?"sun":"moon"} style={{display:"inline-flex",animation:"iconSwap 220ms cubic-bezier(0.23,1,0.32,1)"}}><Icon name={data.darkMode?"sun":"moon"} size={14}/></span>
                       {data.darkMode?"Light mode":"Dark mode"}
-                    </button>
-                    <button className="menu-row" onClick={()=>{setSettingsOpen(false);setInviteOpen(true);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
-                      <Icon name="live" size={14}/>
-                      Invite friends
                     </button>
                     <button className="menu-row" onClick={()=>{setConfirmReset(true);setSettingsOpen(false);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.danger,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
                       <Icon name="subs" size={14}/>

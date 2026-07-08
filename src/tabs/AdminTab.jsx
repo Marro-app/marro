@@ -161,9 +161,11 @@ export default function AdminTab({callerEmail}){
 // A small labeled <select> for the sort field plus an optional asc/desc
 // toggle, meant to sit next to each section's SectionTitle. Sort state is
 // local (useState) per section — this is a lightweight console, not
-// something that needs to survive a reload. Each option can opt out of the
-// direction toggle (dir:false) for sorts where "reverse" doesn't make sense
-// (e.g. grouping invite codes by Status). The toggle reuses the .xbtn
+// something that needs to survive a reload. Every option shows the direction
+// toggle by default, including categorical groupings like "Status" — "asc"
+// just reverses the group order (e.g. Archived→Revoked→Used→Unused) rather
+// than being a no-op. An option can still opt out entirely (dir:false) for a
+// sort where reversing truly has no meaning. The toggle reuses the .xbtn
 // hit-slop pattern (::after inset:-8px) so the 28px visible circle still
 // meets the 44×44 tap-target rule.
 function SortBar({idPrefix, value, dir, onChangeValue, onToggleDir, options}) {
@@ -599,7 +601,7 @@ function AmbassadorProfileModal({ambassador, codes, onClose, onChanged}) {
 const MEMBER_SORT_OPTIONS = [
   {key:"created_at", label:"Joined date", defaultDir:"desc"},
   {key:"name", label:"Name/email (A–Z)", defaultDir:"asc"},
-  {key:"not_joined", label:"Not-yet-joined first", defaultDir:"desc", dir:false},
+  {key:"not_joined", label:"Not-yet-joined first", defaultDir:"desc"},
 ];
 function cmpMembers(a, b, sortBy, dir) {
   const m = dir === "asc" ? 1 : -1;
@@ -610,7 +612,8 @@ function cmpMembers(a, b, sortBy, dir) {
     }
     case "not_joined": {
       const aj = a.joined ? 1 : 0, bj = b.joined ? 1 : 0;
-      if (aj !== bj) return aj - bj; // not-joined (0) first
+      // Default (desc): not-joined first. "asc" reverses to joined-first.
+      if (aj !== bj) return (bj - aj) * m;
       return new Date(b.created_at || 0) - new Date(a.created_at || 0);
     }
     case "created_at":
@@ -767,7 +770,7 @@ function MembersSection({members, callerEmail, onChanged}) {
 // judgment as the Members "Not-yet-joined first" option.
 const CODE_SORT_OPTIONS = [
   {key:"created_at", label:"Date created", defaultDir:"desc"},
-  {key:"status", label:"Status", defaultDir:"desc", dir:false},
+  {key:"status", label:"Status", defaultDir:"desc"},
   {key:"owner", label:"Owner (A–Z)", defaultDir:"asc"},
 ];
 const CODE_STATUS_RANK = {Unused:0, Used:1, Revoked:2, Archived:3};
@@ -777,7 +780,10 @@ function cmpCodes(a, b, sortBy, dir) {
     case "status": {
       const ra = CODE_STATUS_RANK[codeStatus(a).label] ?? 0;
       const rb = CODE_STATUS_RANK[codeStatus(b).label] ?? 0;
-      if (ra !== rb) return ra - rb;
+      // Default (desc): Unused → Used → Revoked → Archived. "asc" reverses the
+      // whole group order (Archived → Revoked → Used → Unused) rather than
+      // being disabled — a plain grouping still has a meaningful reverse.
+      if (ra !== rb) return (ra - rb) * (dir === "asc" ? -1 : 1);
       return new Date(b.created_at) - new Date(a.created_at);
     }
     case "owner": {
@@ -801,8 +807,14 @@ function InviteCodesSection({codes, onChanged}) {
   const [sortDir, setSortDir] = useState("desc");
   const changeSort = (key) => { setSortBy(key); setSortDir(CODE_SORT_OPTIONS.find(o=>o.key===key)?.defaultDir || "desc"); };
 
-  const n = Math.max(1, Math.min(100, parseInt(count, 10) || 0));
-  const canGenerate = /^\d+$/.test(count.trim()) && n >= 1 && n <= 100 && !busy;
+  // canGenerate must check the RAW parsed value, not a pre-clamped one — clamping
+  // first (e.g. min(100, 1000) -> 100) made the button stay enabled and silently
+  // mint far fewer codes than typed, with the "Generate N codes" label the only
+  // (easy-to-miss) hint anything was capped. Now an out-of-range count just
+  // disables the button and the caption below explains why.
+  const raw = parseInt(count, 10);
+  const n = Math.max(1, Math.min(100, raw || 0));
+  const canGenerate = /^\d+$/.test(count.trim()) && raw >= 1 && raw <= 100 && !busy;
 
   const generate = async () => {
     setBusy(true); setMsg(null);
@@ -856,8 +868,12 @@ function InviteCodesSection({codes, onChanged}) {
         <div>
           <label htmlFor="admin-gen-count" style={{display:"block", fontSize:11, color:C.gray, marginBottom:4, fontWeight:500}}>Number of codes</label>
           <input id="admin-gen-count" type="number" inputMode="numeric" min={1} max={100} value={count}
+            aria-describedby="admin-gen-count-hint"
             onChange={e=>setCount(e.target.value)}
-            style={{width:90, fontSize:13, border:`1px solid ${C.border}`, borderRadius:8, padding:"8px 10px", background:C.bg, color:C.text, boxSizing:"border-box", minHeight:44}}/>
+            style={{width:90, fontSize:13, border:`1px solid ${raw>100 ? C.dangerMid : C.border}`, borderRadius:8, padding:"8px 10px", background:C.bg, color:C.text, boxSizing:"border-box", minHeight:44}}/>
+          <div id="admin-gen-count-hint" style={{fontSize:10.5, color: raw>100 ? C.danger : C.gray, marginTop:4}}>
+            {raw>100 ? "Max 100 per batch." : "Up to 100 per batch."}
+          </div>
         </div>
         <button type="button" className="btn-fill" onClick={generate} disabled={!canGenerate}
           style={{padding:"10px 18px", fontSize:13, fontWeight:600, border:"none", borderRadius:8, minHeight:44,
