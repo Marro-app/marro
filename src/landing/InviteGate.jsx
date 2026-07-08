@@ -1,13 +1,82 @@
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { redeemInviteCode, joinWaitlist, myWaitlist } from '../lib/data.js';
 import { MarroLogo } from '../components/icons.jsx';
+
+const CODE_LEN = 8;
+
+// Segmented invite-code field — one box per character (OTP style). Supports
+// type-to-advance, backspace-to-previous, arrow-key nav, and paste that
+// distributes across the boxes. Accessible: a labelled role="group" wraps the
+// boxes and each box has its own "character N of 8" label, so it's fully
+// keyboard- and screen-reader-operable. onComplete fires once all boxes are
+// filled (used to auto-submit).
+function CodeInput({ value, onChange, onComplete, disabled, invalid, describedById, C }){
+  const refs = useRef([]);
+  const chars = Array.from({ length: CODE_LEN }, (_, i) => value[i] || '');
+  const focusBox = (i) => { const el = refs.current[i]; if (el) { el.focus(); el.select?.(); } };
+
+  const commit = (arr, focusIdx) => {
+    const joined = arr.join('').slice(0, CODE_LEN);
+    onChange(joined);
+    if (focusIdx != null) focusBox(Math.min(focusIdx, CODE_LEN - 1));
+    if (joined.length === CODE_LEN) onComplete?.(joined);
+  };
+
+  const distribute = (i, raw) => {
+    const cleaned = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!cleaned) { const a = chars.slice(); a[i] = ''; commit(a); return; }
+    const a = chars.slice();
+    let j = i;
+    for (const c of cleaned) { if (j >= CODE_LEN) break; a[j] = c; j++; }
+    commit(a, j);
+  };
+
+  const handleKeyDown = (i, e) => {
+    if (e.key === 'Backspace') {
+      const a = chars.slice();
+      if (a[i]) { a[i] = ''; commit(a); }
+      else if (i > 0) { e.preventDefault(); a[i - 1] = ''; commit(a, i - 1); }
+    } else if (e.key === 'ArrowLeft' && i > 0) { e.preventDefault(); focusBox(i - 1); }
+    else if (e.key === 'ArrowRight' && i < CODE_LEN - 1) { e.preventDefault(); focusBox(i + 1); }
+  };
+
+  const box = (filled, i) => ({
+    flex: '1 1 0', minWidth: 0, height: 46, padding: 0, borderRadius: 9,
+    background: C.bg, color: C.text, textAlign: 'center', textTransform: 'uppercase',
+    fontFamily: "'SFMono-Regular',ui-monospace,Menlo,monospace", fontSize: 17, fontWeight: 700,
+    border: `1.5px solid ${invalid ? C.dangerMid : filled ? C.teal : C.border}`,
+    marginLeft: i === CODE_LEN / 2 ? 7 : 0,  // subtle 4+4 grouping
+    outline: 'none', transition: 'border-color .15s',
+  });
+
+  return (
+    <div role="group" aria-label="Invite code" aria-describedby={describedById} style={{ display: 'flex', gap: 5, width: '100%' }}>
+      {chars.map((ch, i) => (
+        <input
+          key={i}
+          ref={el => (refs.current[i] = el)}
+          value={ch}
+          onChange={e => distribute(i, e.target.value)}
+          onKeyDown={e => handleKeyDown(i, e)}
+          onPaste={e => { e.preventDefault(); distribute(i, e.clipboardData.getData('text') || ''); }}
+          onFocus={e => e.target.select()}
+          inputMode="text" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off"
+          maxLength={1} disabled={disabled}
+          aria-label={`Invite code character ${i + 1} of ${CODE_LEN}`}
+          aria-invalid={invalid || undefined}
+          style={box(!!ch, i)}
+        />
+      ))}
+    </div>
+  );
+}
 
 // Rendered when a session exists but the account isn't on the invite allow-list
 // (App.jsx's `accessDenied` state). Two modes — code entry (default) and "join
 // the waitlist" — laid out in a single glass card so the screen reads as the
-// same family as the login modal the user just came from (continuity), rather
-// than as loose floating text. Uses the app's `C` theme object so it follows the
-// light/dark toggle; the ambient ring-glow shows through the transparent stage.
+// same family as the login modal the user just came from (continuity). Uses the
+// app's `C` theme object so it follows the light/dark toggle; the ambient
+// ring-glow shows through the transparent stage.
 //
 // Props: C (theme colors), onRedeemed() — called after a successful redeem so
 // App.jsx can re-check isEmailAllowed() and boot into the app with no reload;
@@ -16,24 +85,22 @@ export function InviteGate({ C, onRedeemed, onBack }){
   const [mode, setMode] = useState('code'); // 'code' | 'waitlist'
   const [mounted, setMounted] = useState(false);
   const uid = useId();
-  const codeId = `${uid}-code`;
   const reasonId = `${uid}-reason`;
+  const codeErrId = `${uid}-code-err`;
 
   // Enhance-only entrance: a passive effect (runs after the first paint, and —
-  // unlike requestAnimationFrame — is never throttled on a backgrounded tab) flips
-  // the card to its visible resting state, so the content can never get stuck hidden.
+  // unlike requestAnimationFrame — is never throttled on a backgrounded tab)
+  // flips the card to visible, so the content can never get stuck hidden.
   useEffect(()=>{ setMounted(true); },[]);
 
   // ── Code entry ──────────────────────────────────────────────────────────────
   const [code, setCode] = useState('');
-  const [codeFocus, setCodeFocus] = useState(false);
   const [redeeming, setRedeeming] = useState(false);
   const [redeemError, setRedeemError] = useState(null); // {text}
 
-  const submitCode = async (e) => {
-    e.preventDefault();
-    const trimmed = code.trim().toUpperCase();
-    if (!trimmed || redeeming) return;
+  const doRedeem = async (raw) => {
+    const trimmed = (raw ?? code).trim().toUpperCase();
+    if (trimmed.length !== CODE_LEN || redeeming) return;
     setRedeeming(true);
     setRedeemError(null);
     const { status } = await redeemInviteCode(trimmed);
@@ -72,7 +139,7 @@ export function InviteGate({ C, onRedeemed, onBack }){
   };
 
   // ── Shared styles ─────────────────────────────────────────────────────────────
-  const card = {
+  const cardStyle = {
     width:"100%", boxSizing:"border-box", padding:"28px 26px 26px", borderRadius:20,
     background:C.glassCard, border:`1px solid ${C.border}`,
     backdropFilter:"blur(30px) saturate(140%)", WebkitBackdropFilter:"blur(30px) saturate(140%)",
@@ -89,6 +156,7 @@ export function InviteGate({ C, onRedeemed, onBack }){
   });
   const ghostBtn = { width:"100%", minHeight:46, border:`1px solid ${C.border}`, borderRadius:12, background:"transparent", color:C.text, fontSize:14, fontWeight:600, cursor:"pointer" };
   const backLink = { display:"block", margin:"16px auto 0", minHeight:44, border:"none", background:"transparent", color:C.sub, fontSize:13, cursor:"pointer" };
+  const codeComplete = code.trim().length === CODE_LEN;
 
   return (
     <main style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"transparent",color:C.text,padding:24,overflowY:"auto"}}>
@@ -107,36 +175,24 @@ export function InviteGate({ C, onRedeemed, onBack }){
 
         {mode === 'code' ? (
           <>
-            <div style={card}>
+            <div style={cardStyle}>
               <h1 style={heading}>Marro is invite-only<span style={{color:C.marigold}}>.</span></h1>
               <p style={sub}>Enter your invite code to get in.</p>
 
-              <form onSubmit={submitCode} noValidate>
-                <label htmlFor={codeId} style={label}>Invite code</label>
-                <input
-                  id={codeId}
+              <form onSubmit={e=>{e.preventDefault(); doRedeem();}} noValidate>
+                <span id={`${uid}-code-label`} style={label}>Invite code</span>
+                <CodeInput
                   value={code}
-                  onChange={e=>setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''))}
-                  onFocus={()=>setCodeFocus(true)}
-                  onBlur={()=>setCodeFocus(false)}
-                  inputMode="text" autoCapitalize="characters" autoCorrect="off" spellCheck={false} autoComplete="off"
-                  maxLength={8}
-                  placeholder="ABCD1234"
+                  onChange={setCode}
+                  onComplete={(full)=>doRedeem(full)}
                   disabled={redeeming}
-                  aria-invalid={redeemError ? 'true' : undefined}
-                  aria-describedby={redeemError ? `${codeId}-err` : undefined}
-                  style={{
-                    width:"100%", boxSizing:"border-box", height:54, padding:"0 14px", borderRadius:12,
-                    background:C.bg, color:C.text, fontFamily:"'SFMono-Regular',ui-monospace,Menlo,monospace",
-                    fontSize:20, fontWeight:600, letterSpacing:"0.24em", textAlign:"center", textTransform:"uppercase",
-                    border:`1.5px solid ${codeFocus?C.teal:C.border}`,
-                    boxShadow:codeFocus?`0 0 0 4px ${C.teal}22`:"none",
-                    transition:"border-color .15s, box-shadow .15s", outline:"none",
-                  }}
+                  invalid={!!redeemError}
+                  describedById={`${uid}-code-label${redeemError ? ' '+codeErrId : ''}`}
+                  C={C}
                 />
-                {redeemError && <div id={`${codeId}-err`} role="alert" style={errorBox}>{redeemError.text}</div>}
+                {redeemError && <div id={codeErrId} role="alert" style={errorBox}>{redeemError.text}</div>}
 
-                <button type="submit" className="ig-primary" disabled={!code.trim() || redeeming} aria-busy={redeeming} style={primaryBtn(!code.trim() || redeeming)}>
+                <button type="submit" className="ig-primary" disabled={!codeComplete || redeeming} aria-busy={redeeming} style={primaryBtn(!codeComplete || redeeming)}>
                   {redeeming ? "Checking…" : "Redeem code"}
                 </button>
               </form>
@@ -156,7 +212,7 @@ export function InviteGate({ C, onRedeemed, onBack }){
           </>
         ) : (
           <>
-            <div style={card}>
+            <div style={cardStyle}>
               <h1 style={heading}>Join the waitlist<span style={{color:C.marigold}}>.</span></h1>
 
               {joined ? (
