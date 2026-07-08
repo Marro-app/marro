@@ -64,7 +64,7 @@ export function InviteFriendsModal({onClose}){
 
   return (
     <Modal title="Invite friends" onClose={onClose} width={440}>
-      <p style={{fontSize:13,color:C.sub,lineHeight:1.5,margin:"0 0 16px"}}>
+      <p style={{fontSize:13,color:C.textMid,lineHeight:1.5,margin:"0 0 16px"}}>
         Each code lets one friend skip the waitlist and join Marro. Share a code — it works once.
       </p>
 
@@ -80,7 +80,7 @@ export function InviteFriendsModal({onClose}){
         </button>
       </div>
 
-      {msg && <div role="alert" style={{fontSize:12,color:msg.tone==="error"?C.danger:C.sub,marginBottom:12}}>{msg.text}</div>}
+      {msg && <div role="alert" style={{fontSize:12,color:msg.tone==="error"?C.danger:C.textMid,marginBottom:12}}>{msg.text}</div>}
 
       {quota!=null && codes.length===0 && (
         <div style={{fontSize:13,color:C.gray,textAlign:"center",padding:"16px 0"}}>
