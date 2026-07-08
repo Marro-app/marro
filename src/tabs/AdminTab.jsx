@@ -151,7 +151,7 @@ function InviteCodesSection({codes, onChanged}) {
       {sorted.length === 0
         ? <EmptyState>No invite codes yet — generate your first batch above.</EmptyState>
         : (
-          <div style={{overflowX:"auto"}}>
+          <div className="av-scroll" style={{overflowX:"auto"}}>
             <table style={{width:"100%", borderCollapse:"collapse", fontSize:12}}>
               <thead>
                 <tr>
@@ -177,7 +177,7 @@ function InviteCodesSection({codes, onChanged}) {
                       <td style={{padding:"8px", borderBottom:`1px solid ${C.border}`}}>
                         <span style={{fontSize:10, padding:"2px 9px", borderRadius:999, background:st.bg, color:st.color, fontWeight:600, whiteSpace:"nowrap"}}>{st.label}</span>
                       </td>
-                      <td style={{padding:"8px", borderBottom:`1px solid ${C.border}`, color:C.textMid}} title={c.owner_id||""}>{truncId(c.owner_id)}</td>
+                      <td style={{padding:"8px", borderBottom:`1px solid ${C.border}`, color:C.textMid}} title={c.owner_email || c.owner_id || ""}>{c.owner_email || truncId(c.owner_id)}</td>
                       <td style={{padding:"8px", borderBottom:`1px solid ${C.border}`, color:C.textMid}}>{c.redeemed_email || "—"}</td>
                       <td style={{padding:"8px", borderBottom:`1px solid ${C.border}`, color:C.textMid, whiteSpace:"nowrap"}}>{fmtDate(c.created_at)}</td>
                       <td style={{padding:"8px", borderBottom:`1px solid ${C.border}`, textAlign:"right"}}>

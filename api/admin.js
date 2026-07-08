@@ -97,9 +97,26 @@ export default async function handler(req, res) {
         ]);
         const firstErr = codes.error || waitlist.error || roles.error || admins.error;
         if (firstErr) throw firstErr;
+
+        // Resolve each code's owner_id → email so the console shows a human name
+        // instead of a raw uuid. Best-effort: one paged listUsers (fine for the
+        // closed beta's user count); on any failure we just omit owner_email and
+        // the client falls back to the truncated id.
+        const codeRows = codes.data || [];
+        let ownerEmailById = {};
+        if (codeRows.length) {
+          try {
+            const { data: usersPage } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+            for (const u of usersPage?.users || []) ownerEmailById[u.id] = u.email;
+          } catch (e) {
+            console.error('admin: listUsers for owner emails failed', e?.message);
+          }
+        }
+        const codesWithOwner = codeRows.map(c => ({ ...c, owner_email: ownerEmailById[c.owner_id] || null }));
+
         return res.status(200).json({
           ok: true,
-          codes: codes.data, waitlist: waitlist.data,
+          codes: codesWithOwner, waitlist: waitlist.data,
           roles: roles.data, admins: admins.data,
         });
       }
