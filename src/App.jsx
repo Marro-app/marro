@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { C, applyTheme, THEMES } from './lib/theme.js';
-import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed, isAdmin, logEvent, exportUserData, deleteAccount, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY } from './lib/data.js';
+import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed, isAdmin, logEvent, exportUserData, exportUserDataExcel, deleteAccount, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY } from './lib/data.js';
 import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { fmt, fmtS, fmtD, fmtDay, fmtA, moTotal, todayStr, getMonday, getSunday, daysUntil, subMonthlyTotal, getYearMonthStr, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE } from './lib/format.js';
@@ -124,6 +124,7 @@ export function App() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [exportingData, setExportingData] = useState(false);
   const [exportDataError, setExportDataError] = useState(null);
+  const [exportingRaw, setExportingRaw] = useState(false);
   const [nyStart, setNyStart] = useState("");
   const [nyEnd, setNyEnd] = useState("");
 
@@ -1109,7 +1110,7 @@ export function App() {
                     </button>
                     <button className="menu-row" disabled={exportingData} onClick={async()=>{
                       setExportingData(true);setExportDataError(null);
-                      const r = await exportUserData();
+                      const r = await exportUserDataExcel();
                       setExportingData(false);
                       if(!r.ok) setExportDataError(r.error||"Couldn't export your data. Please try again.");
                       else setSettingsOpen(false);
@@ -1118,6 +1119,15 @@ export function App() {
                       {exportingData?"Exporting…":"Export my data"}
                     </button>
                     {exportDataError && <div role="alert" style={{padding:"0 10px 6px",fontSize:11,color:C.danger}}>{exportDataError}</div>}
+                    <button className="menu-row txt-act" disabled={exportingRaw} onClick={async()=>{
+                      setExportingRaw(true);setExportDataError(null);
+                      const r = await exportUserData();
+                      setExportingRaw(false);
+                      if(!r.ok) setExportDataError(r.error||"Couldn't export your data. Please try again.");
+                      else setSettingsOpen(false);
+                    }} style={{display:"block",width:"100%",padding:"0 10px 6px",border:"none",background:"transparent",color:C.gray,fontSize:10.5,fontWeight:500,cursor:exportingRaw?"default":"pointer",textAlign:"left",textDecoration:"underline",opacity:exportingRaw?0.6:1}}>
+                      {exportingRaw?"Exporting…":"Download raw data (JSON)"}
+                    </button>
                     <button className="menu-row" onClick={()=>{setSettingsOpen(false);setDeleteConfirmText("");setDeleteAccountError(null);setConfirmDeleteAccount(true);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.danger,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
                       <Icon name="subs" size={14}/>
                       Delete my account

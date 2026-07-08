@@ -125,21 +125,41 @@ export const logEvent = async (eventName, metadata) => {
 // ── Data export (Settings → "Export my data") ────────────────────────────────
 // Entirely client-side: the signed-in user's own `app_state` + `profiles` rows
 // are already readable by them under existing RLS (the same rows stateFetch/
-// stateWrite already read/write) — no backend needed here. Bundles both rows
-// plus basic account info into one human-readable JSON file and triggers a
-// browser download. Returns {ok:boolean, error?:string} so the caller can show
-// a UI failure state rather than fail silently.
+// stateWrite already read/write) — no backend needed here. Excel is the
+// primary format (readable by non-technical users); raw JSON is kept as a
+// secondary "technical/complete" download. Both trigger a browser download
+// and return {ok:boolean, error?:string} so the caller can show a UI failure
+// state rather than fail silently.
+const fetchExportData = async () => {
+  const sb = await getSupabase();
+  const {data:{user}} = await sb.auth.getUser();
+  if (!user) return {error:"Not signed in."};
+
+  const [{data:stateRow, error:stateErr}, {data:profileRow, error:profileErr}] = await Promise.all([
+    sb.from("app_state").select("state, updated_at").maybeSingle(),
+    sb.from("profiles").select("school, created_at").maybeSingle(),
+  ]);
+  if (stateErr || profileErr) return {error:"Couldn't read your data. Please try again."};
+  return {user, stateRow, profileRow};
+};
+
+const downloadBlob = (blob, filename) => {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
+const exportStamp = () => new Date().toISOString().slice(0,10);
+
 export const exportUserData = async () => {
   try {
-    const sb = await getSupabase();
-    const {data:{user}} = await sb.auth.getUser();
-    if (!user) return {ok:false, error:"Not signed in."};
-
-    const [{data:stateRow, error:stateErr}, {data:profileRow, error:profileErr}] = await Promise.all([
-      sb.from("app_state").select("state, updated_at").maybeSingle(),
-      sb.from("profiles").select("school, created_at").maybeSingle(),
-    ]);
-    if (stateErr || profileErr) return {ok:false, error:"Couldn't read your data. Please try again."};
+    const {user, stateRow, profileRow, error} = await fetchExportData();
+    if (error) return {ok:false, error};
 
     const payload = {
       exportedAt: new Date().toISOString(),
@@ -148,16 +168,104 @@ export const exportUserData = async () => {
       appState: stateRow?.state || null,
     };
     const json = JSON.stringify(payload, null, 2);
-    const blob = new Blob([json], {type:"application/json"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    const stamp = new Date().toISOString().slice(0,10);
-    a.href = url;
-    a.download = `marro-export-${stamp}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    downloadBlob(new Blob([json], {type:"application/json"}), `marro-export-${exportStamp()}.json`);
+    return {ok:true};
+  } catch {
+    return {ok:false, error:"Couldn't export your data. Please try again."};
+  }
+};
+
+// Primary export: a multi-sheet workbook so non-technical users can open
+// their data straight in Excel/Numbers/Sheets instead of reading raw JSON.
+// One sheet per top-level data area; granular per-month budget overrides and
+// per-goal linkage bookkeeping are left out of the readable sheets (still
+// fully present in the JSON export) to keep each sheet skimmable.
+export const exportUserDataExcel = async () => {
+  try {
+    const {user, stateRow, profileRow, error} = await fetchExportData();
+    if (error) return {ok:false, error};
+
+    const state = stateRow?.state || {};
+    const categories = state.categories || [];
+    const catLabel = (id) => categories.find(c => c.id === id)?.label || id;
+
+    const XLSX = await import("xlsx");
+    const wb = XLSX.utils.book_new();
+    const addSheet = (name, rows) => {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), name.slice(0,31));
+    };
+
+    addSheet("Account", [{
+      Email: user.email,
+      "Account created": user.created_at,
+      School: profileRow?.school || "",
+    }]);
+
+    const program = state.program || {};
+    const dualInfo = program.dual ? program[program.dual] : null;
+    addSheet("Profile & Program", [{
+      Degree: program.degree || "",
+      "Dual degree": program.dual || "None",
+      Field: dualInfo?.field || "",
+      Institution: dualInfo?.institution || (program.dual ? "Same as med school" : ""),
+    }]);
+
+    addSheet("Years & Budget", (state.years || []).map(y => {
+      const row = {
+        Year: y.label || `Year ${y.id + 1}`,
+        "Start date": y.startDate || "",
+        "End date": y.endDate || "",
+        Grant: y.grant || 0,
+        "Tuition & fees": y.tuitionFees || 0,
+        "Health insurance": y.healthIns || 0,
+        "Other income": y.otherIncome || 0,
+        Housing: y.housing || 0,
+        "Housing note": y.housingNote || "",
+        "Living allowance": y.livingAllowance || 0,
+        Notes: y.notes || "",
+      };
+      categories.forEach(c => { row[`Monthly: ${c.label}`] = y.monthly?.[c.id] ?? 0; });
+      return row;
+    }));
+
+    addSheet("Savings Goals", [...(state.stepGoals || []), ...(state.savingsGoals || [])].map(g => ({
+      Goal: g.label,
+      "Target amount": g.targetAmount,
+      "Target date": g.targetDate,
+      Saved: g.saved,
+      "Monthly contribution": g.monthlyContribution || 0,
+    })));
+
+    addSheet("Savings Log", (state.savingsLog || []).map(s => ({
+      Date: s.date,
+      Amount: s.amount,
+      Note: s.note || "",
+    })));
+
+    addSheet("Subscriptions", (state.subscriptions || []).map(s => ({
+      Name: s.name,
+      Amount: s.amount,
+      Cycle: s.cycle,
+      "Renewal date": s.renewal,
+      Active: s.active ? "Yes" : "No",
+    })));
+
+    const weeklyRows = [];
+    (state.weeklyArchive || []).forEach(w => (w.entries || []).forEach(e => weeklyRows.push({
+      "Week start": w.weekStart, "Week end": w.weekEnd,
+      Category: catLabel(e.catId), Amount: e.amount, Note: e.note || "", Date: e.date,
+    })));
+    (state.currentWeekEntries || []).forEach(e => weeklyRows.push({
+      "Week start": "Current week", "Week end": "",
+      Category: catLabel(e.catId), Amount: e.amount, Note: e.note || "", Date: e.date,
+    }));
+    addSheet("Weekly Entries", weeklyRows);
+
+    const buf = XLSX.write(wb, {bookType:"xlsx", type:"array"});
+    downloadBlob(
+      new Blob([buf], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}),
+      `marro-export-${exportStamp()}.xlsx`
+    );
     return {ok:true};
   } catch {
     return {ok:false, error:"Couldn't export your data. Please try again."};
