@@ -190,6 +190,50 @@ function SortBar({idPrefix, value, dir, onChangeValue, onToggleDir, options}) {
   );
 }
 
+// ── Shared: pagination ────────────────────────────────────────────────────────
+// Every section list is unbounded (server caps at 500/table, but nothing
+// paginates the render) — fine for a closed beta, but the founder asked ahead
+// of it becoming a real scroll. usePagination slices a SORTED/FILTERED array
+// into PAGE_SIZE-item pages; page state is local per section (not persisted —
+// same lightweight-console posture as sort). Clamps automatically if the
+// underlying list shrinks (e.g. an admin removes rows) so `page` can never
+// point past the new last page. The control renders nothing for a
+// single-page list — no point showing "Page 1 of 1."
+const PAGE_SIZE = 20;
+function usePagination(items, pageSize = PAGE_SIZE) {
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const clampedPage = Math.min(page, totalPages);
+  useEffect(() => { if (page !== clampedPage) setPage(clampedPage); }, [clampedPage]); // eslint-disable-line react-hooks/exhaustive-deps
+  const start = (clampedPage - 1) * pageSize;
+  const pageItems = items.slice(start, start + pageSize);
+  return { page: clampedPage, setPage, totalPages, pageItems, start };
+}
+
+function Paginator({page, totalPages, onChange, idPrefix, totalCount, pageSize = PAGE_SIZE}) {
+  if (totalPages <= 1) return null;
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, totalCount);
+  return (
+    <div role="navigation" aria-label="Pagination" style={{display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginTop:12, paddingTop:12, borderTop:`1px solid ${C.border}`, flexWrap:"wrap"}}>
+      <span style={{fontSize:11.5, color:C.gray}}>{start}–{end} of {totalCount}</span>
+      <div style={{display:"flex", alignItems:"center", gap:8}}>
+        <button type="button" className="xbtn" onClick={()=>onChange(page-1)} disabled={page<=1}
+          aria-label={`${idPrefix}: previous page`}
+          style={{minWidth:44, minHeight:32, padding:"0 12px", borderRadius:8, border:`1px solid ${C.border}`, background:"transparent", color: page<=1 ? C.gray : C.text, cursor: page<=1 ? "not-allowed" : "pointer", fontSize:12, fontWeight:600}}>
+          Previous
+        </button>
+        <span style={{fontSize:11.5, color:C.gray, whiteSpace:"nowrap"}}>Page {page} of {totalPages}</span>
+        <button type="button" className="xbtn" onClick={()=>onChange(page+1)} disabled={page>=totalPages}
+          aria-label={`${idPrefix}: next page`}
+          style={{minWidth:44, minHeight:32, padding:"0 12px", borderRadius:8, border:`1px solid ${C.border}`, background:"transparent", color: page>=totalPages ? C.gray : C.text, cursor: page>=totalPages ? "not-allowed" : "pointer", fontSize:12, fontWeight:600}}>
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Shared: revoke-access confirm modal ──────────────────────────────────────
 // Feature #1 — "revoke access to an account, choose whether to delete their
 // data." Mirrors the type-DELETE-to-confirm weight of App.jsx's own "Delete my
@@ -303,7 +347,7 @@ function AmbassadorsSection({ambassadors, codes, callerEmail, onChanged}) {
   const [revokeEmail, setRevokeEmail] = useState(null);
   const [sortBy, setSortBy] = useState("brought_in");
   const [sortDir, setSortDir] = useState("desc");
-  const changeSort = (key) => { setSortBy(key); setSortDir(AMB_SORT_OPTIONS.find(o=>o.key===key)?.defaultDir || "desc"); };
+  const changeSort = (key) => { setSortBy(key); setSortDir(AMB_SORT_OPTIONS.find(o=>o.key===key)?.defaultDir || "desc"); setPage(1); };
 
   const canAdd = email.trim() && !busy;
 
@@ -322,13 +366,14 @@ function AmbassadorsSection({ambassadors, codes, callerEmail, onChanged}) {
 
   const sorted = [...ambassadors].sort((a,b)=> cmpAmbassadors(a, b, sortBy, sortDir));
   const profile = profileEmail ? ambassadors.find(a=>a.email===profileEmail) : null;
+  const {page, setPage, totalPages, pageItems, start} = usePagination(sorted);
 
   return (
     <Card>
       <div style={{display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12, flexWrap:"wrap"}}>
         <SectionTitle sub="Grant ambassador status, raise invite limits, and see who each ambassador has brought in.">Ambassadors</SectionTitle>
         <SortBar idPrefix="amb" value={sortBy} dir={sortDir} onChangeValue={changeSort}
-          onToggleDir={()=>setSortDir(d=>d==="asc"?"desc":"asc")} options={AMB_SORT_OPTIONS}/>
+          onToggleDir={()=>{setSortDir(d=>d==="asc"?"desc":"asc"); setPage(1);}} options={AMB_SORT_OPTIONS}/>
       </div>
 
       <div style={{display:"flex", alignItems:"flex-end", gap:8, flexWrap:"wrap", marginBottom:14}}>
@@ -351,13 +396,17 @@ function AmbassadorsSection({ambassadors, codes, callerEmail, onChanged}) {
         ? <EmptyState>No ambassadors yet — add one above to get started.</EmptyState>
         : (
           <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(100%,300px),1fr))", gap:12}}>
-            {sorted.map((a, i)=>(
-              <AmbassadorCard key={a.email} a={a} rank={(sortBy==="brought_in" && i<3) ? i+1 : null} isSelf={callerEmail && a.email===callerEmail}
-                onChanged={onChanged} onViewProfile={()=>setProfileEmail(a.email)} onRevoke={()=>setRevokeEmail(a.email)}/>
-            ))}
+            {pageItems.map((a, i)=>{
+              const globalIndex = start + i; // rank must reflect position in the FULL sorted list, not this page
+              return (
+                <AmbassadorCard key={a.email} a={a} rank={(sortBy==="brought_in" && globalIndex<3) ? globalIndex+1 : null} isSelf={callerEmail && a.email===callerEmail}
+                  onChanged={onChanged} onViewProfile={()=>setProfileEmail(a.email)} onRevoke={()=>setRevokeEmail(a.email)}/>
+              );
+            })}
           </div>
         )
       }
+      <Paginator idPrefix="Ambassadors" page={page} totalPages={totalPages} onChange={setPage} totalCount={sorted.length}/>
 
       {profile && (
         <AmbassadorProfileModal key={profile.email} ambassador={profile} codes={codes.filter(c=>c.owner_email===profile.email)}
@@ -633,7 +682,7 @@ function MembersSection({members, callerEmail, onChanged}) {
   const [savingNote, setSavingNote] = useState(false);
   const [sortBy, setSortBy] = useState("created_at");
   const [sortDir, setSortDir] = useState("desc");
-  const changeSort = (key) => { setSortBy(key); setSortDir(MEMBER_SORT_OPTIONS.find(o=>o.key===key)?.defaultDir || "desc"); };
+  const changeSort = (key) => { setSortBy(key); setSortDir(MEMBER_SORT_OPTIONS.find(o=>o.key===key)?.defaultDir || "desc"); setPage(1); };
 
   const canGrant = grantEmail.trim() && !busy;
 
@@ -658,13 +707,14 @@ function MembersSection({members, callerEmail, onChanged}) {
   };
 
   const sorted = [...members].sort((a,b)=> cmpMembers(a, b, sortBy, sortDir));
+  const {page, setPage, totalPages, pageItems} = usePagination(sorted);
 
   return (
     <Card>
       <div style={{display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12, flexWrap:"wrap"}}>
         <SectionTitle sub="Everyone with access to Marro. Revoke access to remove someone — you choose whether to keep or delete their data.">Members</SectionTitle>
         <SortBar idPrefix="member" value={sortBy} dir={sortDir} onChangeValue={changeSort}
-          onToggleDir={()=>setSortDir(d=>d==="asc"?"desc":"asc")} options={MEMBER_SORT_OPTIONS}/>
+          onToggleDir={()=>{setSortDir(d=>d==="asc"?"desc":"asc"); setPage(1);}} options={MEMBER_SORT_OPTIONS}/>
       </div>
 
       <div style={{display:"flex", alignItems:"flex-end", gap:8, flexWrap:"wrap", marginBottom:14}}>
@@ -688,7 +738,7 @@ function MembersSection({members, callerEmail, onChanged}) {
 
       <Divider/>
 
-      {sorted.length === 0
+      {pageItems.length === 0
         ? <EmptyState>No members yet.</EmptyState>
         : (
           <div className="av-scroll" style={{overflowX:"auto"}}>
@@ -702,7 +752,7 @@ function MembersSection({members, callerEmail, onChanged}) {
                 </tr>
               </thead>
               <tbody>
-                {sorted.map(m=>(
+                {pageItems.map(m=>(
                   <tr key={m.email}>
                     <td style={{padding:"8px", borderBottom:`1px solid ${C.border}`}}>
                       <div style={{display:"flex", alignItems:"center", gap:10, minWidth:0}}>
@@ -752,6 +802,7 @@ function MembersSection({members, callerEmail, onChanged}) {
           </div>
         )
       }
+      <Paginator idPrefix="Members" page={page} totalPages={totalPages} onChange={setPage} totalCount={sorted.length}/>
 
       {revokeEmail && (
         <RevokeAccessModal key={revokeEmail} email={revokeEmail} onClose={()=>setRevokeEmail(null)}
@@ -765,9 +816,9 @@ function MembersSection({members, callerEmail, onChanged}) {
 // behavior (created_at, descending = "Newest first"). "Newest/Oldest first"
 // is expressed as one field (Date created) with the shared asc/desc toggle
 // rather than two separate menu entries, per the reusable-toggle allowance.
-// Status is a grouping sort (Unused → Used → Revoked → Archived), which
-// doesn't have a meaningful reverse, so it opts out of the toggle — same
-// judgment as the Members "Not-yet-joined first" option.
+// Status is a grouping sort (Unused → Used → Revoked → Archived); the toggle
+// reverses the whole group order (Archived→Revoked→Used→Unused) rather than
+// being disabled — same as the Members "Not-yet-joined first" option.
 const CODE_SORT_OPTIONS = [
   {key:"created_at", label:"Date created", defaultDir:"desc"},
   {key:"status", label:"Status", defaultDir:"desc"},
@@ -805,7 +856,7 @@ function InviteCodesSection({codes, onChanged}) {
   const [showArchived, setShowArchived] = useState(false);
   const [sortBy, setSortBy] = useState("created_at");
   const [sortDir, setSortDir] = useState("desc");
-  const changeSort = (key) => { setSortBy(key); setSortDir(CODE_SORT_OPTIONS.find(o=>o.key===key)?.defaultDir || "desc"); };
+  const changeSort = (key) => { setSortBy(key); setSortDir(CODE_SORT_OPTIONS.find(o=>o.key===key)?.defaultDir || "desc"); setPage(1); };
 
   // canGenerate must check the RAW parsed value, not a pre-clamped one — clamping
   // first (e.g. min(100, 1000) -> 100) made the button stay enabled and silently
@@ -855,13 +906,14 @@ function InviteCodesSection({codes, onChanged}) {
   const archivedCount = codes.filter(c=>c.archived_at).length;
   const visible = showArchived ? codes : codes.filter(c=>!c.archived_at);
   const sorted = [...visible].sort((a,b)=> cmpCodes(a, b, sortBy, sortDir));
+  const {page, setPage, totalPages, pageItems} = usePagination(sorted);
 
   return (
     <Card>
       <div style={{display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12, flexWrap:"wrap"}}>
         <SectionTitle sub="Mint invite codes and keep track of who's used them.">Invite codes</SectionTitle>
         <SortBar idPrefix="codes" value={sortBy} dir={sortDir} onChangeValue={changeSort}
-          onToggleDir={()=>setSortDir(d=>d==="asc"?"desc":"asc")} options={CODE_SORT_OPTIONS}/>
+          onToggleDir={()=>{setSortDir(d=>d==="asc"?"desc":"asc"); setPage(1);}} options={CODE_SORT_OPTIONS}/>
       </div>
 
       <div style={{marginBottom:14}}>
@@ -891,13 +943,13 @@ function InviteCodesSection({codes, onChanged}) {
       <Divider/>
 
       {archivedCount > 0 && (
-        <button type="button" className="txt-act" onClick={()=>setShowArchived(s=>!s)}
+        <button type="button" className="txt-act" onClick={()=>{setShowArchived(s=>!s); setPage(1);}}
           style={{border:"none", background:"transparent", padding:"0 0 10px", cursor:"pointer", fontSize:12, fontWeight:600, color:C.teal, display:"block"}}>
           {showArchived ? "Hide archived" : `Show archived (${archivedCount})`}
         </button>
       )}
 
-      {sorted.length === 0
+      {pageItems.length === 0
         ? <EmptyState>No invite codes yet — generate your first batch above.</EmptyState>
         : (
           <div className="av-scroll" style={{overflowX:"auto"}}>
@@ -913,7 +965,7 @@ function InviteCodesSection({codes, onChanged}) {
                 </tr>
               </thead>
               <tbody>
-                {sorted.map(c=>{
+                {pageItems.map(c=>{
                   const st = codeStatus(c);
                   return (
                     <tr key={c.code}>
@@ -957,6 +1009,7 @@ function InviteCodesSection({codes, onChanged}) {
           </div>
         )
       }
+      <Paginator idPrefix="Invite codes" page={page} totalPages={totalPages} onChange={setPage} totalCount={sorted.length}/>
     </Card>
   );
 }
@@ -987,7 +1040,7 @@ function WaitlistSection({waitlist, onChanged}) {
   const timers = useRef({});
   const [sortBy, setSortBy] = useState("created_at");
   const [sortDir, setSortDir] = useState("desc");
-  const changeSort = (key) => { setSortBy(key); setSortDir(WAITLIST_SORT_OPTIONS.find(o=>o.key===key)?.defaultDir || "desc"); };
+  const changeSort = (key) => { setSortBy(key); setSortDir(WAITLIST_SORT_OPTIONS.find(o=>o.key===key)?.defaultDir || "desc"); setPage(1); };
 
   // Set a per-row message; success-toned ones auto-clear after a few seconds
   // (errors persist). Any pending timer for that row is cleared first so they
@@ -1045,17 +1098,18 @@ function WaitlistSection({waitlist, onChanged}) {
   };
 
   const sorted = [...waitlist].sort((a,b)=> cmpWaitlist(a, b, sortBy, sortDir));
+  const {page, setPage, totalPages, pageItems} = usePagination(sorted);
   return (
     <Card>
       <div style={{display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12, flexWrap:"wrap"}}>
         <SectionTitle sub="People waiting for an invite.">Waitlist · {waitlist.length}</SectionTitle>
         <SortBar idPrefix="waitlist" value={sortBy} dir={sortDir} onChangeValue={changeSort}
-          onToggleDir={()=>setSortDir(d=>d==="asc"?"desc":"asc")} options={WAITLIST_SORT_OPTIONS}/>
+          onToggleDir={()=>{setSortDir(d=>d==="asc"?"desc":"asc"); setPage(1);}} options={WAITLIST_SORT_OPTIONS}/>
       </div>
-      {sorted.length === 0
+      {pageItems.length === 0
         ? <EmptyState>No one&apos;s on the waitlist right now.</EmptyState>
-        : sorted.map((w,i)=>(
-          <div key={w.user_id || w.email + i} style={{display:"flex", flexDirection:"column", gap:4, padding:"9px 0", borderBottom: i<sorted.length-1 ? `1px solid ${C.border}` : "none"}}>
+        : pageItems.map((w,i)=>(
+          <div key={w.user_id || w.email + i} style={{display:"flex", flexDirection:"column", gap:4, padding:"9px 0", borderBottom: i<pageItems.length-1 ? `1px solid ${C.border}` : "none"}}>
             <div style={{display:"flex", justifyContent:"space-between", gap:10, alignItems:"center", flexWrap:"wrap"}}>
               <span style={{fontSize:13, color:C.text, fontWeight:600}}>{w.email}</span>
               <div style={{display:"flex", alignItems:"center", gap:8, flexWrap:"wrap"}}>
@@ -1077,6 +1131,7 @@ function WaitlistSection({waitlist, onChanged}) {
           </div>
         ))
       }
+      <Paginator idPrefix="Waitlist" page={page} totalPages={totalPages} onChange={setPage} totalCount={sorted.length}/>
     </Card>
   );
 }
@@ -1104,7 +1159,7 @@ function AdminsSection({admins, onChanged}) {
   const [removingEmail, setRemovingEmail] = useState(null);
   const [sortBy, setSortBy] = useState("created_at");
   const [sortDir, setSortDir] = useState("asc");
-  const changeSort = (key) => { setSortBy(key); setSortDir(ADMIN_SORT_OPTIONS.find(o=>o.key===key)?.defaultDir || "asc"); };
+  const changeSort = (key) => { setSortBy(key); setSortDir(ADMIN_SORT_OPTIONS.find(o=>o.key===key)?.defaultDir || "asc"); setPage(1); };
 
   const canAdd = email.trim() && !busy;
 
@@ -1134,13 +1189,14 @@ function AdminsSection({admins, onChanged}) {
   };
 
   const sorted = [...admins].sort((a,b)=> cmpAdmins(a, b, sortBy, sortDir));
+  const {page, setPage, totalPages, pageItems} = usePagination(sorted);
 
   return (
     <Card>
       <div style={{display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12, flexWrap:"wrap"}}>
         <SectionTitle sub="Grant console access to other accounts.">Admins</SectionTitle>
         <SortBar idPrefix="admins" value={sortBy} dir={sortDir} onChangeValue={changeSort}
-          onToggleDir={()=>setSortDir(d=>d==="asc"?"desc":"asc")} options={ADMIN_SORT_OPTIONS}/>
+          onToggleDir={()=>{setSortDir(d=>d==="asc"?"desc":"asc"); setPage(1);}} options={ADMIN_SORT_OPTIONS}/>
       </div>
 
       <div style={{display:"flex", alignItems:"flex-end", gap:8, flexWrap:"wrap", marginBottom:14}}>
@@ -1159,10 +1215,10 @@ function AdminsSection({admins, onChanged}) {
 
       <Divider/>
 
-      {sorted.length === 0
+      {pageItems.length === 0
         ? <EmptyState>No admins yet.</EmptyState>
-        : sorted.map((a,i)=>(
-          <div key={a.email} style={{display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, padding:"8px 0", borderBottom: i<sorted.length-1 ? `1px solid ${C.border}` : "none"}}>
+        : pageItems.map((a,i)=>(
+          <div key={a.email} style={{display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, padding:"8px 0", borderBottom: i<pageItems.length-1 ? `1px solid ${C.border}` : "none"}}>
             <div>
               <div style={{fontSize:13, color:C.text, fontWeight:600}}>{a.email}</div>
               <div style={{fontSize:11, color:C.gray}}>Added {fmtDate(a.created_at)}{a.added_by ? ` by ${a.added_by}` : ""}</div>
@@ -1174,6 +1230,7 @@ function AdminsSection({admins, onChanged}) {
           </div>
         ))
       }
+      <Paginator idPrefix="Admins" page={page} totalPages={totalPages} onChange={setPage} totalCount={sorted.length}/>
     </Card>
   );
 }
