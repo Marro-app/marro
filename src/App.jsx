@@ -122,9 +122,10 @@ export function App() {
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deleteAccountError, setDeleteAccountError] = useState(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [exportOpen, setExportOpen] = useState(false); // settings → "Export my data" format-picker modal
+  const [exportFormat, setExportFormat] = useState("excel"); // "excel" | "json"
   const [exportingData, setExportingData] = useState(false);
   const [exportDataError, setExportDataError] = useState(null);
-  const [exportingRaw, setExportingRaw] = useState(false);
   const [nyStart, setNyStart] = useState("");
   const [nyEnd, setNyEnd] = useState("");
 
@@ -1108,25 +1109,9 @@ export function App() {
                       <Icon name="subs" size={14}/>
                       Reset defaults
                     </button>
-                    <button className="menu-row" disabled={exportingData} onClick={async()=>{
-                      setExportingData(true);setExportDataError(null);
-                      const r = await exportUserDataExcel();
-                      setExportingData(false);
-                      if(!r.ok) setExportDataError(r.error||"Couldn't export your data. Please try again.");
-                      else setSettingsOpen(false);
-                    }} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:500,cursor:exportingData?"default":"pointer",textAlign:"left",transition:"background .15s",opacity:exportingData?0.6:1}}>
+                    <button className="menu-row" onClick={()=>{setSettingsOpen(false);setExportDataError(null);setExportOpen(true);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
                       <Icon name="live" size={14}/>
-                      {exportingData?"Exporting…":"Export my data"}
-                    </button>
-                    {exportDataError && <div role="alert" style={{padding:"0 10px 6px",fontSize:11,color:C.danger}}>{exportDataError}</div>}
-                    <button className="menu-row txt-act" disabled={exportingRaw} onClick={async()=>{
-                      setExportingRaw(true);setExportDataError(null);
-                      const r = await exportUserData();
-                      setExportingRaw(false);
-                      if(!r.ok) setExportDataError(r.error||"Couldn't export your data. Please try again.");
-                      else setSettingsOpen(false);
-                    }} style={{display:"block",width:"100%",padding:"0 10px 6px",border:"none",background:"transparent",color:C.gray,fontSize:10.5,fontWeight:500,cursor:exportingRaw?"default":"pointer",textAlign:"left",textDecoration:"underline",opacity:exportingRaw?0.6:1}}>
-                      {exportingRaw?"Exporting…":"Download raw data (JSON)"}
+                      Export my data
                     </button>
                     <button className="menu-row" onClick={()=>{setSettingsOpen(false);setDeleteConfirmText("");setDeleteAccountError(null);setConfirmDeleteAccount(true);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.danger,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
                       <Icon name="subs" size={14}/>
@@ -1170,6 +1155,39 @@ export function App() {
       {editProgram && <ProgramModal data={data} upd={upd} school={profile.school} onClose={()=>setEditProgram(false)}/>}
       {editAvatar && <AvatarModal data={data} upd={upd} user={session.user} onClose={()=>setEditAvatar(false)}/>}
       {inviteOpen && <InviteFriendsModal onClose={()=>setInviteOpen(false)}/>}
+      {exportOpen && (
+        <Modal title="Export my data" onClose={()=>{if(!exportingData) setExportOpen(false);}} width={400}>
+          <div style={{fontSize:12,color:C.textMid,marginBottom:10}}>Choose a file format.</div>
+          <ChoiceGroup role="radiogroup" ariaLabel="File format" style={{display:"flex",flexDirection:"column",gap:8}}>
+            {[
+              {v:"excel", label:"Spreadsheet (.xlsx)", desc:"Multiple sheets, opens in Excel/Numbers/Sheets. Best for most people."},
+              {v:"json",  label:"Raw data (.json)",     desc:"Complete structured data. For developers or a full technical backup."},
+            ].map(f=>{
+              const on = exportFormat===f.v;
+              return (
+                <button key={f.v} {...radioProps(on)} onClick={()=>setExportFormat(f.v)} disabled={exportingData}
+                  style={{textAlign:"left",padding:"12px 13px",borderRadius:12,border:`1px solid ${on?C.sel:C.border}`,background:on?C.selBg:"transparent",cursor:exportingData?"default":"pointer",transition:"all .15s"}}>
+                  <div style={{fontSize:13.5,fontWeight:on?700:600,color:C.text}}>{f.label}</div>
+                  <div style={{fontSize:11.5,color:C.textMid,marginTop:2,lineHeight:1.4}}>{f.desc}</div>
+                </button>
+              );
+            })}
+          </ChoiceGroup>
+          {exportDataError && <div role="alert" style={{marginTop:12,fontSize:12,color:C.danger}}>{exportDataError}</div>}
+          <div style={{display:"flex",justifyContent:"space-between",gap:12,marginTop:20}}>
+            <button className="btn-pop" disabled={exportingData} onClick={()=>setExportOpen(false)} style={{padding:"10px 18px",fontSize:13,fontWeight:600,borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",color:C.text,cursor:exportingData?"default":"pointer",minHeight:44}}>Cancel</button>
+            <button className="btn-fill" disabled={exportingData} aria-busy={exportingData} onClick={async()=>{
+              setExportingData(true);setExportDataError(null);
+              const r = exportFormat==="excel" ? await exportUserDataExcel() : await exportUserData();
+              setExportingData(false);
+              if(!r.ok) setExportDataError(r.error||"Couldn't export your data. Please try again.");
+              else setExportOpen(false);
+            }} style={{padding:"10px 20px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.teal,color:C.bg,cursor:exportingData?"default":"pointer",minHeight:44,opacity:exportingData?0.7:1}}>
+              {exportingData?"Exporting…":"Export"}
+            </button>
+          </div>
+        </Modal>
+      )}
 
       {/* ── Renewal alerts ── */}
       {renewalsDue.map(s=>(
