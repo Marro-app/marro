@@ -136,8 +136,8 @@ export const exportUserData = async () => {
     if (!user) return {ok:false, error:"Not signed in."};
 
     const [{data:stateRow, error:stateErr}, {data:profileRow, error:profileErr}] = await Promise.all([
-      sb.from("app_state").select("state, created_at, updated_at").maybeSingle(),
-      sb.from("profiles").select("school, created_at, updated_at").maybeSingle(),
+      sb.from("app_state").select("state, updated_at").maybeSingle(),
+      sb.from("profiles").select("school, created_at").maybeSingle(),
     ]);
     if (stateErr || profileErr) return {ok:false, error:"Couldn't read your data. Please try again."};
 
