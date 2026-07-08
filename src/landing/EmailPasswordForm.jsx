@@ -1,5 +1,5 @@
 import React, { useId, useRef, useState } from 'react';
-import { getSupabase } from '../lib/data.js';
+import { getSupabase, stashPendingInviteCode } from '../lib/data.js';
 
 // Email + password sign-in/sign-up form fields — rendered inside AuthModal.jsx
 // (see that file for the modal shell: tabs live one level up there so the
@@ -62,7 +62,7 @@ function PasswordField({ id, label, value, onChange, autoComplete, error, disabl
 // it can also drive the modal's heading text) — this component only renders
 // the fields, validation, and submit/resend logic for whichever mode is
 // active.
-export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassword }){
+export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassword, inviteCode, onInviteCodeChange }){
   const uid = useId();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -139,6 +139,7 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
         window.location.href = window.location.pathname;
         return; // page is navigating away — leave `pending` true, no further UI updates needed
       } else {
+        if (inviteCode) stashPendingInviteCode(inviteCode);
         const { error: signUpErr } = await sb.auth.signUp({
           email,
           password,
@@ -181,6 +182,7 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
   const emailId = `${uid}-email`;
   const pwdId = `${uid}-pwd`;
   const confirmId = `${uid}-confirm`;
+  const inviteId = `${uid}-invite`;
   const disabled = offline || pending;
   const formRef = useRef(null);
   const submitForm = () => formRef.current?.requestSubmit();
@@ -230,6 +232,22 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
           disabled={disabled}
           error={validationError}
         />
+      )}
+
+      {mode === 'signup' && (
+        <div className="lp-field">
+          <label htmlFor={inviteId}>Invite code (optional)</label>
+          <input
+            id={inviteId}
+            type="text"
+            value={inviteCode}
+            onChange={(e) => onInviteCodeChange(e.target.value)}
+            autoComplete="off"
+            autoCapitalize="characters"
+            disabled={disabled}
+            className="lp-input"
+          />
+        </div>
       )}
 
       {validationError && (password || confirm) && (

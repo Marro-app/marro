@@ -319,6 +319,27 @@ export const redeemInviteCode = async (code) => {
   } catch { return {status:'invalid'}; }
 };
 
+// Pending-invite-code stash (localStorage only, no Supabase) — bridges the gap
+// between "user types a code on the sign-up form" and "user actually gets a
+// session" for paths where those two moments aren't the same tick: email/
+// password signup requires email confirmation before a session exists, and
+// Google OAuth signup is a full-page redirect. Both round-trip through this
+// key so App.jsx's gate-check effect can redeem it the next time a real
+// session shows up. Synchronous, best-effort — never throws.
+const PENDING_INVITE_KEY = "marro_pending_invite";
+export function stashPendingInviteCode(code){
+  const trimmed = (code || "").trim().toUpperCase();
+  if (!trimmed) return;
+  try { localStorage.setItem(PENDING_INVITE_KEY, trimmed); } catch { /* best-effort only */ }
+}
+export function takePendingInviteCode(){
+  try {
+    const v = localStorage.getItem(PENDING_INVITE_KEY);
+    if (v) localStorage.removeItem(PENDING_INVITE_KEY);
+    return v || null;
+  } catch { return null; }
+}
+
 // Effective invite quota for the current user (5, 15, or an admin override). → number.
 export const myInviteQuota = async () => {
   try {

@@ -80,11 +80,14 @@ function codeBlock(code) {
   return `<div style="font-family:'SF Mono',SFMono-Regular,Menlo,Consolas,monospace;font-size:30px;letter-spacing:4px;font-weight:700;color:${C.cream};background:${C.bg};border-radius:12px;padding:18px 20px;text-align:center;">${escapeHtml(code)}</div>`;
 }
 
-function ctaButton() {
+function ctaButton(code) {
   // Table-cell button (Outlook ignores flex/grid). Cream fill, dark text.
+  // Deep-links straight to the sign-up screen (Nav's ?invite= handling in
+  // landingShared.jsx auto-opens the modal) instead of the bare landing page.
+  const href = `https://joinmarro.com/?invite=${encodeURIComponent(code)}`;
   return `<table role="presentation" cellpadding="0" cellspacing="0"><tr>
     <td bgcolor="${C.cream}" style="background:${C.cream};border-radius:12px;">
-      <a href="https://joinmarro.com" style="display:inline-block;padding:12px 22px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;font-weight:700;color:${C.stage};text-decoration:none;">Open Marro</a>
+      <a href="${href}" style="display:inline-block;padding:12px 22px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;font-weight:700;color:${C.stage};text-decoration:none;">Open Marro</a>
     </td></tr></table>`;
 }
 
@@ -104,7 +107,7 @@ export function inviteCodeEmail({ code, message }) {
       <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:${C.muted};">Use this invite code when you sign in:</div>
     </td></tr>
     <tr><td style="padding:12px 32px 0 32px;">${codeBlock(code)}</td></tr>
-    <tr><td style="padding:20px 32px 0 32px;">${ctaButton()}</td></tr>`;
+    <tr><td style="padding:20px 32px 0 32px;">${ctaButton(code)}</td></tr>`;
   return shell(inner);
 }
 
@@ -118,7 +121,7 @@ export function waitlistInviteEmail({ code }) {
       <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:${C.muted};">Here's your invite code — enter it when you sign in:</div>
     </td></tr>
     <tr><td style="padding:12px 32px 0 32px;">${codeBlock(code)}</td></tr>
-    <tr><td style="padding:20px 32px 0 32px;">${ctaButton()}</td></tr>`;
+    <tr><td style="padding:20px 32px 0 32px;">${ctaButton(code)}</td></tr>`;
   return shell(inner);
 }
 

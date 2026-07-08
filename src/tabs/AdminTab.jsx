@@ -157,6 +157,37 @@ export default function AdminTab({callerEmail}){
   );
 }
 
+// ── Shared: per-section sort control ─────────────────────────────────────────
+// A small labeled <select> for the sort field plus an optional asc/desc
+// toggle, meant to sit next to each section's SectionTitle. Sort state is
+// local (useState) per section — this is a lightweight console, not
+// something that needs to survive a reload. Each option can opt out of the
+// direction toggle (dir:false) for sorts where "reverse" doesn't make sense
+// (e.g. grouping invite codes by Status). The toggle reuses the .xbtn
+// hit-slop pattern (::after inset:-8px) so the 28px visible circle still
+// meets the 44×44 tap-target rule.
+function SortBar({idPrefix, value, dir, onChangeValue, onToggleDir, options}) {
+  const opt = options.find(o=>o.key===value) || options[0];
+  const showDir = opt.dir !== false;
+  return (
+    <div style={{display:"flex", alignItems:"center", gap:6, flexShrink:0}}>
+      <label htmlFor={`${idPrefix}-sort`} style={{fontSize:11, color:C.gray, fontWeight:500, whiteSpace:"nowrap"}}>Sort</label>
+      <select id={`${idPrefix}-sort`} value={value} onChange={e=>onChangeValue(e.target.value)}
+        style={{fontSize:12, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 8px", background:C.bg, color:C.text, minHeight:32, cursor:"pointer"}}>
+        {options.map(o=><option key={o.key} value={o.key}>{o.label}</option>)}
+      </select>
+      {showDir && (
+        <button type="button" className="xbtn" onClick={onToggleDir}
+          aria-label={dir==="asc" ? "Sort ascending — activate to sort descending" : "Sort descending — activate to sort ascending"}
+          title={dir==="asc" ? "Ascending" : "Descending"}
+          style={{width:28, height:28, borderRadius:14, border:`1px solid ${C.border}`, background:"transparent", color:C.text, cursor:"pointer", display:"inline-flex", alignItems:"center", justifyContent:"center", flexShrink:0}}>
+          <span aria-hidden="true" style={{fontSize:13, lineHeight:1, display:"inline-block", transform: dir==="asc" ? "scaleY(-1)" : "none"}}>↓</span>
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── Shared: revoke-access confirm modal ──────────────────────────────────────
 // Feature #1 — "revoke access to an account, choose whether to delete their
 // data." Mirrors the type-DELETE-to-confirm weight of App.jsx's own "Delete my
@@ -238,6 +269,29 @@ function RevokeAccessModal({email, onClose, onDone}) {
   );
 }
 
+// Ambassadors sort options — default matches the section's original fixed
+// behavior (brought-in, descending) so nothing changes until the founder
+// actively picks something else.
+const AMB_SORT_OPTIONS = [
+  {key:"brought_in", label:"Brought in", defaultDir:"desc"},
+  {key:"name", label:"Name/email (A–Z)", defaultDir:"asc"},
+  {key:"invite_limit", label:"Invite limit", defaultDir:"desc"},
+  {key:"updated_at", label:"Recently updated", defaultDir:"desc"},
+];
+function cmpAmbassadors(a, b, sortBy, dir) {
+  const m = dir === "asc" ? 1 : -1;
+  switch (sortBy) {
+    case "name": {
+      const an = (a.name || a.email || "").toLowerCase(), bn = (b.name || b.email || "").toLowerCase();
+      return an.localeCompare(bn) * (dir === "asc" ? 1 : -1);
+    }
+    case "invite_limit": return ((a.invite_limit || 0) - (b.invite_limit || 0)) * m;
+    case "updated_at": return (new Date(a.updated_at || 0) - new Date(b.updated_at || 0)) * m;
+    case "brought_in":
+    default: return ((a.brought_in || 0) - (b.brought_in || 0)) * m;
+  }
+}
+
 // ── 1. Ambassadors ────────────────────────────────────────────────────────────
 function AmbassadorsSection({ambassadors, codes, callerEmail, onChanged}) {
   const [email, setEmail] = useState("");
@@ -245,6 +299,9 @@ function AmbassadorsSection({ambassadors, codes, callerEmail, onChanged}) {
   const [msg, setMsg] = useFlashMsg();
   const [profileEmail, setProfileEmail] = useState(null);
   const [revokeEmail, setRevokeEmail] = useState(null);
+  const [sortBy, setSortBy] = useState("brought_in");
+  const [sortDir, setSortDir] = useState("desc");
+  const changeSort = (key) => { setSortBy(key); setSortDir(AMB_SORT_OPTIONS.find(o=>o.key===key)?.defaultDir || "desc"); };
 
   const canAdd = email.trim() && !busy;
 
@@ -261,12 +318,16 @@ function AmbassadorsSection({ambassadors, codes, callerEmail, onChanged}) {
     setBusy(false);
   };
 
-  const sorted = [...ambassadors].sort((a,b)=> (b.brought_in||0) - (a.brought_in||0));
+  const sorted = [...ambassadors].sort((a,b)=> cmpAmbassadors(a, b, sortBy, sortDir));
   const profile = profileEmail ? ambassadors.find(a=>a.email===profileEmail) : null;
 
   return (
     <Card>
-      <SectionTitle sub="Grant ambassador status, raise invite limits, and see who each ambassador has brought in.">Ambassadors</SectionTitle>
+      <div style={{display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12, flexWrap:"wrap"}}>
+        <SectionTitle sub="Grant ambassador status, raise invite limits, and see who each ambassador has brought in.">Ambassadors</SectionTitle>
+        <SortBar idPrefix="amb" value={sortBy} dir={sortDir} onChangeValue={changeSort}
+          onToggleDir={()=>setSortDir(d=>d==="asc"?"desc":"asc")} options={AMB_SORT_OPTIONS}/>
+      </div>
 
       <div style={{display:"flex", alignItems:"flex-end", gap:8, flexWrap:"wrap", marginBottom:14}}>
         <div style={{flex:1, minWidth:200}}>
@@ -289,7 +350,7 @@ function AmbassadorsSection({ambassadors, codes, callerEmail, onChanged}) {
         : (
           <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(100%,300px),1fr))", gap:12}}>
             {sorted.map((a, i)=>(
-              <AmbassadorCard key={a.email} a={a} rank={i<3 ? i+1 : null} isSelf={callerEmail && a.email===callerEmail}
+              <AmbassadorCard key={a.email} a={a} rank={(sortBy==="brought_in" && i<3) ? i+1 : null} isSelf={callerEmail && a.email===callerEmail}
                 onChanged={onChanged} onViewProfile={()=>setProfileEmail(a.email)} onRevoke={()=>setRevokeEmail(a.email)}/>
             ))}
           </div>
@@ -530,6 +591,33 @@ function AmbassadorProfileModal({ambassador, codes, onClose, onChanged}) {
   );
 }
 
+// Members sort options — default matches the section's original fixed
+// behavior (joined/created_at, descending). "Not-yet-joined first" is a
+// one-way grouping (reversing it would defeat the point of the option — it
+// exists to surface people who need a nudge), so it opts out of the
+// direction toggle like the invite-codes Status sort does.
+const MEMBER_SORT_OPTIONS = [
+  {key:"created_at", label:"Joined date", defaultDir:"desc"},
+  {key:"name", label:"Name/email (A–Z)", defaultDir:"asc"},
+  {key:"not_joined", label:"Not-yet-joined first", defaultDir:"desc", dir:false},
+];
+function cmpMembers(a, b, sortBy, dir) {
+  const m = dir === "asc" ? 1 : -1;
+  switch (sortBy) {
+    case "name": {
+      const an = (a.name || a.email || "").toLowerCase(), bn = (b.name || b.email || "").toLowerCase();
+      return an.localeCompare(bn) * (dir === "asc" ? 1 : -1);
+    }
+    case "not_joined": {
+      const aj = a.joined ? 1 : 0, bj = b.joined ? 1 : 0;
+      if (aj !== bj) return aj - bj; // not-joined (0) first
+      return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+    }
+    case "created_at":
+    default: return (new Date(a.created_at || 0) - new Date(b.created_at || 0)) * m;
+  }
+}
+
 // ── 2. Members ────────────────────────────────────────────────────────────────
 function MembersSection({members, callerEmail, onChanged}) {
   const [grantEmail, setGrantEmail] = useState("");
@@ -540,6 +628,9 @@ function MembersSection({members, callerEmail, onChanged}) {
   const [editingNote, setEditingNote] = useState(null); // email currently being edited
   const [noteText, setNoteText] = useState("");
   const [savingNote, setSavingNote] = useState(false);
+  const [sortBy, setSortBy] = useState("created_at");
+  const [sortDir, setSortDir] = useState("desc");
+  const changeSort = (key) => { setSortBy(key); setSortDir(MEMBER_SORT_OPTIONS.find(o=>o.key===key)?.defaultDir || "desc"); };
 
   const canGrant = grantEmail.trim() && !busy;
 
@@ -563,11 +654,15 @@ function MembersSection({members, callerEmail, onChanged}) {
     setSavingNote(false);
   };
 
-  const sorted = [...members].sort((a,b)=> new Date(b.created_at||0) - new Date(a.created_at||0));
+  const sorted = [...members].sort((a,b)=> cmpMembers(a, b, sortBy, sortDir));
 
   return (
     <Card>
-      <SectionTitle sub="Everyone with access to Marro. Revoke access to remove someone — you choose whether to keep or delete their data.">Members</SectionTitle>
+      <div style={{display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12, flexWrap:"wrap"}}>
+        <SectionTitle sub="Everyone with access to Marro. Revoke access to remove someone — you choose whether to keep or delete their data.">Members</SectionTitle>
+        <SortBar idPrefix="member" value={sortBy} dir={sortDir} onChangeValue={changeSort}
+          onToggleDir={()=>setSortDir(d=>d==="asc"?"desc":"asc")} options={MEMBER_SORT_OPTIONS}/>
+      </div>
 
       <div style={{display:"flex", alignItems:"flex-end", gap:8, flexWrap:"wrap", marginBottom:14}}>
         <div style={{flex:1, minWidth:180}}>
@@ -663,6 +758,37 @@ function MembersSection({members, callerEmail, onChanged}) {
   );
 }
 
+// Invite-codes sort options — default matches the section's original fixed
+// behavior (created_at, descending = "Newest first"). "Newest/Oldest first"
+// is expressed as one field (Date created) with the shared asc/desc toggle
+// rather than two separate menu entries, per the reusable-toggle allowance.
+// Status is a grouping sort (Unused → Used → Revoked → Archived), which
+// doesn't have a meaningful reverse, so it opts out of the toggle — same
+// judgment as the Members "Not-yet-joined first" option.
+const CODE_SORT_OPTIONS = [
+  {key:"created_at", label:"Date created", defaultDir:"desc"},
+  {key:"status", label:"Status", defaultDir:"desc", dir:false},
+  {key:"owner", label:"Owner (A–Z)", defaultDir:"asc"},
+];
+const CODE_STATUS_RANK = {Unused:0, Used:1, Revoked:2, Archived:3};
+function cmpCodes(a, b, sortBy, dir) {
+  const m = dir === "asc" ? 1 : -1;
+  switch (sortBy) {
+    case "status": {
+      const ra = CODE_STATUS_RANK[codeStatus(a).label] ?? 0;
+      const rb = CODE_STATUS_RANK[codeStatus(b).label] ?? 0;
+      if (ra !== rb) return ra - rb;
+      return new Date(b.created_at) - new Date(a.created_at);
+    }
+    case "owner": {
+      const ao = (a.owner_email || a.owner_id || "").toLowerCase(), bo = (b.owner_email || b.owner_id || "").toLowerCase();
+      return ao.localeCompare(bo) * (dir === "asc" ? 1 : -1);
+    }
+    case "created_at":
+    default: return (new Date(a.created_at) - new Date(b.created_at)) * m;
+  }
+}
+
 // ── 3. Invite codes ──────────────────────────────────────────────────────────
 function InviteCodesSection({codes, onChanged}) {
   const [count, setCount] = useState("5");
@@ -671,6 +797,9 @@ function InviteCodesSection({codes, onChanged}) {
   const [revokingCode, setRevokingCode] = useState(null);
   const [archivingCode, setArchivingCode] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [sortBy, setSortBy] = useState("created_at");
+  const [sortDir, setSortDir] = useState("desc");
+  const changeSort = (key) => { setSortBy(key); setSortDir(CODE_SORT_OPTIONS.find(o=>o.key===key)?.defaultDir || "desc"); };
 
   const n = Math.max(1, Math.min(100, parseInt(count, 10) || 0));
   const canGenerate = /^\d+$/.test(count.trim()) && n >= 1 && n <= 100 && !busy;
@@ -713,11 +842,15 @@ function InviteCodesSection({codes, onChanged}) {
 
   const archivedCount = codes.filter(c=>c.archived_at).length;
   const visible = showArchived ? codes : codes.filter(c=>!c.archived_at);
-  const sorted = [...visible].sort((a,b)=> new Date(b.created_at) - new Date(a.created_at));
+  const sorted = [...visible].sort((a,b)=> cmpCodes(a, b, sortBy, sortDir));
 
   return (
     <Card>
-      <SectionTitle sub="Mint invite codes and keep track of who's used them.">Invite codes</SectionTitle>
+      <div style={{display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12, flexWrap:"wrap"}}>
+        <SectionTitle sub="Mint invite codes and keep track of who's used them.">Invite codes</SectionTitle>
+        <SortBar idPrefix="codes" value={sortBy} dir={sortDir} onChangeValue={changeSort}
+          onToggleDir={()=>setSortDir(d=>d==="asc"?"desc":"asc")} options={CODE_SORT_OPTIONS}/>
+      </div>
 
       <div style={{display:"flex", alignItems:"flex-end", gap:8, flexWrap:"wrap", marginBottom:14}}>
         <div>
@@ -807,11 +940,33 @@ function InviteCodesSection({codes, onChanged}) {
   );
 }
 
+// Waitlist sort options — default matches the section's original fixed
+// behavior (created_at, descending = "Newest first"); toggle flips to
+// "Oldest first". Waitlist rows carry no name field, so "Name/email (A–Z)"
+// sorts on email.
+const WAITLIST_SORT_OPTIONS = [
+  {key:"created_at", label:"Date added", defaultDir:"desc"},
+  {key:"invite_count", label:"Most re-invited", defaultDir:"desc"},
+  {key:"name", label:"Name/email (A–Z)", defaultDir:"asc"},
+];
+function cmpWaitlist(a, b, sortBy, dir) {
+  const m = dir === "asc" ? 1 : -1;
+  switch (sortBy) {
+    case "invite_count": return ((a.invite_count || 0) - (b.invite_count || 0)) * m;
+    case "name": return (a.email || "").toLowerCase().localeCompare((b.email || "").toLowerCase()) * (dir === "asc" ? 1 : -1);
+    case "created_at":
+    default: return (new Date(a.created_at) - new Date(b.created_at)) * m;
+  }
+}
+
 // ── 4. Waitlist ───────────────────────────────────────────────────────────────
 function WaitlistSection({waitlist, onChanged}) {
   const [busyEmail, setBusyEmail] = useState(null);
   const [rowMsg, setRowMsg] = useState({}); // email -> {text, tone}
   const timers = useRef({});
+  const [sortBy, setSortBy] = useState("created_at");
+  const [sortDir, setSortDir] = useState("desc");
+  const changeSort = (key) => { setSortBy(key); setSortDir(WAITLIST_SORT_OPTIONS.find(o=>o.key===key)?.defaultDir || "desc"); };
 
   // Set a per-row message; success-toned ones auto-clear after a few seconds
   // (errors persist). Any pending timer for that row is cleared first so they
@@ -868,10 +1023,14 @@ function WaitlistSection({waitlist, onChanged}) {
     return parts.join(" · ");
   };
 
-  const sorted = [...waitlist].sort((a,b)=> new Date(b.created_at) - new Date(a.created_at));
+  const sorted = [...waitlist].sort((a,b)=> cmpWaitlist(a, b, sortBy, sortDir));
   return (
     <Card>
-      <SectionTitle sub="People waiting for an invite.">Waitlist · {waitlist.length}</SectionTitle>
+      <div style={{display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12, flexWrap:"wrap"}}>
+        <SectionTitle sub="People waiting for an invite.">Waitlist · {waitlist.length}</SectionTitle>
+        <SortBar idPrefix="waitlist" value={sortBy} dir={sortDir} onChangeValue={changeSort}
+          onToggleDir={()=>setSortDir(d=>d==="asc"?"desc":"asc")} options={WAITLIST_SORT_OPTIONS}/>
+      </div>
       {sorted.length === 0
         ? <EmptyState>No one&apos;s on the waitlist right now.</EmptyState>
         : sorted.map((w,i)=>(
@@ -901,12 +1060,30 @@ function WaitlistSection({waitlist, onChanged}) {
   );
 }
 
+// Admins sort options — default matches the section's original fixed
+// behavior (created_at, ascending = "Oldest first").
+const ADMIN_SORT_OPTIONS = [
+  {key:"created_at", label:"Date added", defaultDir:"asc"},
+  {key:"name", label:"Name/email (A–Z)", defaultDir:"asc"},
+];
+function cmpAdmins(a, b, sortBy, dir) {
+  const m = dir === "asc" ? 1 : -1;
+  switch (sortBy) {
+    case "name": return (a.email || "").toLowerCase().localeCompare((b.email || "").toLowerCase()) * (dir === "asc" ? 1 : -1);
+    case "created_at":
+    default: return (new Date(a.created_at) - new Date(b.created_at)) * m;
+  }
+}
+
 // ── 5. Admins ─────────────────────────────────────────────────────────────────
 function AdminsSection({admins, onChanged}) {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useFlashMsg();
   const [removingEmail, setRemovingEmail] = useState(null);
+  const [sortBy, setSortBy] = useState("created_at");
+  const [sortDir, setSortDir] = useState("asc");
+  const changeSort = (key) => { setSortBy(key); setSortDir(ADMIN_SORT_OPTIONS.find(o=>o.key===key)?.defaultDir || "asc"); };
 
   const canAdd = email.trim() && !busy;
 
@@ -935,11 +1112,15 @@ function AdminsSection({admins, onChanged}) {
     setRemovingEmail(null);
   };
 
-  const sorted = [...admins].sort((a,b)=> new Date(a.created_at) - new Date(b.created_at));
+  const sorted = [...admins].sort((a,b)=> cmpAdmins(a, b, sortBy, sortDir));
 
   return (
     <Card>
-      <SectionTitle sub="Grant console access to other accounts.">Admins</SectionTitle>
+      <div style={{display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12, flexWrap:"wrap"}}>
+        <SectionTitle sub="Grant console access to other accounts.">Admins</SectionTitle>
+        <SortBar idPrefix="admins" value={sortBy} dir={sortDir} onChangeValue={changeSort}
+          onToggleDir={()=>setSortDir(d=>d==="asc"?"desc":"asc")} options={ADMIN_SORT_OPTIONS}/>
+      </div>
 
       <div style={{display:"flex", alignItems:"flex-end", gap:8, flexWrap:"wrap", marginBottom:14}}>
         <div style={{flex:1, minWidth:200}}>
