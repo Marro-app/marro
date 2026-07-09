@@ -513,15 +513,32 @@ export const SYNC_BASE_KEY = "marro_v8_base";
 
 export function diffStates(base, cur) {
   const ch = {}, js = JSON.stringify;
-  for (const k of ['darkMode','logo','surplusBank']) {
+  // Scalars (including object-shaped ones like `program`/`avatar`): whole-value
+  // replace + conflict detection, same as every other entry in this list.
+  // `archivedYears` (the soft-deleted-year shelf, App.jsx removeYear/reinstateYear)
+  // is included here as a REPLACE-WHOLE-ARRAY scalar rather than diffed
+  // item-by-item like `years`/`categories`/etc: archiving/restoring a year is a
+  // rare, single-device action (not concurrent per-field editing like budgets),
+  // so a plain last-write-wins-with-conflict-flag on the whole array is simpler
+  // and safe — it only loses data if BOTH devices archive/restore in the same
+  // sync window, which `findConflicts` will surface as a conflict rather than
+  // silently dropping either side.
+  for (const k of ['darkMode','logo','surplusBank','preferredName','avatar','program','setupVersion','archivedYears']) {
     if (js(base[k]) !== js(cur[k])) ch[k] = {b:base[k], c:cur[k]};
   }
-  for (const k of ['monthlyRollover','monthlyDeposits','monthDisabled','coverMonths','weeklyRollover']) {
+  for (const k of ['monthlyRollover','monthDisabled']) {
     const bk=base[k]||{}, ck=cur[k]||{};
     for (const sk of new Set([...Object.keys(bk),...Object.keys(ck)]))
       if (js(bk[sk])!==js(ck[sk])) ch[`${k}.${sk}`]={b:bk[sk],c:ck[sk]};
   }
-  const ylen=Math.max((base.years||[]).length,(cur.years||[]).length);
+  // Track the years array LENGTH explicitly: per-index field diffs alone can
+  // null out a removed year's fields but never delete the slot itself, leaving
+  // a ghost `{monthly:{},…}` year behind after an archive/remove on another
+  // device. Emitted BEFORE the per-index keys so applyChanges (which walks
+  // keys in insertion order) truncates/pads first, then field diffs fill in.
+  const blen=(base.years||[]).length, clen=(cur.years||[]).length;
+  if (blen!==clen) ch['years.length']={b:blen, c:clen};
+  const ylen=Math.max(blen,clen);
   for (let i=0;i<ylen;i++) {
     const by=(base.years||[])[i]||{}, cy=(cur.years||[])[i]||{};
     for (const f of ['grant','tuitionFees','healthIns','otherIncome','housing','housingNote','livingAllowance','notes','startDate','endDate'])
@@ -569,6 +586,12 @@ export function applyChanges(state, changes) {
   for (const [key, ch] of Object.entries(changes)) {
     const val=ch.c;
     let m;
+    if (key==='years.length') {
+      s.years=s.years||[];
+      if (val<s.years.length) s.years.length=val;
+      else while (s.years.length<val) s.years.push({monthly:{},monthlyOverrides:{}});
+      continue;
+    }
     m=key.match(/^years\[(\d+)\]\.(.+)$/);
     if (m) {
       const idx=+m[1], rest=m[2];
@@ -584,7 +607,7 @@ export function applyChanges(state, changes) {
       } else { s.years[idx][rest]=val; }
       continue;
     }
-    m=key.match(/^(monthlyRollover|monthlyDeposits|monthDisabled|coverMonths|weeklyRollover)\.(.+)$/);
+    m=key.match(/^(monthlyRollover|monthDisabled)\.(.+)$/);
     if (m) { s[m[1]]=s[m[1]]||{}; if (val==null) delete s[m[1]][m[2]]; else s[m[1]][m[2]]=val; continue; }
     m=key.match(/^(categories|subscriptions|stepGoals|savingsGoals|savingsLog|currentWeekEntries)\[(.+)\]$/);
     if (m) {

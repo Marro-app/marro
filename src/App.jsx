@@ -252,8 +252,6 @@ export function App() {
         if(raw && !localStorage.getItem("marro_theme_v2")) loaded.darkMode=true;
         localStorage.setItem("marro_theme_v2","1");
         if(loaded.logo===undefined) loaded.logo=null;
-        if(!loaded.coverMonths) loaded.coverMonths={};
-        if(!loaded.monthlyDeposits) loaded.monthlyDeposits={};
         if(!loaded.stepGoals) loaded.stepGoals=JSON.parse(JSON.stringify(DEFAULT_STATE.stepGoals));
         if(loaded.stepGoals && !loaded.stepGoals.find(g=>g.id==="step3")) loaded.stepGoals.push({id:"step3",label:"Step 3",targetAmount:1000,targetDate:"2031-06-01",saved:0,monthlyContribution:0});
         if(!loaded.savingsGoals) loaded.savingsGoals=[];
