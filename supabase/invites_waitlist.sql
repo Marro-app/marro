@@ -56,11 +56,20 @@ create table if not exists public.invite_codes (
   -- admin-targeted invites (invite_from_waitlist) so a code emailed to a
   -- specific person can't be redeemed by anyone else who gets hold of it.
   -- NULL = unbound/shareable (normal member-generated codes stay this way).
-  bound_email      text
+  -- ALSO reused by the member-facing "email this code" flow (api/send-invite.js):
+  -- the first time a member emails one of their own codes, that recipient's
+  -- email is written here too, so a resend targets the SAME person and the
+  -- code becomes unredeemable by anyone else (bug fix — a code could
+  -- previously be re-sent to a different person than the one it was first
+  -- promised to). last_sent_at is the companion "when did we last email it"
+  -- timestamp, shown in the resend-confirmation UI.
+  bound_email      text,
+  last_sent_at     timestamptz
 );
 alter table public.invite_codes add column if not exists issued_by_admin boolean not null default false;
 alter table public.invite_codes add column if not exists archived_at timestamptz;
 alter table public.invite_codes add column if not exists bound_email text;
+alter table public.invite_codes add column if not exists last_sent_at timestamptz;
 create index if not exists invite_codes_owner_idx on public.invite_codes(owner_id);
 create index if not exists invite_codes_bound_email_idx on public.invite_codes(bound_email);
 comment on table public.invite_codes is
@@ -423,6 +432,26 @@ end;
 $$;
 revoke all on function public.redeem_invite_code(text) from public;
 grant execute on function public.redeem_invite_code(text) to authenticated;
+
+-- 3g. email_has_account(p_email) — server-side check used by api/send-invite.js
+--     (bug fix: emailing an invite code to someone who already has a Marro
+--     account should be blocked, not silently sent). Checks the authoritative
+--     source — a real auth.users row — via SECURITY DEFINER since auth.users
+--     isn't otherwise reachable from PostgREST. Deliberately granted ONLY to
+--     service_role: exposing "does this email have an account" to any signed-in
+--     client would be an email-enumeration privacy leak, and the only caller
+--     that needs it is the server-side send-invite handler (which already
+--     holds the service-role key).
+create or replace function public.email_has_account(p_email text)
+returns boolean
+language sql security definer set search_path = public stable
+as $$
+  select exists (
+    select 1 from auth.users where lower(email) = lower(coalesce(p_email, ''))
+  );
+$$;
+revoke all on function public.email_has_account(text) from public;
+grant execute on function public.email_has_account(text) to service_role;
 
 
 -- ═══════════════════════════════════════════════════════════════════════════

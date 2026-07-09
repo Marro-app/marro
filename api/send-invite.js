@@ -72,7 +72,7 @@ export default async function handler(req, res) {
     // "email anything to anyone" relay.
     const { data: codeRow, error: codeErr } = await admin
       .from('invite_codes')
-      .select('code, owner_id, redeemed_at, revoked_at')
+      .select('code, owner_id, redeemed_at, revoked_at, bound_email, last_sent_at')
       .eq('code', code)
       .maybeSingle();
     if (codeErr) throw codeErr;
@@ -84,6 +84,28 @@ export default async function handler(req, res) {
     }
     if (codeRow.revoked_at) {
       return res.status(400).json({ error: 'That code has been revoked.' });
+    }
+
+    // Bug fix: once a code has been emailed to someone, it stays assigned to
+    // that person — the "email this code" button must not become a way to
+    // send the same single-use code to a different recipient. The client UI
+    // already locks the recipient field once bound_email is set (see
+    // InviteFriendsModal's resend-confirmation dialog); this is the
+    // server-side backstop in case of a stale client or a direct API call.
+    if (codeRow.bound_email && codeRow.bound_email !== toEmail) {
+      return res.status(409).json({
+        error: `This code is already assigned to ${codeRow.bound_email}. Resend it to them instead of a different address.`,
+      });
+    }
+
+    // Bug fix: don't let a code be emailed to someone who already has a
+    // Marro account — they don't need an invite, and it's confusing to send
+    // them one. Checked via a SECURITY DEFINER RPC (service-role only) since
+    // auth.users isn't reachable through the normal client.
+    const { data: alreadyHasAccount, error: acctErr } = await admin.rpc('email_has_account', { p_email: toEmail });
+    if (acctErr) throw acctErr;
+    if (alreadyHasAccount) {
+      return res.status(409).json({ error: 'That email already has a Marro account — no invite needed.' });
     }
 
     // Rate limit.
@@ -109,6 +131,17 @@ export default async function handler(req, res) {
     if (!emailed) {
       return res.status(502).json({ error: sendErr || 'Email could not be sent. Please try again.' });
     }
+
+    // Bind the code to this recipient (first send) / refresh the last-sent
+    // stamp (resend to the same person) — see the bound_email comment in
+    // supabase/invites_waitlist.sql. Best-effort: the email already went out,
+    // so a failure here shouldn't be reported as a send failure.
+    const { error: bindErr } = await admin
+      .from('invite_codes')
+      .update({ bound_email: toEmail, last_sent_at: new Date().toISOString() })
+      .eq('code', code);
+    if (bindErr) console.error('send-invite: failed to bind code to recipient', bindErr.message);
+
     return res.status(200).json({ ok: true });
   } catch (e) {
     console.error('send-invite: action failed', e?.message);

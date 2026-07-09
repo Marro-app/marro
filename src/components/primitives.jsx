@@ -151,7 +151,14 @@ export const Banner = ({children, type="info", onClose}) => {
   );
 };
 
-export const Modal = ({title, onClose, children, width=440}) => {
+// panelClassName/scrimBg let a caller opt into a more opaque surface for a
+// modal that's stacked ON TOP OF another modal (e.g. "email this code" inside
+// Invite friends) — nesting two default `.mm` glass panels compounds their
+// blur/saturate/brightness and washes out contrast against a busy blurred
+// parent, so nested dialogs pass panelClassName="mm mm-solid" scrimBg={C.scrimStrong}
+// (see index.html's .mm-solid rule + C.scrimStrong). Defaults preserve the
+// existing look for every other (non-nested) modal in the app.
+export const Modal = ({title, onClose, children, width=440, panelClassName="mm", scrimBg}) => {
   const panelRef = React.useRef(null);
   useEffect(()=>{
     const panel = panelRef.current;
@@ -171,8 +178,8 @@ export const Modal = ({title, onClose, children, width=440}) => {
     return ()=>{ document.removeEventListener("keydown", onKey); prevFocus && prevFocus.focus && prevFocus.focus(); };
   },[]);
   return (
-  <div onClick={onClose} style={{position:"fixed",inset:0,background:C.scrim,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(14px)",WebkitBackdropFilter:"blur(14px)"}}>
-    <div ref={panelRef} role="dialog" aria-modal="true" aria-label={typeof title==="string"?title:undefined} tabIndex={-1} onClick={e=>e.stopPropagation()} className="mm" style={{padding:"24px",maxWidth:width,width:"calc(100% - 32px)",maxHeight:"90vh",overflowY:"auto",outline:"none"}}>
+  <div onClick={onClose} style={{position:"fixed",inset:0,background:scrimBg||C.scrim,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(14px)",WebkitBackdropFilter:"blur(14px)"}}>
+    <div ref={panelRef} role="dialog" aria-modal="true" aria-label={typeof title==="string"?title:undefined} tabIndex={-1} onClick={e=>e.stopPropagation()} className={panelClassName} style={{padding:"24px",maxWidth:width,width:"calc(100% - 32px)",maxHeight:"90vh",overflowY:"auto",outline:"none"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
         <div style={{fontWeight:700,fontSize:16,color:C.text}}>{title}</div>
         <XBtn label="Close dialog" onClick={onClose} size={28} iconSize={14}/>
