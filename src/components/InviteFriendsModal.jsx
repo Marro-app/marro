@@ -33,14 +33,32 @@ function CopyBtn({value}){
   );
 }
 
-// Small icon button that expands into an inline "email this code" popover —
-// friend's email + optional note, sent via sendInviteEmail (rate-limited and
-// ownership-checked server-side, so this is purely a transport UI).
+// Formats a timestamptz for the resend-confirmation copy ("last sent Jul 3, 2026").
+function fmtSent(iso){
+  if(!iso) return null;
+  try{ return new Date(iso).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); }
+  catch{ return null; }
+}
+
+// Small icon button that expands into an inline "email this code" popover.
+// First send: friend's email + optional note, sent via sendInviteEmail
+// (rate-limited, ownership-checked, and existing-account-checked server-side,
+// so this is purely a transport UI). Once a code has been emailed once, it's
+// assigned to that recipient (server-stored bound_email) — re-opening this
+// button no longer offers a free-text "to" field; it shows a confirmation
+// asking to resend to that SAME person (bug fix: a code could previously be
+// re-sent to a different person than the one it was first promised to, which
+// would leave the original recipient's promised access dangling and let a
+// single-use code effectively be shared with two people).
 // Opens a small nested <Modal> (a DOM child of the outer Invite-friends modal,
 // so it stacks above everything and is immune to the scroll-clipping that an
 // absolutely-positioned popover suffers inside the outer modal's overflow:auto
-// panel — see docs/PRODUCT_DECISIONS.md "Nested modals").
-function EmailCodeBtn({code}){
+// panel — see docs/PRODUCT_DECISIONS.md "Nested modals"). Uses the "solid"
+// nested-modal surface (panelClassName + scrimBg) since two stacked default
+// glass panels wash out contrast — see index.html's .mm-solid rule.
+function EmailCodeBtn({codeRow, onSent}){
+  const code = codeRow.code;
+  const assignedEmail = codeRow.bound_email || null;
   const [open, setOpen] = useState(false);
   const [to, setTo] = useState("");
   const [note, setNote] = useState("");
@@ -57,31 +75,66 @@ function EmailCodeBtn({code}){
     setOpen(false); setMsg(null); setTo(""); setNote("");
   };
 
-  const send = async () => {
-    if(busy || !to.trim()) return;
+  const doSend = async (destination) => {
     setBusy(true); setMsg(null);
-    const res = await sendInviteEmail(code, to.trim(), note.trim() || undefined);
+    const res = await sendInviteEmail(code, destination, note.trim() || undefined);
     setBusy(false);
     if(res.ok){
       // Confirm briefly, then auto-close so the user isn't left staring at a
       // form that already did its job (matches the auto-clear success pattern).
       setMsg({text:"Sent!", tone:"success"});
       setTo(""); setNote("");
+      onSent?.();
       closeTimer.current = setTimeout(()=>{ setOpen(false); setMsg(null); closeTimer.current = null; }, 1500);
     } else {
       setMsg({text: res.error || "Couldn't send that email. Please try again.", tone:"error"});
     }
   };
 
+  const sendFirst = () => { if(!busy && to.trim()) doSend(to.trim()); };
+  const confirmResend = () => { if(!busy) doSend(assignedEmail); };
+
+  const lastSent = fmtSent(codeRow.last_sent_at);
+
   return (
     <>
-      <button type="button" className="xbtn" aria-label={`Email code ${code}`} title="Email this code" aria-haspopup="dialog"
+      <button type="button" className="xbtn"
+        aria-label={assignedEmail ? `Resend code ${code}` : `Email code ${code}`}
+        title={assignedEmail ? "Resend this code" : "Email this code"} aria-haspopup="dialog"
         onClick={openModal}
         style={{width:32,height:32,borderRadius:16,border:`1px solid ${open?C.sel:C.border}`,background:open?C.selBg:"transparent",color:C.text,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
         <span aria-hidden="true" style={{fontSize:18,lineHeight:1}}>✉</span>
       </button>
-      {open && (
-        <Modal title="Email this code" onClose={close} width={380}>
+      {open && assignedEmail && (
+        // Already sent once — lock the recipient, ask to confirm a resend to
+        // the SAME person rather than offering a free-text "to" field.
+        <Modal title="Resend this code?" onClose={close} width={380} panelClassName="mm mm-solid" scrimBg={C.scrimStrong}>
+          <p style={{fontSize:12.5,color:C.textMid,lineHeight:1.5,margin:"0 0 14"}}>
+            This code is assigned to <span style={{fontWeight:700,color:C.text}}>{assignedEmail}</span>
+            {lastSent ? <> — last sent <span style={{fontWeight:600,color:C.text}}>{lastSent}</span>.</> : "."}
+            {" "}Resending will email <span style={{fontFamily:"monospace",fontWeight:700,color:C.text}}>{code}</span> to them again.
+          </p>
+          <label htmlFor={`invite-resend-note-${code}`} style={{display:"block",fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Note (optional)</label>
+          <textarea id={`invite-resend-note-${code}`} placeholder="Hey — following up on this" value={note} disabled={busy} rows={2}
+            onChange={e=>setNote(e.target.value)}
+            style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 10px",background:C.bg,color:C.text,boxSizing:"border-box",marginBottom:12,resize:"vertical",fontFamily:"inherit"}}/>
+          {msg && <div role={msg.tone==="error"?"alert":"status"} style={{fontSize:12,color:msg.tone==="error"?C.danger:C.green,marginBottom:12}}>{msg.text}</div>}
+          <div style={{display:"flex",gap:8}}>
+            <button type="button" className="btn-fill" disabled={busy} onClick={close}
+              style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,minHeight:44,background:C.creamSoft,color:C.text,cursor:busy?"default":"pointer",opacity:busy?0.6:1}}>
+              Cancel
+            </button>
+            <button type="button" className="btn-fill" disabled={busy} onClick={confirmResend}
+              style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,minHeight:44,
+                background:busy?C.surface:C.teal, color:busy?C.gray:C.bg,
+                cursor:busy?"not-allowed":"pointer"}}>
+              {busy ? "Sending…" : "Resend"}
+            </button>
+          </div>
+        </Modal>
+      )}
+      {open && !assignedEmail && (
+        <Modal title="Email this code" onClose={close} width={380} panelClassName="mm mm-solid" scrimBg={C.scrimStrong}>
           <p style={{fontSize:12.5,color:C.textMid,lineHeight:1.5,margin:"0 0 14"}}>
             We&apos;ll email <span style={{fontFamily:"monospace",fontWeight:700,color:C.text}}>{code}</span> straight to your friend.
           </p>
@@ -99,7 +152,7 @@ function EmailCodeBtn({code}){
               style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,minHeight:44,background:C.creamSoft,color:C.text,cursor:busy?"default":"pointer",opacity:busy?0.6:1}}>
               Cancel
             </button>
-            <button type="button" className="btn-fill" disabled={busy || !to.trim()} onClick={send}
+            <button type="button" className="btn-fill" disabled={busy || !to.trim()} onClick={sendFirst}
               style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,minHeight:44,
                 background:(busy||!to.trim())?C.surface:C.teal, color:(busy||!to.trim())?C.gray:C.bg,
                 cursor:(busy||!to.trim())?"not-allowed":"pointer"}}>
@@ -205,7 +258,7 @@ export function InviteFriendsModal({onClose}){
                 <span style={{flex:1}}/>
                 {!c.revoked_at && !c.redeemed_at && (
                   <span style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
-                    <EmailCodeBtn code={c.code}/>
+                    <EmailCodeBtn codeRow={c} onSent={load}/>
                     <CopyBtn value={c.code}/>
                     <button type="button" className="xbtn" aria-label={`Revoke code ${c.code}`} title="Revoke code"
                       onClick={()=>revoke(c.code)} disabled={revokingCode===c.code}
