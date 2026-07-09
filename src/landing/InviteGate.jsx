@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { redeemInviteCode, joinWaitlist, myWaitlist } from '../lib/data.js';
+import { redeemInviteCode, joinWaitlist, myWaitlist, takePendingInviteCode } from '../lib/data.js';
 import { MarroLogo } from '../components/icons.jsx';
 
 const CODE_LEN = 8;
@@ -98,33 +98,42 @@ export function InviteGate({ C, onRedeemed, onBack }){
   const [redeeming, setRedeeming] = useState(false);
   const [redeemError, setRedeemError] = useState(null); // {text}
   const [autoStatus, setAutoStatus] = useState(null); // sr-announced status for the ?invite= auto-fill flow
+  const [linkSrc, setLinkSrc] = useState(null); // 'waitlist' | 'invite' | null — drives the congrats framing when the code arrived via an email link
 
-  // Auto-enter invite codes from approval emails — the email CTA links to
-  // `https://joinmarro.com/?invite=<CODE>` (fixed contract with the
-  // email-sending side, mirrored in AuthModal.jsx's signup-time equivalent).
-  // Landing here with that param means the user already has a session but
-  // hasn't been let past the closed-beta gate yet — pre-fill the OTP boxes
-  // and submit for them instead of making them retype an 8-character code.
-  // Runs once on mount; a ref guard keeps StrictMode's double-invoke from
-  // submitting twice. The param is stripped from the address bar immediately
-  // so a refresh/share of the URL can't re-trigger or leak the code.
+  // Auto-enter invite codes from email links — the CTA links to
+  // `https://joinmarro.com/?invite=<CODE>(&from=waitlist)` (fixed contract
+  // with api/_email.js). The gate is the SINGLE redemption point: the code
+  // reaches it either straight from the URL (user was already signed in) or
+  // via the localStorage stash AuthModal wrote before an auth path that loses
+  // the URL (OAuth redirect / password-sign-in reload / email confirmation).
+  // Pre-fill the OTP boxes and submit instead of making the user retype an
+  // 8-character code. Runs once on mount; a ref guard keeps StrictMode's
+  // double-invoke from submitting twice. The param is stripped from the
+  // address bar immediately so a refresh/share can't re-trigger or leak it.
   const autoTried = useRef(false);
   useEffect(()=>{
     if (autoTried.current) return;
-    let fromUrl = null;
+    let fromUrl = null, src = null;
     try {
       const params = new URLSearchParams(window.location.search);
       fromUrl = params.get('invite');
       if (fromUrl){
+        src = params.get('from');
         params.delete('invite');
+        params.delete('from');
         const qs = params.toString();
         window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
       }
     } catch { /* URL parsing best-effort only */ }
+    if (!fromUrl){
+      const stashed = takePendingInviteCode();
+      if (stashed){ fromUrl = stashed.code; src = stashed.src; }
+    }
     if (!fromUrl) return;
     autoTried.current = true;
     const cleaned = fromUrl.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LEN);
     if (!cleaned) return;
+    setLinkSrc(src === 'waitlist' ? 'waitlist' : 'invite');
     setCode(cleaned);
     if (cleaned.length === CODE_LEN){
       setAutoStatus("Invite code from your email filled in automatically — checking it now.");
@@ -218,8 +227,23 @@ export function InviteGate({ C, onRedeemed, onBack }){
         {mode === 'code' ? (
           <>
             <div style={cardStyle}>
-              <h1 style={heading}>Marro is invite-only<span style={{color:C.marigold}}>.</span></h1>
-              <p style={sub}>Enter your invite code to get in.</p>
+              {linkSrc ? (
+                <>
+                  <h1 style={heading}>{linkSrc === 'waitlist' ? "You're off the waitlist" : "You're invited"}<span style={{color:C.marigold}}>!</span></h1>
+                  {/* Visible congrats status — the auto-fill happened with no user
+                      action, so sighted users get this box and screen-reader users
+                      get the role="status" announcement below (same information,
+                      two channels — never only one). */}
+                  <p role="presentation" style={{...sub, margin:"0 0 18", padding:"10px 12px", borderRadius:10, background:C.greenLight, border:`1px solid ${C.greenMid}`, color:C.green, fontSize:13}}>
+                    🎉 Welcome to Marro — we&apos;ve entered your invite code from the email for you.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h1 style={heading}>Marro is invite-only<span style={{color:C.marigold}}>.</span></h1>
+                  <p style={sub}>Enter your invite code to get in.</p>
+                </>
+              )}
 
               <form onSubmit={e=>{e.preventDefault(); doRedeem();}} noValidate>
                 <span id={`${uid}-code-label`} style={label}>Invite code</span>

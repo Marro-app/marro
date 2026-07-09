@@ -2,6 +2,10 @@
 
 Newest first. One line per finding: severity · what · fix.
 
+## 2026-07-08 — auth/invite flow redesign (landing modal + InviteGate)
+Verified live on localhost:3456 (signed-out surfaces): sign-up tab renders only Email/Password/Confirm (invite field removed); failed-credentials rescue link is inside the existing `role="alert"` error (announced with it), is a semantic `<button>`, and carries the email into the sign-up tab; `?invite=` deep link auto-opens the correct tab. InviteGate congrats state reuses audited theme tokens (`C.greenLight/greenMid/green` box) and keeps the dual-channel announcement (visible box + existing `role="status"` SR text). **Not yet verified in-browser: the signed-in InviteGate congrats/auto-redeem path** (needs a non-allowlisted session) — pending Vercel-preview click-test before merge.
+
+
 ## 2026-07-07 — invite codes + waitlist + admin console (new build)
 Built to spec against the project a11y rules (rule 7). `<InviteGate>` verified in a standalone in-preview render (both code + waitlist modes, mobile 375px): labeled code input + textarea, generic-error path announced via `role="alert"`, ≥44px hit targets, Back-left/primary-right button order, semantic `<button>`s, uses the theme `C` object (contrast inherits the app's audited tokens both themes). `AdminTab` + `InviteFriendsModal` built to the same rules (labeled inputs, `role="alert"` messages, `<th scope>` on tables, ambassador toggle as `role="switch"` with `aria-checked`, copy buttons `aria-label`'d) but **not yet keyboard/axe-verified in-browser** — behind the admin/signed-in gates, pending the SQL apply + a real session in the owner's Chrome. Follow-up: full keyboard + axe pass on AdminTab and the referral modal once reachable.
 

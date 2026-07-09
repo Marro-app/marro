@@ -320,23 +320,28 @@ export const redeemInviteCode = async (code) => {
 };
 
 // Pending-invite-code stash (localStorage only, no Supabase) — bridges the gap
-// between "user types a code on the sign-up form" and "user actually gets a
-// session" for paths where those two moments aren't the same tick: email/
-// password signup requires email confirmation before a session exists, and
-// Google OAuth signup is a full-page redirect. Both round-trip through this
-// key so App.jsx's gate-check effect can redeem it the next time a real
-// session shows up. Synchronous, best-effort — never throws.
+// between "user clicks an ?invite= email link" and "user actually has a
+// session at the InviteGate" for paths where those two moments aren't the
+// same tick: email/password signup requires email confirmation before a
+// session exists, Google OAuth is a full-page redirect that drops query
+// params, and password sign-in hard-reloads to a bare path. AuthModal stashes
+// the URL code on mount; InviteGate (the single redemption point) takes it.
+// `src` ('waitlist' | null) tags which email the code came from so the gate
+// can pick its congrats copy. Stored as "CODE" or "CODE|src".
+// Synchronous, best-effort — never throws.
 const PENDING_INVITE_KEY = "marro_pending_invite";
-export function stashPendingInviteCode(code){
+export function stashPendingInviteCode(code, src){
   const trimmed = (code || "").trim().toUpperCase();
   if (!trimmed) return;
-  try { localStorage.setItem(PENDING_INVITE_KEY, trimmed); } catch { /* best-effort only */ }
+  try { localStorage.setItem(PENDING_INVITE_KEY, src ? `${trimmed}|${src}` : trimmed); } catch { /* best-effort only */ }
 }
 export function takePendingInviteCode(){
   try {
     const v = localStorage.getItem(PENDING_INVITE_KEY);
     if (v) localStorage.removeItem(PENDING_INVITE_KEY);
-    return v || null;
+    if (!v) return null;
+    const [code, src] = v.split("|");
+    return code ? { code, src: src || null } : null;
   } catch { return null; }
 }
 

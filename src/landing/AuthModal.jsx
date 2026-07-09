@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { getSupabase, stashPendingInviteCode, takePendingInviteCode } from '../lib/data.js';
+import { getSupabase, stashPendingInviteCode } from '../lib/data.js';
 import { GoogleGlyph } from '../components/icons.jsx';
 import { EmailPasswordFields } from './EmailPasswordForm.jsx';
 import { RequestResetForm } from './RequestResetForm.jsx';
@@ -32,17 +32,23 @@ const FOCUSABLE_SELECTOR =
 export function AuthModal({ open, initialMode = 'signin', offline, onClose, triggerRef }){
   const [mode, setMode] = useState(initialMode);
   const [googlePending, setGooglePending] = useState(false);
-  // Only meaningful on the sign-up tab. Pre-filled from a `?invite=` URL param
-  // (deep-linked invite email — see api/_email.js's ctaButton) if present,
-  // else from anything already stashed in localStorage (e.g. the user closed
-  // the modal and reopened it). URL param wins when both exist.
-  const [inviteCode, setInviteCode] = useState(() => {
+  // "Wrong tab" rescue: when sign-in fails on credentials, EmailPasswordFields
+  // offers "New to Marro? Create an account" — switching tabs remounts the
+  // fields (key={mode}), so the typed email is carried across here.
+  const [prefillEmail, setPrefillEmail] = useState('');
+  // Deep-linked invite emails land on /?invite=CODE(&from=waitlist). There is
+  // no code field on this modal anymore (the InviteGate after sign-in is the
+  // single place a code is ever entered/redeemed) — instead, stash the code
+  // the moment the modal opens so it survives every auth path that loses the
+  // URL: Google OAuth's full-page redirect, password sign-in's hard reload to
+  // a bare path, and email-confirmation round-trips. InviteGate picks it up.
+  useEffect(() => {
     try {
-      const fromUrl = new URLSearchParams(location.search).get('invite');
-      if (fromUrl) return fromUrl.trim().toUpperCase();
+      const params = new URLSearchParams(location.search);
+      const fromUrl = params.get('invite');
+      if (fromUrl) stashPendingInviteCode(fromUrl, params.get('from') || undefined);
     } catch { /* URL parsing best-effort only */ }
-    return takePendingInviteCode() ?? '';
-  });
+  }, []);
   const dialogRef = useRef(null);
   const firstFieldRef = useRef(null);
   const headingId = useId();
@@ -101,7 +107,6 @@ export function AuthModal({ open, initialMode = 'signin', offline, onClose, trig
 
   const signInGoogle = async () => {
     setGooglePending(true);
-    if (mode === 'signup' && inviteCode) stashPendingInviteCode(inviteCode);
     const sb = await getSupabase();
     sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } });
     // Intentionally leave `googlePending` true — the browser is about to
@@ -167,8 +172,8 @@ export function AuthModal({ open, initialMode = 'signin', offline, onClose, trig
                 offline={offline}
                 autoFocusRef={firstFieldRef}
                 onForgotPassword={() => setMode('reset-request')}
-                inviteCode={inviteCode}
-                onInviteCodeChange={setInviteCode}
+                initialEmail={prefillEmail}
+                onSwitchToSignup={(email) => { setPrefillEmail(email || ''); setMode('signup'); }}
                 key={mode}
               />
 

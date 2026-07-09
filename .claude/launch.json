@@ -2,12 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "marro",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "cwd": "/Users/mohijazi/Desktop/marro",
-      "port": 3456,
-      "autoPort": false
+      "name": "marro-dev",
+      "runtimeExecutable": "zsh",
+      "runtimeArgs": ["-l", "-c", "export NVM_DIR=\"$HOME/.nvm\"; . \"$NVM_DIR/nvm.sh\"; nvm use --lts >/dev/null; npm run dev"],
+      "port": 3456
     }
   ]
 }

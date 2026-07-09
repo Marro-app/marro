@@ -1,5 +1,5 @@
 import React, { useId, useRef, useState } from 'react';
-import { getSupabase, stashPendingInviteCode } from '../lib/data.js';
+import { getSupabase } from '../lib/data.js';
 
 // Email + password sign-in/sign-up form fields — rendered inside AuthModal.jsx
 // (see that file for the modal shell: tabs live one level up there so the
@@ -62,9 +62,9 @@ function PasswordField({ id, label, value, onChange, autoComplete, error, disabl
 // it can also drive the modal's heading text) — this component only renders
 // the fields, validation, and submit/resend logic for whichever mode is
 // active.
-export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassword, inviteCode, onInviteCodeChange }){
+export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassword, initialEmail, onSwitchToSignup }){
   const uid = useId();
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(initialEmail || '');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [pending, setPending] = useState(false);
@@ -72,6 +72,11 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
   const [notice, setNotice] = useState(null); // neutral, non-error confirmations
   const [needsConfirm, setNeedsConfirm] = useState(false); // unconfirmed-email state
   const [resending, setResending] = useState(false);
+  // Failed-credentials rescue: Supabase deliberately returns the same error
+  // for "no such account" and "wrong password" (prevents email enumeration),
+  // so we can't auto-switch a new user to sign-up — instead, offer the switch
+  // as a link alongside the error and carry the typed email across.
+  const [showSignupNudge, setShowSignupNudge] = useState(false);
 
   // Inline pre-submit validation — kept minimal; Supabase's own errors after
   // submit remain the primary source of truth.
@@ -107,6 +112,7 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
     setError(null);
     setNotice(null);
     setNeedsConfirm(false);
+    setShowSignupNudge(false);
 
     if (validationError){
       setError(validationError);
@@ -121,6 +127,7 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
         if (signInErr){
           const f = friendlyError(signInErr);
           if (f.kind === 'unconfirmed') setNeedsConfirm(true);
+          if (f.kind === 'creds') setShowSignupNudge(true);
           setError(f.text);
           setPending(false);
           return;
@@ -139,7 +146,6 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
         window.location.href = window.location.pathname;
         return; // page is navigating away — leave `pending` true, no further UI updates needed
       } else {
-        if (inviteCode) stashPendingInviteCode(inviteCode);
         const { error: signUpErr } = await sb.auth.signUp({
           email,
           password,
@@ -182,7 +188,6 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
   const emailId = `${uid}-email`;
   const pwdId = `${uid}-pwd`;
   const confirmId = `${uid}-confirm`;
-  const inviteId = `${uid}-invite`;
   const disabled = offline || pending;
   const formRef = useRef(null);
   const submitForm = () => formRef.current?.requestSubmit();
@@ -234,22 +239,6 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
         />
       )}
 
-      {mode === 'signup' && (
-        <div className="lp-field">
-          <label htmlFor={inviteId}>Invite code (optional)</label>
-          <input
-            id={inviteId}
-            type="text"
-            value={inviteCode}
-            onChange={(e) => onInviteCodeChange(e.target.value)}
-            autoComplete="off"
-            autoCapitalize="characters"
-            disabled={disabled}
-            className="lp-input"
-          />
-        </div>
-      )}
-
       {validationError && (password || confirm) && (
         <div role="alert" className="lp-eperr">{validationError}</div>
       )}
@@ -262,6 +251,14 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
               {' '}
               <button type="button" className="txt-act lp-epresend" onClick={handleResend} disabled={offline || resending}>
                 {resending ? 'Sending…' : 'Resend confirmation email'}
+              </button>
+            </>
+          )}
+          {showSignupNudge && onSwitchToSignup && (
+            <>
+              {' '}New to Marro?{' '}
+              <button type="button" className="txt-act lp-epresend" onClick={() => onSwitchToSignup(email)}>
+                Create an account
               </button>
             </>
           )}
