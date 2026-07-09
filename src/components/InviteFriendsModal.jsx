@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { C } from '../lib/theme.js';
-import { Modal } from './primitives.jsx';
+import { Modal, ChoiceGroup, Paginator, usePagination } from './primitives.jsx';
+import { Icon } from './icons.jsx';
+import { radioProps } from '../lib/ui-helpers.js';
 import { myInviteQuota, myInviteCodes, generateInviteCode, revokeOwnCode, sendInviteEmail } from '../lib/data.js';
 
 // "Invite friends" — the member-facing referral surface (Settings → Invite
@@ -13,11 +15,27 @@ import { myInviteQuota, myInviteCodes, generateInviteCode, revokeOwnCode, sendIn
 
 // Status is driven by redeemed_at (durable "used" marker), never redeemed_by —
 // an account deletion can null redeemed_by but redeemed_at never changes.
+// `key` doubles as the filter-chip value below, so the visible badge and the
+// filter always agree on what counts as what (e.g. an emailed-but-not-yet-
+// redeemed code is "Assigned", not lumped into plain "Unused").
 function codeStatus(c){
-  if(c.revoked_at) return {label:"Revoked", color:C.danger, bg:C.dangerLight};
-  if(c.redeemed_at) return {label:"Used",    color:C.green,  bg:C.greenLight};
-  return {label:"Unused", color:C.blue, bg:C.blueLight};
+  if(c.revoked_at) return {key:"revoked",  label:"Revoked",  color:C.danger, bg:C.dangerLight};
+  if(c.redeemed_at) return {key:"used",     label:"Used",     color:C.green,  bg:C.greenLight};
+  if(c.bound_email) return {key:"assigned", label:"Assigned", color:C.amber,  bg:C.amberLight};
+  return {key:"unused", label:"Unused", color:C.blue, bg:C.blueLight};
 }
+
+// Filter chips shown once the list is long enough to paginate (see
+// PAGINATE_THRESHOLD below). "all" isn't a real codeStatus key — handled
+// separately in the filter predicate.
+const CODE_FILTER_OPTIONS = [
+  {key:"all",      label:"All"},
+  {key:"used",     label:"Used"},
+  {key:"unused",   label:"Unused"},
+  {key:"assigned", label:"Assigned, not used"},
+  {key:"revoked",  label:"Revoked"},
+];
+const PAGINATE_THRESHOLD = 10;
 
 function CopyBtn({value}){
   const [copied, setCopied] = useState(false);
@@ -99,11 +117,13 @@ function EmailCodeBtn({codeRow, onSent}){
   return (
     <>
       <button type="button" className="xbtn"
-        aria-label={assignedEmail ? `Resend code ${code}` : `Email code ${code}`}
-        title={assignedEmail ? "Resend this code" : "Email this code"} aria-haspopup="dialog"
+        aria-label={assignedEmail ? `Resend code ${code}, already sent to ${assignedEmail}` : `Email code ${code}`}
+        title={assignedEmail ? `Already sent to ${assignedEmail} — resend` : "Email this code"} aria-haspopup="dialog"
         onClick={openModal}
-        style={{width:32,height:32,borderRadius:16,border:`1px solid ${open?C.sel:C.border}`,background:open?C.selBg:"transparent",color:C.text,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-        <span aria-hidden="true" style={{fontSize:18,lineHeight:1}}>✉</span>
+        style={{width:32,height:32,borderRadius:16,border:`1px solid ${open?C.sel:(assignedEmail?C.greenMid:C.border)}`,background:open?C.selBg:(assignedEmail?C.greenLight:"transparent"),color:assignedEmail?C.green:C.text,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+        {assignedEmail
+          ? <Icon name="check" size={15}/>
+          : <span aria-hidden="true" style={{fontSize:18,lineHeight:1}}>✉</span>}
       </button>
       {open && assignedEmail && (
         // Already sent once — lock the recipient, ask to confirm a resend to
@@ -171,6 +191,7 @@ export function InviteFriendsModal({onClose}){
   const [busy, setBusy]     = useState(false);
   const [msg, setMsg]       = useState(null); // {text, tone:'error'|'info'}
   const [revokingCode, setRevokingCode] = useState(null);
+  const [filter, setFilter] = useState("all");
 
   const load = useCallback(async()=>{
     const [q, cs] = await Promise.all([myInviteQuota(), myInviteCodes()]);
@@ -219,6 +240,17 @@ export function InviteFriendsModal({onClose}){
     setRevokingCode(null);
   };
 
+  // Flat list until it's long enough to be a scroll problem — matches the
+  // admin console's own posture (see AdminTab.jsx's usePagination comment).
+  // Below the threshold, filtering chips would just be one more control to
+  // scan for a list you can already see in full, so they only appear once
+  // pagination kicks in.
+  const paginate = personalCodes.length > PAGINATE_THRESHOLD;
+  const changeFilter = (key) => { setFilter(key); setPage(1); };
+  const filtered = filter==="all" ? personalCodes : personalCodes.filter(c=>codeStatus(c).key===filter);
+  const {page, setPage, totalPages, pageItems} = usePagination(filtered, PAGINATE_THRESHOLD);
+  const visibleCodes = paginate ? pageItems : personalCodes;
+
   return (
     <Modal title="Invite friends" onClose={onClose} width={440}>
       <p style={{fontSize:13,color:C.textMid,lineHeight:1.5,margin:"0 0 16px"}}>
@@ -248,29 +280,51 @@ export function InviteFriendsModal({onClose}){
       )}
 
       {personalCodes.length>0 && (
-        <ul style={{listStyle:"none",margin:0,padding:0,display:"flex",flexDirection:"column",gap:8}}>
-          {personalCodes.map(c=>{
-            const st = codeStatus(c);
-            return (
-              <li key={c.code} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 12px",borderRadius:10,border:`1px solid ${C.border}`}}>
-                <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14,letterSpacing:"0.06em",color:C.text}}>{c.code}</span>
-                <span style={{fontSize:10,padding:"2px 9px",borderRadius:999,background:st.bg,color:st.color,fontWeight:600,whiteSpace:"nowrap"}}>{st.label}</span>
-                <span style={{flex:1}}/>
-                {!c.revoked_at && !c.redeemed_at && (
-                  <span style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
-                    <EmailCodeBtn codeRow={c} onSent={load}/>
-                    <CopyBtn value={c.code}/>
-                    <button type="button" className="xbtn" aria-label={`Revoke code ${c.code}`} title="Revoke code"
-                      onClick={()=>revoke(c.code)} disabled={revokingCode===c.code}
-                      style={{width:32,height:32,borderRadius:16,border:`1px solid ${C.dangerMid}`,background:"transparent",color:C.danger,cursor:revokingCode===c.code?"not-allowed":"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:11,fontWeight:600}}>
-                      {revokingCode===c.code ? "…" : "✕"}
-                    </button>
-                  </span>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+        <>
+          {paginate && (
+            <ChoiceGroup role="radiogroup" ariaLabel="Filter codes by status" style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+              {CODE_FILTER_OPTIONS.map(opt=>{
+                const on = filter===opt.key;
+                return (
+                  <button key={opt.key} type="button" {...radioProps(on)} onClick={()=>changeFilter(opt.key)}
+                    style={{fontSize:11,fontWeight:600,padding:"5px 11px",minHeight:28,borderRadius:999,border:`1px solid ${on?C.sel:C.border}`,background:on?C.selBg:"transparent",color:C.text,cursor:"pointer",whiteSpace:"nowrap"}}>
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </ChoiceGroup>
+          )}
+
+          {visibleCodes.length===0
+            ? <div style={{fontSize:12.5,color:C.gray,textAlign:"center",padding:"16px 0"}}>No codes match this filter.</div>
+            : (
+              <ul style={{listStyle:"none",margin:0,padding:0,display:"flex",flexDirection:"column",gap:8}}>
+                {visibleCodes.map(c=>{
+                  const st = codeStatus(c);
+                  return (
+                    <li key={c.code} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 12px",borderRadius:10,border:`1px solid ${C.border}`}}>
+                      <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14,letterSpacing:"0.06em",color:C.text}}>{c.code}</span>
+                      <span style={{fontSize:10,padding:"2px 9px",borderRadius:999,background:st.bg,color:st.color,fontWeight:600,whiteSpace:"nowrap"}}>{st.label}</span>
+                      <span style={{flex:1}}/>
+                      {!c.revoked_at && !c.redeemed_at && (
+                        <span style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                          <EmailCodeBtn codeRow={c} onSent={load}/>
+                          <CopyBtn value={c.code}/>
+                          <button type="button" className="xbtn" aria-label={`Revoke code ${c.code}`} title="Revoke code"
+                            onClick={()=>revoke(c.code)} disabled={revokingCode===c.code}
+                            style={{width:32,height:32,borderRadius:16,border:`1px solid ${C.dangerMid}`,background:"transparent",color:C.danger,cursor:revokingCode===c.code?"not-allowed":"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:11,fontWeight:600}}>
+                            {revokingCode===c.code ? "…" : "✕"}
+                          </button>
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+          {paginate && <Paginator idPrefix="Invite codes" page={page} totalPages={totalPages} onChange={setPage} totalCount={filtered.length} pageSize={PAGINATE_THRESHOLD}/>}
+        </>
       )}
     </Modal>
   );

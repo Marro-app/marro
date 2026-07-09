@@ -360,6 +360,7 @@ declare
   v_revoked     timestamptz;
   v_bound_email text;
   v_exists      boolean;
+  v_rec         record;
 begin
   if v_email is null or v_code = '' then
     return jsonb_build_object('status', 'invalid');
@@ -400,6 +401,34 @@ begin
 
     -- (2c) The redeemer is in now — clear them off the waitlist if present.
     delete from public.waitlist where user_id = auth.uid();
+
+    -- (2d) Auto-revoke competing invites bound to this same email — bug fix:
+    -- the same person can end up with multiple bound codes (different
+    -- ambassadors/friends each emailing them one, or an admin re-invite on
+    -- top of a member's earlier send). Once they redeem ONE, the rest are
+    -- dead weight: leaving them live would let a stray copy be redeemed by
+    -- someone else entirely (bound_email only restricts WHO can redeem, not
+    -- how many still-live codes exist for that email) and would leave the
+    -- other senders' invite slots looking "in flight" forever. Only touches
+    -- still-live (unredeemed, unrevoked) OTHER codes bound to this email —
+    -- never the one just redeemed, never anyone else's.
+    for v_rec in
+      update public.invite_codes
+         set revoked_at = now()
+       where bound_email = v_email
+         and code <> v_code
+         and redeemed_at is null
+         and revoked_at is null
+      returning owner_id, issued_by_admin, code
+    loop
+      if not coalesce(v_rec.issued_by_admin, false) then
+        perform public.notify(
+          (select email from auth.users where id = v_rec.owner_id),
+          'role',
+          'An invite code you sent was automatically revoked — that person already joined using a different invite.',
+          jsonb_build_object('code', v_rec.code));
+      end if;
+    end loop;
 
     return jsonb_build_object('status', 'ok');
   end if;

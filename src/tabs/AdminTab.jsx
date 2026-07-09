@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { C } from '../lib/theme.js';
-import { Card, SectionTitle, EmptyState, Divider, Modal, ChoiceGroup, ProgressBar } from '../components/primitives.jsx';
+import { Card, SectionTitle, EmptyState, Divider, Modal, ChoiceGroup, ProgressBar, usePagination, Paginator } from '../components/primitives.jsx';
 import { radioProps } from '../lib/ui-helpers.js';
 import { adminCall } from '../lib/data.js';
 
@@ -186,50 +186,6 @@ function SortBar({idPrefix, value, dir, onChangeValue, onToggleDir, options}) {
           <span aria-hidden="true" style={{fontSize:13, lineHeight:1, display:"inline-block", transform: dir==="asc" ? "scaleY(-1)" : "none"}}>↓</span>
         </button>
       )}
-    </div>
-  );
-}
-
-// ── Shared: pagination ────────────────────────────────────────────────────────
-// Every section list is unbounded (server caps at 500/table, but nothing
-// paginates the render) — fine for a closed beta, but the founder asked ahead
-// of it becoming a real scroll. usePagination slices a SORTED/FILTERED array
-// into PAGE_SIZE-item pages; page state is local per section (not persisted —
-// same lightweight-console posture as sort). Clamps automatically if the
-// underlying list shrinks (e.g. an admin removes rows) so `page` can never
-// point past the new last page. The control renders nothing for a
-// single-page list — no point showing "Page 1 of 1."
-const PAGE_SIZE = 20;
-function usePagination(items, pageSize = PAGE_SIZE) {
-  const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
-  const clampedPage = Math.min(page, totalPages);
-  useEffect(() => { if (page !== clampedPage) setPage(clampedPage); }, [clampedPage]); // eslint-disable-line react-hooks/exhaustive-deps
-  const start = (clampedPage - 1) * pageSize;
-  const pageItems = items.slice(start, start + pageSize);
-  return { page: clampedPage, setPage, totalPages, pageItems, start };
-}
-
-function Paginator({page, totalPages, onChange, idPrefix, totalCount, pageSize = PAGE_SIZE}) {
-  if (totalPages <= 1) return null;
-  const start = (page - 1) * pageSize + 1;
-  const end = Math.min(page * pageSize, totalCount);
-  return (
-    <div role="navigation" aria-label="Pagination" style={{display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginTop:12, paddingTop:12, borderTop:`1px solid ${C.border}`, flexWrap:"wrap"}}>
-      <span style={{fontSize:11.5, color:C.gray}}>{start}–{end} of {totalCount}</span>
-      <div style={{display:"flex", alignItems:"center", gap:8}}>
-        <button type="button" className="xbtn" onClick={()=>onChange(page-1)} disabled={page<=1}
-          aria-label={`${idPrefix}: previous page`}
-          style={{minWidth:44, minHeight:32, padding:"0 12px", borderRadius:8, border:`1px solid ${C.border}`, background:"transparent", color: page<=1 ? C.gray : C.text, cursor: page<=1 ? "not-allowed" : "pointer", fontSize:12, fontWeight:600}}>
-          Previous
-        </button>
-        <span style={{fontSize:11.5, color:C.gray, whiteSpace:"nowrap"}}>Page {page} of {totalPages}</span>
-        <button type="button" className="xbtn" onClick={()=>onChange(page+1)} disabled={page>=totalPages}
-          aria-label={`${idPrefix}: next page`}
-          style={{minWidth:44, minHeight:32, padding:"0 12px", borderRadius:8, border:`1px solid ${C.border}`, background:"transparent", color: page>=totalPages ? C.gray : C.text, cursor: page>=totalPages ? "not-allowed" : "pointer", fontSize:12, fontWeight:600}}>
-          Next
-        </button>
-      </div>
     </div>
   );
 }

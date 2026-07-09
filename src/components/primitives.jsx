@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { C } from '../lib/theme.js';
 import { Icon } from './icons.jsx';
 import { edgeFadeClass, radioProps, tabProps, yrRangeLabel } from '../lib/ui-helpers.js';
@@ -151,6 +152,47 @@ export const Banner = ({children, type="info", onClose}) => {
   );
 };
 
+// ── Shared: pagination ────────────────────────────────────────────────────────
+// usePagination slices a SORTED/FILTERED array into pageSize-item pages; page
+// state is local to whatever list uses it (not persisted). Clamps
+// automatically if the underlying list shrinks (e.g. an item is removed) so
+// `page` can never point past the new last page. Paginator renders nothing
+// for a single-page list — no point showing "Page 1 of 1."
+const DEFAULT_PAGE_SIZE = 20;
+export function usePagination(items, pageSize = DEFAULT_PAGE_SIZE) {
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const clampedPage = Math.min(page, totalPages);
+  useEffect(() => { if (page !== clampedPage) setPage(clampedPage); }, [clampedPage]); // eslint-disable-line react-hooks/exhaustive-deps
+  const start = (clampedPage - 1) * pageSize;
+  const pageItems = items.slice(start, start + pageSize);
+  return { page: clampedPage, setPage, totalPages, pageItems, start };
+}
+
+export function Paginator({page, totalPages, onChange, idPrefix, totalCount, pageSize = DEFAULT_PAGE_SIZE}) {
+  if (totalPages <= 1) return null;
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, totalCount);
+  return (
+    <div role="navigation" aria-label="Pagination" style={{display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginTop:12, paddingTop:12, borderTop:`1px solid ${C.border}`, flexWrap:"wrap"}}>
+      <span style={{fontSize:11.5, color:C.gray}}>{start}–{end} of {totalCount}</span>
+      <div style={{display:"flex", alignItems:"center", gap:8}}>
+        <button type="button" className="xbtn" onClick={()=>onChange(page-1)} disabled={page<=1}
+          aria-label={`${idPrefix}: previous page`}
+          style={{minWidth:44, minHeight:32, padding:"0 12px", borderRadius:8, border:`1px solid ${C.border}`, background:"transparent", color: page<=1 ? C.gray : C.text, cursor: page<=1 ? "not-allowed" : "pointer", fontSize:12, fontWeight:600}}>
+          Previous
+        </button>
+        <span style={{fontSize:11.5, color:C.gray, whiteSpace:"nowrap"}}>Page {page} of {totalPages}</span>
+        <button type="button" className="xbtn" onClick={()=>onChange(page+1)} disabled={page>=totalPages}
+          aria-label={`${idPrefix}: next page`}
+          style={{minWidth:44, minHeight:32, padding:"0 12px", borderRadius:8, border:`1px solid ${C.border}`, background:"transparent", color: page>=totalPages ? C.gray : C.text, cursor: page>=totalPages ? "not-allowed" : "pointer", fontSize:12, fontWeight:600}}>
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // panelClassName/scrimBg let a caller opt into a more opaque surface for a
 // modal that's stacked ON TOP OF another modal (e.g. "email this code" inside
 // Invite friends) — nesting two default `.mm` glass panels compounds their
@@ -201,7 +243,16 @@ export const Modal = ({title, onClose, children, width=440, panelClassName="mm",
       if (!modalStack.length) prevFocus && prevFocus.focus && prevFocus.focus();
     };
   },[]);
-  return (
+  // Portaled to document.body — Card's entrance animation (.mc-e / cardIn)
+  // leaves a lingering non-"none" transform on the card after it finishes
+  // (animation-fill-mode:both holds the final keyframe indefinitely), and any
+  // element with an active transform becomes a containing block for its
+  // position:fixed descendants (CSS Transforms spec). Every Modal trigger
+  // lives inside a Card, so without the portal this dialog's "fixed" overlay
+  // was actually fixed to the CARD's box, not the viewport — the scrim/blur
+  // only covered that box, letting page content above/around it show through
+  // undimmed. Portaling to body sidesteps the containing-block chain entirely.
+  return createPortal((
   <div onClick={onClose} style={{position:"fixed",inset:0,background:scrimBg||C.scrim,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(14px)",WebkitBackdropFilter:"blur(14px)",padding:16,boxSizing:"border-box"}}>
     <div ref={panelRef} role="dialog" aria-modal="true" aria-label={typeof title==="string"?title:undefined} tabIndex={-1} onClick={e=>e.stopPropagation()} className={panelClassName} style={{padding:"24px",maxWidth:width,width:"100%",maxHeight:"90vh",overflowY:"auto",outline:"none",boxSizing:"border-box"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:16}}>
@@ -212,7 +263,7 @@ export const Modal = ({title, onClose, children, width=440, panelClassName="mm",
       {children}
     </div>
   </div>
-  );
+  ), document.body);
 };
 
 export const InfoTip = ({text}) => {
