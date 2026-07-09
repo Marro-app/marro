@@ -30,7 +30,7 @@ const LandingPage = React.lazy(() => {
 });
 import { ProgramModal, ProfileModal, AvatarModal, MarroIntro, OnboardingFlow, ProgressiveSetup } from './components/onboarding.jsx';
 import { RenewalDialog, ConflictModal, QuickAddModal } from './components/modals.jsx';
-import { HIDDEN_TABS } from './lib/featureFlags.js';
+import { HIDDEN_TABS, SHOW_PHASE2_TILES } from './lib/featureFlags.js';
 import { AppContext } from './context/AppContext.js';
 // Tabs are lazy-loaded so the heavy Recharts dependency (only used by Budget/
 // Charts/Savings) and the other tab code stay OUT of the initial bundle. A
@@ -1237,11 +1237,18 @@ export function App() {
         <span style={{fontSize:11,color:C.gray,whiteSpace:"nowrap"}}>{yrRangeLabel(data.years.find(y=>y.id===ay))}</span>
       </div>
 
-      {/* ── Top metrics — slimmed to 3 (Phase 1); runway & debt fill in with Phase 2's loan model ── */}
+      {/* ── Top metrics — Runway & Debt are Phase-2 placeholders ("—", "coming in Phase 2"),
+           hidden pre-launch behind featureFlags.SHOW_PHASE2_TILES (2026-07 audit fix A3);
+           code stays, just no entry point until Phase 2's loan model lands. With only the
+           "Monthly plan" tile left, it's wrapped (rather than left as a bare flex:1 child)
+           so it doesn't stretch to fill the whole row — caps at 320px like a normal card. ── */}
       <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
-        <MetricTile label="Runway"        value="—" sub="coming in Phase 2" color={C.gray}/>
-        <MetricTile label="Monthly plan"  value={fmt(moSpend)} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/>
-        <MetricTile label="Debt"          value="—" sub="coming in Phase 2" color={C.gray}/>
+        {SHOW_PHASE2_TILES && <MetricTile label="Runway" value="—" sub="coming in Phase 2" color={C.gray}/>}
+        {SHOW_PHASE2_TILES
+          ? <MetricTile label="Monthly plan"  value={fmt(moSpend)} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/>
+          : <div style={{flex:"0 1 320px",minWidth:130}}><MetricTile label="Monthly plan"  value={fmt(moSpend)} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/></div>
+        }
+        {SHOW_PHASE2_TILES && <MetricTile label="Debt" value="—" sub="coming in Phase 2" color={C.gray}/>}
       </div>
 
       {/* ── Tabs — Weekly/Charts/Savings/Subscriptions/Categories hidden behind featureFlags.HIDDEN_TABS
