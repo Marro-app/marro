@@ -410,14 +410,24 @@ export const sendInviteEmail = async (code, toEmail, message) => {
 };
 
 // Joins (or updates) the waitlist for the current user — upsert on user_id (PK),
-// so re-submitting is idempotent. → {ok:boolean}.
+// so re-submitting is idempotent. Goes through api/join-waitlist.js (not a
+// direct client insert) so the confirmation email can actually be sent — the
+// browser never holds RESEND_API_KEY. → {ok:boolean, emailed?:boolean, error?}.
 export const joinWaitlist = async (reason) => {
   try {
     const sb = await getSupabase();
-    const {data:{user}} = await sb.auth.getUser();
-    if (!user) return {ok:false};
-    const {error} = await sb.from('waitlist').upsert({user_id:user.id, email:user.email, reason: reason || null});
-    return {ok: !error};
+    const {data:{session}} = await sb.auth.getSession();
+    const token = session?.access_token;
+    if (!token) return {ok:false};
+    const res = await fetch("/api/join-waitlist", {
+      method: "POST",
+      headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
+      body: JSON.stringify({reason: reason || null}),
+    });
+    let body = null;
+    try { body = await res.json(); } catch { /* non-JSON error body */ }
+    if (!res.ok) return {ok:false, error: body?.error || "Couldn't join the waitlist. Please try again."};
+    return {ok:true, ...body};
   } catch { return {ok:false}; }
 };
 

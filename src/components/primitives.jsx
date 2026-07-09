@@ -158,14 +158,30 @@ export const Banner = ({children, type="info", onClose}) => {
 // parent, so nested dialogs pass panelClassName="mm mm-solid" scrimBg={C.scrimStrong}
 // (see index.html's .mm-solid rule + C.scrimStrong). Defaults preserve the
 // existing look for every other (non-nested) modal in the app.
+//
+// modalStack: module-level stack of currently-open Modal instances (by a
+// per-instance object identity, not id — cheaper and avoids a counter that
+// could collide across fast mount/unmount). Nested modals each register a
+// keydown listener on `document`, so with no coordination BOTH listeners fire
+// on one Escape press: the inner modal closes (correct) AND the outer one
+// closes too (wrong — the whole stack collapses instead of popping one level).
+// Same problem for the Tab focus-trap. Gating every handler on "am I the
+// topmost modal" fixes both.
+const modalStack = [];
+
 export const Modal = ({title, onClose, children, width=440, panelClassName="mm", scrimBg}) => {
   const panelRef = React.useRef(null);
   useEffect(()=>{
+    const token = {};
+    modalStack.push(token);
+    const isTopmost = () => modalStack[modalStack.length - 1] === token;
+
     const panel = panelRef.current;
     const prevFocus = document.activeElement;
     const focusables = () => panel ? [...panel.querySelectorAll('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])')].filter(el=>!el.disabled) : [];
     (focusables()[0] || panel)?.focus();
     const onKey = (e) => {
+      if(!isTopmost()) return; // a nested modal is open on top of this one — let IT handle the key
       if(e.key==="Escape"){ e.stopPropagation(); onClose && onClose(); }
       if(e.key==="Tab"){
         const f = focusables(); if(!f.length) return;
@@ -175,12 +191,21 @@ export const Modal = ({title, onClose, children, width=440, panelClassName="mm",
       }
     };
     document.addEventListener("keydown", onKey);
-    return ()=>{ document.removeEventListener("keydown", onKey); prevFocus && prevFocus.focus && prevFocus.focus(); };
+    return ()=>{
+      document.removeEventListener("keydown", onKey);
+      const i = modalStack.indexOf(token);
+      if (i !== -1) modalStack.splice(i, 1);
+      // Only restore focus to what was focused before THIS modal opened if
+      // nothing further up the stack still owns focus (avoids yanking focus
+      // out from under a still-open parent modal when a nested one closes).
+      if (!modalStack.length) prevFocus && prevFocus.focus && prevFocus.focus();
+    };
   },[]);
   return (
-  <div onClick={onClose} style={{position:"fixed",inset:0,background:scrimBg||C.scrim,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(14px)",WebkitBackdropFilter:"blur(14px)"}}>
-    <div ref={panelRef} role="dialog" aria-modal="true" aria-label={typeof title==="string"?title:undefined} tabIndex={-1} onClick={e=>e.stopPropagation()} className={panelClassName} style={{padding:"24px",maxWidth:width,width:"calc(100% - 32px)",maxHeight:"90vh",overflowY:"auto",outline:"none"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+  <div onClick={onClose} style={{position:"fixed",inset:0,background:scrimBg||C.scrim,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(14px)",WebkitBackdropFilter:"blur(14px)",padding:16,boxSizing:"border-box"}}>
+    <div ref={panelRef} role="dialog" aria-modal="true" aria-label={typeof title==="string"?title:undefined} tabIndex={-1} onClick={e=>e.stopPropagation()} className={panelClassName} style={{padding:"24px",maxWidth:width,width:"100%",maxHeight:"90vh",overflowY:"auto",outline:"none",boxSizing:"border-box"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:16}}>
+
         <div style={{fontWeight:700,fontSize:16,color:C.text}}>{title}</div>
         <XBtn label="Close dialog" onClick={onClose} size={28} iconSize={14}/>
       </div>

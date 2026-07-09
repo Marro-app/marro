@@ -569,7 +569,7 @@ function AmbassadorProfileModal({ambassador, codes, onClose, onChanged}) {
     setActingCode(code);
     const res = await adminCall('archive_code', {code});
     if (!res || res.ok === false || res.error) setMsg({text: res?.error || "Couldn't archive that code. Please try again.", tone:"error"});
-    else if (!res.archived) setMsg({text: "That code can't be archived (only revoked codes can be).", tone:"error"});
+    else if (!res.archived) setMsg({text: "That code is already archived.", tone:"error"});
     else { setMsg(null); onChanged(); }
     setActingCode(null);
   };
@@ -626,7 +626,7 @@ function AmbassadorProfileModal({ambassador, codes, onClose, onChanged}) {
                       {actingCode===c.code ? "Revoking…" : "Revoke"}
                     </button>
                   )}
-                  {c.revoked_at && !c.archived_at && (
+                  {!c.archived_at && (
                     <button type="button" className="btn-pop" onClick={()=>archiveCode(c.code)} disabled={actingCode===c.code}
                       style={{fontSize:10.5, padding:"5px 10px", minHeight:28, borderRadius:8, border:`1px solid ${C.border}`, background:"transparent", color:C.textMid, cursor:actingCode===c.code?"not-allowed":"pointer", fontWeight:600}}>
                       {actingCode===c.code ? "Archiving…" : "Archive"}
@@ -670,6 +670,76 @@ function cmpMembers(a, b, sortBy, dir) {
   }
 }
 
+// Promote-a-member modal (bug fix: clicking a member's name previously did
+// nothing — there was no way to make an existing member an ambassador/admin
+// short of scrolling to the Ambassadors/Admins sections and re-typing their
+// email). Reuses the exact set_role/add_admin actions those sections already
+// call, so it's the same server-side path (and now the same congrats email —
+// see api/admin.js) as adding someone from those forms directly.
+function PromoteMemberModal({email, name, isAmbassador, isAdmin, onClose, onDone}) {
+  const [choice, setChoice] = useState(isAdmin ? 'admin' : 'ambassador');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const confirm = async () => {
+    setBusy(true); setErr(null);
+    const res = choice === 'admin'
+      ? await adminCall('add_admin', {email})
+      : await adminCall('set_role', {email, is_ambassador: true});
+    if (!res || res.ok === false || res.error) {
+      setErr(res?.error || "Couldn't update their role. Please try again.");
+      setBusy(false);
+      return;
+    }
+    onDone();
+  };
+
+  const canConfirm = !busy && ((choice === 'ambassador' && !isAmbassador) || (choice === 'admin' && !isAdmin));
+
+  return (
+    <Modal title={`Promote ${name || email}`} onClose={()=>{ if(!busy) onClose(); }} width={440}>
+      <div style={{fontSize:13, color:C.textMid, marginBottom:16, lineHeight:1.6}}>
+        Choose a new role for <strong style={{color:C.text}}>{email}</strong>. They&apos;ll get an email letting them know.
+      </div>
+      <ChoiceGroup role="radiogroup" ariaLabel="New role" style={{display:"flex", flexDirection:"column", gap:8, marginBottom:16}}>
+        {[
+          {v:'ambassador', label:"Ambassador", disabled:isAmbassador,
+            desc: isAmbassador ? "Already an ambassador." : "Raises their invite limit to 15 and adds them to the ambassador roster."},
+          {v:'admin', label:"Admin", disabled:isAdmin,
+            desc: isAdmin ? "Already an admin." : "Grants full access to this console — invite codes, waitlist, members, and roles."},
+        ].map(opt=>{
+          const on = choice === opt.v;
+          return (
+            <button key={opt.v} type="button" {...radioProps(on)} disabled={busy || opt.disabled}
+              onClick={()=>{ setChoice(opt.v); setErr(null); }}
+              style={{textAlign:"left", padding:"14px 16px", borderRadius:12,
+                border:`1px solid ${on ? C.sel : C.border}`,
+                background: on ? C.selBg : "transparent",
+                cursor: (busy||opt.disabled) ? "default" : "pointer", opacity: opt.disabled ? 0.55 : 1, transition:"all .15s"}}>
+              <div style={{fontSize:14, fontWeight:on?700:600, color:C.text}}>{opt.label}</div>
+              <div style={{fontSize:12, color:C.textMid, marginTop:4, lineHeight:1.5}}>{opt.desc}</div>
+            </button>
+          );
+        })}
+      </ChoiceGroup>
+
+      <InlineMsg text={err} tone="error"/>
+
+      <div style={{display:"flex", gap:8, marginTop:16}}>
+        <button type="button" className="btn-pop" disabled={busy} onClick={onClose}
+          style={{flex:1, padding:"10px", fontSize:13, fontWeight:600, border:`1px solid ${C.border}`, borderRadius:8, background:"transparent", color:C.text, cursor:busy?"default":"pointer", opacity:busy?0.6:1, minHeight:44}}>
+          Cancel
+        </button>
+        <button type="button" className="btn-fill" disabled={!canConfirm} onClick={confirm}
+          style={{flex:1, padding:"10px", fontSize:13, fontWeight:600, borderRadius:8, minHeight:44, border:"none",
+            background: canConfirm ? C.teal : C.surface, color: canConfirm ? C.bg : C.gray, cursor: canConfirm ? "pointer" : "not-allowed"}}>
+          {busy ? "Promoting…" : "Promote"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 // ── 2. Members ────────────────────────────────────────────────────────────────
 function MembersSection({members, callerEmail, onChanged}) {
   const [grantEmail, setGrantEmail] = useState("");
@@ -677,6 +747,7 @@ function MembersSection({members, callerEmail, onChanged}) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useFlashMsg();
   const [revokeEmail, setRevokeEmail] = useState(null);
+  const [promoteEmail, setPromoteEmail] = useState(null);
   const [editingNote, setEditingNote] = useState(null); // email currently being edited
   const [noteText, setNoteText] = useState("");
   const [savingNote, setSavingNote] = useState(false);
@@ -755,13 +826,16 @@ function MembersSection({members, callerEmail, onChanged}) {
                 {pageItems.map(m=>(
                   <tr key={m.email}>
                     <td style={{padding:"8px", borderBottom:`1px solid ${C.border}`}}>
-                      <div style={{display:"flex", alignItems:"center", gap:10, minWidth:0}}>
+                      <button type="button" onClick={()=>setPromoteEmail(m.email)} aria-haspopup="dialog"
+                        title={`Promote ${m.name || m.email}`}
+                        style={{display:"flex", alignItems:"center", gap:10, minWidth:0, width:"100%",
+                          border:"none", background:"transparent", padding:4, margin:-4, borderRadius:8, cursor:"pointer", textAlign:"left"}}>
                         <Avatar avatar={m.avatar} name={m.name} email={m.email} size={32}/>
                         <div style={{minWidth:0}}>
                           <div style={{fontSize:13, fontWeight:600, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{m.name || m.email}</div>
                           {m.name && <div style={{fontSize:11, color:C.gray, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis"}}>{m.email}</div>}
                         </div>
-                      </div>
+                      </button>
                     </td>
                     <td style={{padding:"8px", borderBottom:`1px solid ${C.border}`}}>
                       <span style={{display:"inline-flex", gap:4, flexWrap:"wrap"}}>
@@ -808,6 +882,16 @@ function MembersSection({members, callerEmail, onChanged}) {
         <RevokeAccessModal key={revokeEmail} email={revokeEmail} onClose={()=>setRevokeEmail(null)}
           onDone={()=>{ setRevokeEmail(null); onChanged(); }}/>
       )}
+      {promoteEmail && (() => {
+        const m = members.find(x=>x.email===promoteEmail);
+        if (!m) return null;
+        return (
+          <PromoteMemberModal key={promoteEmail} email={m.email} name={m.name}
+            isAmbassador={m.is_ambassador} isAdmin={m.is_admin}
+            onClose={()=>setPromoteEmail(null)}
+            onDone={()=>{ setPromoteEmail(null); onChanged(); }}/>
+        );
+      })()}
     </Card>
   );
 }
@@ -993,7 +1077,7 @@ function InviteCodesSection({codes, onChanged}) {
                               {revokingCode===c.code ? "Revoking…" : "Revoke"}
                             </button>
                           )}
-                          {c.revoked_at && !c.archived_at && (
+                          {!c.archived_at && (
                             <button type="button" className="btn-pop" onClick={()=>archive(c.code)} disabled={archivingCode===c.code}
                               style={{fontSize:11, padding:"6px 12px", minHeight:32, borderRadius:8, border:`1px solid ${C.border}`, background:"transparent", color:C.textMid, cursor: archivingCode===c.code ? "not-allowed" : "pointer", fontWeight:600}}>
                               {archivingCode===c.code ? "Archiving…" : "Archive"}
