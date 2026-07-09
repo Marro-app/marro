@@ -1129,6 +1129,16 @@ export function App() {
                       <Icon name="live" size={14}/>
                       Export my data
                     </button>
+                    {/* Send feedback — real mailto <a> (not a button/onClick+window.open) so it's a
+                        normal navigable link: works with Cmd/Ctrl-click, "Copy link", screen readers,
+                        and browsers that block script-initiated navigation. minHeight 44 gives a real
+                        44x44pt hit target even though sibling rows run narrower (pre-existing gap,
+                        not something this new control should regress — see CLAUDE.md rule 8). Global
+                        a:focus-visible ring (index.html) covers the visible keyboard-focus outline. */}
+                    <a href="mailto:hello@joinmarro.com?subject=Marro%20feedback" className="menu-row" onClick={()=>setSettingsOpen(false)} style={{display:"flex",alignItems:"center",gap:9,width:"100%",minHeight:44,padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",textDecoration:"none",transition:"background .15s",boxSizing:"border-box"}}>
+                      <Icon name="info" size={14}/>
+                      Send feedback
+                    </a>
                     <button className="menu-row" onClick={()=>{setSettingsOpen(false);setDeleteConfirmText("");setDeleteAccountError(null);setConfirmDeleteAccount(true);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.danger,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
                       <Icon name="subs" size={14}/>
                       Delete my account

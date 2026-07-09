@@ -84,6 +84,20 @@ const CrashFallback = () => (
     >
       Reload
     </button>
+    {/* Dead-end escape hatch: if reload doesn't fix it, a crashed app must
+        never leave the user with no way forward. Real mailto <a> (not a
+        button+window.open) so it's keyboard-reachable, works with Cmd/Ctrl-
+        click, and survives even if this boundary caught the error because
+        JS itself is in a bad state. --text/--text-dim are the same themed
+        vars the rest of this screen uses, so contrast holds in both themes;
+        underline substitutes for the app's global a:focus-visible ring in
+        case that CSS never loaded (the failure mode this screen exists for). */}
+    <div style={{fontSize:13,color:'var(--text-dim)'}}>
+      Still stuck? Email{' '}
+      <a href="mailto:hello@joinmarro.com?subject=Marro%20crash" style={{color:'var(--text)',textDecoration:'underline'}}>
+        hello@joinmarro.com
+      </a>
+    </div>
   </div>
 );
 
