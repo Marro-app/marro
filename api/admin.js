@@ -24,7 +24,7 @@ import { createClient } from '@supabase/supabase-js';
 // Side-effect-free config mirror (audit M3) — see api/_config.js for why this
 // is no longer imported from src/lib/data.js.
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './_config.js';
-import { sendEmail, inviteCodeEmail, waitlistInviteEmail } from './_email.js';
+import { sendEmail, inviteCodeEmail, waitlistInviteEmail, congratsEmail } from './_email.js';
 
 // Bounded reads so the overview payload can't blow up as the beta grows.
 const LIST_LIMIT = 500;
@@ -270,13 +270,17 @@ export default async function handler(req, res) {
       }
 
       case 'archive_code': {
-        // Hide a revoked code from the console's default view. Only revoked
-        // codes can be archived (nothing else needs hiding).
+        // Hide ANY code (unused, used, or revoked) from the console's default
+        // view — bug fix: this used to require revoked_at first, so a
+        // used/redeemed code (the vast majority of old codes, over time)
+        // could never be tidied away. Archiving is purely a console-visibility
+        // flag (archived_at) — it never touches redeemed_at/revoked_at, so it
+        // can't un-redeem a single-use code or resurrect a revoked one.
         const code = String(body.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
         if (!code) return res.status(400).json({ error: 'Missing code' });
         const { data, error } = await admin.from('invite_codes')
           .update({ archived_at: new Date().toISOString() })
-          .eq('code', code).not('revoked_at', 'is', null).is('archived_at', null)
+          .eq('code', code).is('archived_at', null)
           .select('code');
         if (error) throw error;
         return res.status(200).json({ ok: true, archived: (data && data.length) > 0 });
@@ -347,11 +351,17 @@ export default async function handler(req, res) {
           .eq('email', email);
         if (wlUpdErr) console.error('admin invite_from_waitlist: waitlist update failed', email, wlUpdErr.message);
 
-        const { ok: emailed } = await sendEmail({
+        const { ok: emailed, error: sendErr } = await sendEmail({
           to: email,
           subject: "You're off the waitlist — welcome to Marro",
           html: waitlistInviteEmail({ code }),
         });
+        // Bug fix: a failed send used to be silently discarded (only `ok` was
+        // destructured) — the console DID surface res.emailed===false to the
+        // admin, but nothing ever logged WHY it failed, making the Resend-side
+        // failure invisible outside a support conversation. Log it like every
+        // other best-effort send in this file.
+        if (!emailed) console.error('admin invite_from_waitlist: email send failed', email, sendErr);
         // No in-app notify() here: the recipient has no app access yet (they
         // haven't redeemed), so they can never sign in to see it. The email
         // (waitlistInviteEmail via Resend) IS the notification channel.
@@ -495,6 +505,18 @@ export default async function handler(req, res) {
 
         if (becameAmbassador) {
           await notify(admin, email, 'role', "You're now a Marro ambassador.");
+          // Bug 5 fix: promotion used to only post the in-app notification
+          // above, which someone can't see unless they're already signed in
+          // — there was no actual email dispatch anywhere in this path. Send
+          // the real "congratulations" email too, with the same
+          // logged-not-swallowed error handling as every other sendEmail
+          // call in this file.
+          const { ok: emailed, error: sendErr } = await sendEmail({
+            to: email,
+            subject: "You're now a Marro ambassador",
+            html: congratsEmail({ role: 'ambassador' }),
+          });
+          if (!emailed) console.error('admin set_role: ambassador congrats email failed', email, sendErr);
         } else if (limitChanged) {
           const effective = row.quota_override != null ? row.quota_override : (body.is_ambassador ? 15 : 5);
           await notify(admin, email, 'limit', `Your invite limit is now ${effective}.`);
@@ -534,6 +556,14 @@ export default async function handler(req, res) {
         const { error: wlErr } = await admin.from('waitlist').delete().eq('email', email);
         if (wlErr) console.error('admin add_admin: waitlist cleanup failed', email, wlErr.message);
         await notify(admin, email, 'admin', 'You now have admin access to Marro.');
+        // Bug 5 fix: same as set_role's ambassador branch — the in-app
+        // notification alone is invisible to someone not already signed in.
+        const { ok: emailed, error: sendErr } = await sendEmail({
+          to: email,
+          subject: "You're now a Marro admin",
+          html: congratsEmail({ role: 'admin' }),
+        });
+        if (!emailed) console.error('admin add_admin: congrats email failed', email, sendErr);
         return res.status(200).json({ ok: true });
       }
 
