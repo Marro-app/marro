@@ -55,8 +55,13 @@ export async function sendEmail({ to, subject, html, from }) {
   }
 }
 
-// Shared shell so both templates render identically. `body` is the inner HTML.
-function shell(inner) {
+// Shared shell so every template renders identically. `inner` is the body's
+// inner table rows; `footer` overrides the default "someone invited you" line
+// for templates sent to people who already have an account (waitlist
+// confirmation, ambassador/admin congrats) — that copy would be confusing
+// there since nobody "invited" them into anything new.
+function shell(inner, footer) {
+  const footerText = footer || "You're getting this because someone invited you to Marro, a financial companion for med students. If this wasn't meant for you, you can ignore it.";
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:${C.bg};">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.bg};padding:32px 12px;">
     <tr><td align="center">
@@ -67,7 +72,7 @@ function shell(inner) {
         ${inner}
         <tr><td style="padding:24px 32px 32px 32px;">
           <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:${C.muted};">
-            You're getting this because someone invited you to Marro, a financial companion for med students. If this wasn't meant for you, you can ignore it.
+            ${footerText}
           </div>
         </td></tr>
       </table>
@@ -85,9 +90,15 @@ function ctaButton(code) {
   // Deep-links straight to the sign-up screen (Nav's ?invite= handling in
   // landingShared.jsx auto-opens the modal) instead of the bare landing page.
   const href = `https://joinmarro.com/?invite=${encodeURIComponent(code)}`;
+  return ctaLink('Open Marro', href);
+}
+
+// Plain CTA button with no invite code — for emails to people who already
+// have access (congrats/status emails). Same table-cell markup as ctaButton.
+function ctaLink(label, href) {
   return `<table role="presentation" cellpadding="0" cellspacing="0"><tr>
     <td bgcolor="${C.cream}" style="background:${C.cream};border-radius:12px;">
-      <a href="${href}" style="display:inline-block;padding:12px 22px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;font-weight:700;color:${C.stage};text-decoration:none;">Open Marro</a>
+      <a href="${href}" style="display:inline-block;padding:12px 22px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;font-weight:700;color:${C.stage};text-decoration:none;">${escapeHtml(label)}</a>
     </td></tr></table>`;
 }
 
@@ -123,6 +134,43 @@ export function waitlistInviteEmail({ code }) {
     <tr><td style="padding:12px 32px 0 32px;">${codeBlock(code)}</td></tr>
     <tr><td style="padding:20px 32px 0 32px;">${ctaButton(code)}</td></tr>`;
   return shell(inner);
+}
+
+// waitlistConfirmEmail() — sent the moment someone JOINS the waitlist (bug 1:
+// this used to never fire — joining only wrote a DB row, no email). Distinct
+// from waitlistInviteEmail above, which fires later when an admin actually
+// pulls them off the waitlist with a real code. No CTA/code here — there's
+// nothing to redeem yet, just a confirmation that they're in the queue.
+export function waitlistConfirmEmail() {
+  const inner = `
+    <tr><td style="padding:8px 32px 0 32px;">
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:17px;line-height:1.5;color:${C.cream};">You're on the waitlist.</div>
+    </td></tr>
+    <tr><td style="padding:16px 32px 0 32px;">
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:${C.muted};">We'll email you the moment a spot opens up — no need to do anything else in the meantime.</div>
+    </td></tr>`;
+  return shell(inner, "You're getting this because you joined the Marro waitlist. If this wasn't you, you can ignore it.");
+}
+
+// congratsEmail({role}) — sent when a member is promoted to ambassador or
+// admin (bug 5: this used to only post an in-app notification, which a
+// promoted member has no way to see if they're not actively signed in).
+// role: 'ambassador' | 'admin'.
+export function congratsEmail({ role }) {
+  const isAdmin = role === 'admin';
+  const heading = isAdmin ? "You're now a Marro admin." : "You're now a Marro ambassador.";
+  const body = isAdmin
+    ? "You now have full access to the Marro admin console — invite codes, waitlist, members, and roles."
+    : "Your invite limit just went up to 15, and you've got a spot on the ambassador roster. Head to Settings → Invite friends to start sharing codes.";
+  const inner = `
+    <tr><td style="padding:8px 32px 0 32px;">
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:17px;line-height:1.5;color:${C.cream};">${escapeHtml(heading)}</div>
+    </td></tr>
+    <tr><td style="padding:16px 32px 0 32px;">
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:${C.muted};">${escapeHtml(body)}</div>
+    </td></tr>
+    <tr><td style="padding:20px 32px 0 32px;">${ctaLink('Open Marro', 'https://joinmarro.com/')}</td></tr>`;
+  return shell(inner, "You're getting this because your role on Marro just changed. If this wasn't you, please let us know.");
 }
 
 function escapeHtml(s) {

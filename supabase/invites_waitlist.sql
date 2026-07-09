@@ -40,8 +40,12 @@
 --     issued_by_admin: true for codes minted from the admin console
 --     (api/admin.js generate_codes) — these do NOT count against the minting
 --     admin's personal referral invites and are excluded from their "Invite
---     friends" list (audit H4). archived_at: an admin can archive a revoked
---     code to hide it from the default console view (feature request).
+--     friends" list (audit H4). archived_at: an admin can archive ANY code —
+--     unused, used, or revoked — to hide it from the default console view
+--     (feature request; originally restricted to revoked-only, widened by an
+--     admin console fix). Purely a visibility flag: it never touches
+--     redeemed_at/revoked_at, so archiving can't un-redeem a single-use code
+--     or resurrect a revoked one. See archive_code in api/admin.js.
 create table if not exists public.invite_codes (
   code             text primary key check (code = upper(code)),   -- stored UPPER, unambiguous alphabet
   owner_id         uuid not null references auth.users(id) on delete cascade,
