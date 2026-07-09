@@ -211,7 +211,12 @@ export function Paginator({page, totalPages, onChange, idPrefix, totalCount, pag
 // topmost modal" fixes both.
 const modalStack = [];
 
-export const Modal = ({title, onClose, children, width=440, panelClassName="mm", scrimBg}) => {
+// dismissible=false is for dialogs that require an explicit in-dialog choice
+// (e.g. ConflictModal) — it disables Escape-to-close, scrim-click-close, and
+// hides the XBtn close button, while keeping role="dialog", aria-modal, the
+// focus trap, and focus restore intact. Every other/default caller is
+// unaffected (dismissible defaults to true = current behavior).
+export const Modal = ({title, onClose, children, width=440, panelClassName="mm", scrimBg, dismissible=true}) => {
   const panelRef = React.useRef(null);
   useEffect(()=>{
     const token = {};
@@ -224,7 +229,7 @@ export const Modal = ({title, onClose, children, width=440, panelClassName="mm",
     (focusables()[0] || panel)?.focus();
     const onKey = (e) => {
       if(!isTopmost()) return; // a nested modal is open on top of this one — let IT handle the key
-      if(e.key==="Escape"){ e.stopPropagation(); onClose && onClose(); }
+      if(e.key==="Escape"){ if(!dismissible) return; e.stopPropagation(); onClose && onClose(); }
       if(e.key==="Tab"){
         const f = focusables(); if(!f.length) return;
         const first=f[0], last=f[f.length-1];
@@ -253,12 +258,12 @@ export const Modal = ({title, onClose, children, width=440, panelClassName="mm",
   // only covered that box, letting page content above/around it show through
   // undimmed. Portaling to body sidesteps the containing-block chain entirely.
   return createPortal((
-  <div onClick={onClose} style={{position:"fixed",inset:0,background:scrimBg||C.scrim,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(14px)",WebkitBackdropFilter:"blur(14px)",padding:16,boxSizing:"border-box"}}>
+  <div onClick={dismissible?onClose:undefined} style={{position:"fixed",inset:0,background:scrimBg||C.scrim,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(14px)",WebkitBackdropFilter:"blur(14px)",padding:16,boxSizing:"border-box"}}>
     <div ref={panelRef} role="dialog" aria-modal="true" aria-label={typeof title==="string"?title:undefined} tabIndex={-1} onClick={e=>e.stopPropagation()} className={panelClassName} style={{padding:"24px",maxWidth:width,width:"100%",maxHeight:"90vh",overflowY:"auto",outline:"none",boxSizing:"border-box"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:16}}>
 
         <div style={{fontWeight:700,fontSize:16,color:C.text}}>{title}</div>
-        <XBtn label="Close dialog" onClick={onClose} size={28} iconSize={14}/>
+        {dismissible && <XBtn label="Close dialog" onClick={onClose} size={28} iconSize={14}/>}
       </div>
       {children}
     </div>

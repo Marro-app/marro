@@ -152,6 +152,11 @@ export function WeekSelectorModal({archives, currentWeekStart, currentWeekEnd, s
 }
 
 // ── Conflict resolution modal ─────────────────────────────────────────────────
+// Built on the shared Modal primitive with dismissible=false: a conflict
+// requires an explicit local/server choice per item, so Escape and
+// scrim-click must NOT dismiss it, and there's no ✕ close button — but it
+// still gets Modal's role="dialog"/aria-modal, focus trap, and focus restore
+// (SilentUpdater.jsx looks for `[role="dialog"]` to avoid reloading mid-flow).
 export function ConflictModal({pending, data, onResolve}) {
   const [choices, setChoices] = React.useState(()=>Object.fromEntries(pending.conflicts.map(c=>[c.key,'local'])));
   const choose=(key,side)=>setChoices(p=>({...p,[key]:side}));
@@ -161,33 +166,30 @@ export function ConflictModal({pending, data, onResolve}) {
   };
   const autoCount=Object.keys(pending.mergeLocal).length+Object.keys(pending.mergeServer).length;
   return (
-    <div style={{position:'fixed',inset:0,background:C.scrim,zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:16,backdropFilter:'blur(14px)',WebkitBackdropFilter:'blur(14px)'}}>
-      <div className="mm" style={{padding:24,width:'100%',maxWidth:480,maxHeight:'90vh',overflowY:'auto'}}>
-        <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:6}}>Sync conflict</div>
-        <div style={{fontSize:13,color:C.textMid,marginBottom:18}}>
-          The same {pending.conflicts.length===1?'item was':pending.conflicts.length+' items were'} changed on two devices. Pick which version to keep.
-        </div>
-        {pending.conflicts.map(c=>(
-          <div key={c.key} style={{marginBottom:12,padding:12,borderRadius:8,background:C.surface,border:`1px solid ${C.border}`}}>
-            <div style={{fontSize:12,fontWeight:600,color:C.text,marginBottom:10}}>{conflictLabel(c.key,data)}</div>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-              {[['local','This device',c.local],['server','Other device',c.server]].map(([side,label,val])=>(
-                <button key={side} onClick={()=>choose(c.key,side)} style={{padding:'10px 8px',borderRadius:8,border:`2px solid ${choices[c.key]===side?C.teal:C.border}`,background:choices[c.key]===side?C.tealLight:'transparent',cursor:'pointer',textAlign:'left',transition:'all .15s'}}>
-                  <div style={{fontSize:10,color:C.gray,fontWeight:600,marginBottom:3,textTransform:'uppercase'}}>{label}</div>
-                  <div style={{fontSize:13,color:C.text,fontWeight:500,wordBreak:'break-word'}}>{fmtConflictVal(c.key,val,data)}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-        {autoCount>0&&<div style={{fontSize:11,color:C.gray,marginBottom:14,padding:'8px 12px',borderRadius:8,background:C.surface,border:`1px solid ${C.border}`}}>
-          {autoCount} other change{autoCount>1?'s':''} on different items will be merged automatically — no action needed.
-        </div>}
-        <button className="btn-fill" onClick={resolve} style={{width:'100%',padding:'12px',fontSize:14,fontWeight:700,border:'none',borderRadius:8,background:C.teal,color:'#fff',cursor:'pointer',marginTop:4}}>
-          Apply &amp; sync
-        </button>
+    <Modal title="Sync conflict" onClose={undefined} dismissible={false} width={480}>
+      <div style={{fontSize:13,color:C.textMid,marginBottom:18}}>
+        The same {pending.conflicts.length===1?'item was':pending.conflicts.length+' items were'} changed on two devices. Pick which version to keep.
       </div>
-    </div>
+      {pending.conflicts.map(c=>(
+        <div key={c.key} style={{marginBottom:12,padding:12,borderRadius:8,background:C.surface,border:`1px solid ${C.border}`}}>
+          <div style={{fontSize:12,fontWeight:600,color:C.text,marginBottom:10}}>{conflictLabel(c.key,data)}</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            {[['local','This device',c.local],['server','Other device',c.server]].map(([side,label,val])=>(
+              <button key={side} onClick={()=>choose(c.key,side)} style={{padding:'10px 8px',borderRadius:8,border:`2px solid ${choices[c.key]===side?C.teal:C.border}`,background:choices[c.key]===side?C.tealLight:'transparent',cursor:'pointer',textAlign:'left',transition:'all .15s'}}>
+                <div style={{fontSize:10,color:C.gray,fontWeight:600,marginBottom:3,textTransform:'uppercase'}}>{label}</div>
+                <div style={{fontSize:13,color:C.text,fontWeight:500,wordBreak:'break-word'}}>{fmtConflictVal(c.key,val,data)}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      {autoCount>0&&<div style={{fontSize:11,color:C.gray,marginBottom:14,padding:'8px 12px',borderRadius:8,background:C.surface,border:`1px solid ${C.border}`}}>
+        {autoCount} other change{autoCount>1?'s':''} on different items will be merged automatically — no action needed.
+      </div>}
+      <button className="btn-fill" onClick={resolve} style={{width:'100%',padding:'12px',fontSize:14,fontWeight:700,border:'none',borderRadius:8,background:C.teal,color:C.bg,cursor:'pointer',marginTop:4}}>
+        Apply &amp; sync
+      </button>
+    </Modal>
   );
 }
 
