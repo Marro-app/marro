@@ -86,6 +86,7 @@ export function InviteGate({ C, onRedeemed, onBack }){
   const [mounted, setMounted] = useState(false);
   const uid = useId();
   const codeErrId = `${uid}-code-err`;
+  const codeStatusId = `${uid}-code-status`;
 
   // Enhance-only entrance: a passive effect (runs after the first paint, and —
   // unlike requestAnimationFrame — is never throttled on a backgrounded tab)
@@ -96,6 +97,45 @@ export function InviteGate({ C, onRedeemed, onBack }){
   const [code, setCode] = useState('');
   const [redeeming, setRedeeming] = useState(false);
   const [redeemError, setRedeemError] = useState(null); // {text}
+  const [autoStatus, setAutoStatus] = useState(null); // sr-announced status for the ?invite= auto-fill flow
+
+  // Auto-enter invite codes from approval emails — the email CTA links to
+  // `https://joinmarro.com/?invite=<CODE>` (fixed contract with the
+  // email-sending side, mirrored in AuthModal.jsx's signup-time equivalent).
+  // Landing here with that param means the user already has a session but
+  // hasn't been let past the closed-beta gate yet — pre-fill the OTP boxes
+  // and submit for them instead of making them retype an 8-character code.
+  // Runs once on mount; a ref guard keeps StrictMode's double-invoke from
+  // submitting twice. The param is stripped from the address bar immediately
+  // so a refresh/share of the URL can't re-trigger or leak the code.
+  const autoTried = useRef(false);
+  useEffect(()=>{
+    if (autoTried.current) return;
+    let fromUrl = null;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      fromUrl = params.get('invite');
+      if (fromUrl){
+        params.delete('invite');
+        const qs = params.toString();
+        window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
+      }
+    } catch { /* URL parsing best-effort only */ }
+    if (!fromUrl) return;
+    autoTried.current = true;
+    const cleaned = fromUrl.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LEN);
+    if (!cleaned) return;
+    setCode(cleaned);
+    if (cleaned.length === CODE_LEN){
+      setAutoStatus("Invite code from your email filled in automatically — checking it now.");
+      doRedeem(cleaned);
+    } else {
+      setAutoStatus("Part of your invite code was filled in from your email — finish entering it below.");
+      // Focus the first empty box so keyboard/SR users can pick up where the link left off.
+      requestAnimationFrame(()=>{ const boxes = document.querySelectorAll('[aria-label^="Invite code character"]'); boxes[cleaned.length]?.focus(); });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
 
   const doRedeem = async (raw) => {
     const trimmed = (raw ?? code).trim().toUpperCase();
@@ -104,6 +144,7 @@ export function InviteGate({ C, onRedeemed, onBack }){
     setRedeemError(null);
     const { status } = await redeemInviteCode(trimmed);
     if (status === 'ok'){ onRedeemed(); return; } // leave `redeeming` true — the view is about to change
+    setAutoStatus(null); // let the (now more specific) error box carry the announcement instead
     if (status === 'already_used'){
       setRedeemError({ text:"That code's already been used. Ask whoever invited you for a fresh one." });
     } else if (status === 'wrong_email'){
@@ -188,10 +229,14 @@ export function InviteGate({ C, onRedeemed, onBack }){
                   onComplete={(full)=>doRedeem(full)}
                   disabled={redeeming}
                   invalid={!!redeemError}
-                  describedById={`${uid}-code-label${redeemError ? ' '+codeErrId : ''}`}
+                  describedById={`${uid}-code-label${redeemError ? ' '+codeErrId : ''}${autoStatus ? ' '+codeStatusId : ''}`}
                   C={C}
                 />
                 {redeemError && <div id={codeErrId} role="alert" style={errorBox}>{redeemError.text}</div>}
+                {/* Visually-hidden: sighted users already see the boxes fill in and the button's
+                    "Checking…" state, but this auto-fill happened with no user action, so
+                    screen-reader users need an explicit announcement of what just occurred. */}
+                {autoStatus && <div id={codeStatusId} role="status" style={{position:"absolute",width:1,height:1,overflow:"hidden",clip:"rect(0,0,0,0)"}}>{autoStatus}</div>}
 
                 <button type="submit" className="ig-primary" disabled={!codeComplete || redeeming} aria-busy={redeeming} style={primaryBtn(!codeComplete || redeeming)}>
                   {redeeming ? "Checking…" : "Redeem code"}
