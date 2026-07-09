@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { C } from '../lib/theme.js';
-import { Icon } from './icons.jsx';
+import { Icon, MarroLogo } from './icons.jsx';
 import { myNotifications, dismissNotification } from '../lib/data.js';
 
 // Global "something changed" banner — renders for ANY signed-in user (not just
@@ -33,7 +33,7 @@ export function NotificationBanner(){
   return (
     <div role="status" className="notif-banner" style={{
       position:"relative", overflow:"hidden",
-      display:"flex", gap:12, alignItems:"flex-start",
+      display:"flex", gap:12, alignItems:"center",
       padding:"14px 16px", marginBottom:16, borderRadius:12,
       background:C.glassTooltip, border:`1px solid ${C.border}`,
       backdropFilter:"blur(20px) saturate(180%)", WebkitBackdropFilter:"blur(20px) saturate(180%)",
@@ -46,13 +46,10 @@ export function NotificationBanner(){
       `}</style>
       {/* top highlight — glass depth, mirrors MetricTile */}
       <div style={{position:"absolute", left:"6%", right:"6%", top:0, height:1, background:"linear-gradient(90deg,transparent,rgba(255,255,255,0.35),transparent)", pointerEvents:"none"}}/>
-      {/* brand ring accent disc */}
-      <span aria-hidden="true" style={{flexShrink:0, width:30, height:30, borderRadius:15, background:C.blueLight, display:"inline-flex", alignItems:"center", justifyContent:"center", marginTop:1}}>
-        <svg width="17" height="17" viewBox="0 0 26 26" fill="none" stroke={C.blue} strokeWidth="1.4">
-          <g transform="translate(13,13)"><circle r="10"/><circle r="6"/><circle r="1.7" fill={C.marigold} stroke="none"/></g>
-        </svg>
-      </span>
-      <div style={{flex:1, minWidth:0, marginTop:1}}>
+      {/* Brand mark — same MarroLogo used on the login screen + invite gate (decorative;
+          the message text carries the actual information, so aria-hidden is correct here). */}
+      <MarroLogo size={30}/>
+      <div style={{flex:1, minWidth:0, textAlign:"center"}}>
         <div style={{fontSize:13, lineHeight:1.5, color:C.text, fontWeight:500}}>{current.message}</div>
         {queue.length>1 && <div style={{color:C.gray, fontSize:11, marginTop:3}}>+{queue.length-1} more</div>}
       </div>
