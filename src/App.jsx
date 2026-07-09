@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { C, applyTheme, THEMES } from './lib/theme.js';
-import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed, isAdmin, logEvent, exportUserData, exportUserDataExcel, deleteAccount, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY, takePendingInviteCode, redeemInviteCode } from './lib/data.js';
+import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed, isAdmin, logEvent, exportUserData, exportUserDataExcel, deleteAccount, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY } from './lib/data.js';
 import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
@@ -193,20 +193,11 @@ export function App() {
         // This is safe: every data table is RLS'd to their own user_id and nothing
         // below runs until they're allowed. onRedeemed() bumps gateNonce to re-run
         // this effect, which then passes the gate and boots them into the app.
-        // If a sign-up-time invite code is waiting (stashed because no session
-        // existed yet at signup — see EmailPasswordForm.jsx/AuthModal.jsx),
-        // redeem it now that a real session exists, before the allow-list
-        // check. takePendingInviteCode() removes it from storage regardless of
-        // outcome, so this only ever fires once; any failure (already_used/
-        // revoked/wrong_email/invalid/locked) just falls through to the normal
-        // isEmailAllowed() check below, same as if no code had been stashed.
-        const pendingCode = takePendingInviteCode();
-        let redeemedOk = false;
-        if(pendingCode){
-          const { status } = await redeemInviteCode(pendingCode);
-          redeemedOk = status === 'ok';
-        }
-        if(!redeemedOk && !(await isEmailAllowed())){
+        // Codes from ?invite= email links are NOT redeemed here — the InviteGate
+        // is the single redemption point (it reads the URL param or the stash
+        // from AuthModal and auto-redeems with visible congrats/error feedback,
+        // instead of a silent background attempt the user can't see fail).
+        if(!(await isEmailAllowed())){
           setAccessDenied(true);
           return;
         }

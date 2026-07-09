@@ -85,11 +85,14 @@ function codeBlock(code) {
   return `<div style="font-family:'SF Mono',SFMono-Regular,Menlo,Consolas,monospace;font-size:30px;letter-spacing:4px;font-weight:700;color:${C.cream};background:${C.bg};border-radius:12px;padding:18px 20px;text-align:center;">${escapeHtml(code)}</div>`;
 }
 
-function ctaButton(code) {
+function ctaButton(code, from) {
   // Table-cell button (Outlook ignores flex/grid). Cream fill, dark text.
   // Deep-links straight to the sign-up screen (Nav's ?invite= handling in
   // landingShared.jsx auto-opens the modal) instead of the bare landing page.
-  const href = `https://joinmarro.com/?invite=${encodeURIComponent(code)}`;
+  // `from` ('waitlist' | undefined) tags which email template the click came
+  // from so InviteGate can pick congrats copy ("off the waitlist" vs "you've
+  // been invited") — it carries no identity, just the template name.
+  const href = `https://joinmarro.com/?invite=${encodeURIComponent(code)}${from ? `&from=${encodeURIComponent(from)}` : ''}`;
   return ctaLink('Open Marro', href);
 }
 
@@ -132,7 +135,7 @@ export function waitlistInviteEmail({ code }) {
       <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:${C.muted};">Here's your invite code — enter it when you sign in:</div>
     </td></tr>
     <tr><td style="padding:12px 32px 0 32px;">${codeBlock(code)}</td></tr>
-    <tr><td style="padding:20px 32px 0 32px;">${ctaButton(code)}</td></tr>`;
+    <tr><td style="padding:20px 32px 0 32px;">${ctaButton(code, 'waitlist')}</td></tr>`;
   return shell(inner);
 }
 

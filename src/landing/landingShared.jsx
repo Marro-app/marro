@@ -50,15 +50,19 @@ export function Nav({ offline, onHoverCore }){
   const { modal, open } = useAuthModal(offline);
 
   // Deep-linked invite emails (api/_email.js's ctaButton) land on
-  // /?invite=CODE — auto-open straight into the sign-up tab instead of making
-  // the user find the button themselves. Nav is the one mount point common to
-  // every landing variant (StagedLanding/DotsLanding/LandingPage), so this is
-  // the single place to handle it. The code itself is picked up by
-  // AuthModal's own `?invite=` read on mount (see AuthModal.jsx) — this effect
-  // only needs to trigger the open.
+  // /?invite=CODE(&from=waitlist) — auto-open the auth modal instead of
+  // making the user find the button themselves. Waitlist-approval links open
+  // the LOG IN tab (those users already created an account before joining
+  // the waitlist); friend/ambassador invites open SIGN UP (usually brand-new
+  // people — and the tabs are one tap away either way). Nav is the one mount
+  // point common to every landing variant (StagedLanding/DotsLanding/
+  // LandingPage), so this is the single place to handle it. The code itself
+  // is stashed by AuthModal on mount (see AuthModal.jsx) and redeemed at the
+  // InviteGate — this effect only needs to trigger the open.
   useEffect(() => {
     try {
-      if (new URLSearchParams(location.search).get('invite')) open('signup')();
+      const params = new URLSearchParams(location.search);
+      if (params.get('invite')) open(params.get('from') === 'waitlist' ? 'signin' : 'signup')();
     } catch { /* URL parsing best-effort only */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
