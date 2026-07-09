@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { C } from '../lib/theme.js';
 import { Icon } from './icons.jsx';
@@ -274,11 +274,16 @@ export const Modal = ({title, onClose, children, width=440, panelClassName="mm",
 export const InfoTip = ({text}) => {
   const [show,setShow] = useState(false);
   const timer = React.useRef();
+  const tipId = useId();
   const open  = () => { clearTimeout(timer.current); timer.current = setTimeout(()=>setShow(true),140); };
   const close = () => { clearTimeout(timer.current); setShow(false); };
-  return <span style={{position:"relative",display:"inline-flex"}} onMouseEnter={open} onMouseLeave={close} onClick={()=>setShow(s=>!s)}>
-    <span style={{width:16,height:16,borderRadius:8,background:C.surface,color:C.gray,fontSize:9,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"help",border:`1px solid ${C.border}`}}>i</span>
-    {show && <div style={{position:"absolute",bottom:"calc(100% + 6px)",left:"50%",transform:"translateX(-50%)",transformOrigin:"bottom center",animation:"tipIn 140ms cubic-bezier(0.23,1,0.32,1)",background:C.glassTooltip,color:C.text,fontSize:11,padding:"6px 10px",borderRadius:8,whiteSpace:"normal",width:200,zIndex:999,lineHeight:1.5,boxShadow:"0 4px 16px rgba(0,0,0,0.32)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.border}`}}>{text}</div>}
+  return <span style={{position:"relative",display:"inline-flex"}}>
+    <button type="button" aria-label="More info" aria-expanded={show} aria-describedby={show?tipId:undefined}
+      className="infotip-btn"
+      onMouseEnter={open} onMouseLeave={close} onClick={()=>setShow(s=>!s)} onBlur={close}
+      onKeyDown={e=>{ if(e.key==="Escape"&&show){ e.stopPropagation(); close(); } }} // WCAG 1.4.13: tooltip dismissible without moving focus
+      style={{width:16,height:16,borderRadius:8,background:C.surface,color:C.gray,fontSize:9,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"help",border:`1px solid ${C.border}`,padding:0,margin:0,lineHeight:"normal",fontFamily:"inherit"}}>i</button>
+    {show && <div id={tipId} role="tooltip" style={{position:"absolute",bottom:"calc(100% + 6px)",left:"50%",transform:"translateX(-50%)",transformOrigin:"bottom center",animation:"tipIn 140ms cubic-bezier(0.23,1,0.32,1)",background:C.glassTooltip,color:C.text,fontSize:11,padding:"6px 10px",borderRadius:8,whiteSpace:"normal",width:200,zIndex:999,lineHeight:1.5,boxShadow:"0 4px 16px rgba(0,0,0,0.32)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.border}`}}>{text}</div>}
   </span>;
 };
 
