@@ -937,6 +937,7 @@ function InviteCodesSection({codes, onChanged}) {
   const [msg, setMsg] = useFlashMsg(); // {text, tone}
   const [revokingCode, setRevokingCode] = useState(null);
   const [archivingCode, setArchivingCode] = useState(null);
+  const [unarchivingCode, setUnarchivingCode] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [sortBy, setSortBy] = useState("created_at");
   const [sortDir, setSortDir] = useState("desc");
@@ -985,6 +986,17 @@ function InviteCodesSection({codes, onChanged}) {
       onChanged();
     }
     setArchivingCode(null);
+  };
+
+  const unarchive = async (code) => {
+    setUnarchivingCode(code); setMsg(null);
+    const res = await adminCall('unarchive_code', {code});
+    if (!res || res.ok === false || res.error) {
+      setMsg({text: res?.error || "Couldn't unarchive that code. Please try again.", tone:"error"});
+    } else {
+      onChanged();
+    }
+    setUnarchivingCode(null);
   };
 
   const archivedCount = codes.filter(c=>c.archived_at).length;
@@ -1081,6 +1093,12 @@ function InviteCodesSection({codes, onChanged}) {
                             <button type="button" className="btn-pop" onClick={()=>archive(c.code)} disabled={archivingCode===c.code}
                               style={{fontSize:11, padding:"6px 12px", minHeight:32, borderRadius:8, border:`1px solid ${C.border}`, background:"transparent", color:C.textMid, cursor: archivingCode===c.code ? "not-allowed" : "pointer", fontWeight:600}}>
                               {archivingCode===c.code ? "Archiving…" : "Archive"}
+                            </button>
+                          )}
+                          {c.archived_at && (
+                            <button type="button" className="btn-pop" onClick={()=>unarchive(c.code)} disabled={unarchivingCode===c.code}
+                              style={{fontSize:11, padding:"6px 12px", minHeight:32, borderRadius:8, border:`1px solid ${C.border}`, background:"transparent", color:C.textMid, cursor: unarchivingCode===c.code ? "not-allowed" : "pointer", fontWeight:600}}>
+                              {unarchivingCode===c.code ? "Unarchiving…" : "Unarchive"}
                             </button>
                           )}
                         </div>

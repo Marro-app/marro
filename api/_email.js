@@ -129,10 +129,10 @@ export function inviteCodeEmail({ code, message }) {
 export function waitlistInviteEmail({ code }) {
   const inner = `
     <tr><td style="padding:8px 32px 0 32px;">
-      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:17px;line-height:1.5;color:${C.cream};">You're off the waitlist — welcome to Marro.</div>
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:17px;line-height:1.5;color:${C.cream};">You're off the waitlist — welcome to Marro!</div>
     </td></tr>
     <tr><td style="padding:16px 32px 0 32px;">
-      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:${C.muted};">Here's your invite code — enter it when you sign in:</div>
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:${C.muted};">We're excited to have you join us. Here's your invite code — enter it when you sign in:</div>
     </td></tr>
     <tr><td style="padding:12px 32px 0 32px;">${codeBlock(code)}</td></tr>
     <tr><td style="padding:20px 32px 0 32px;">${ctaButton(code, 'waitlist')}</td></tr>`;

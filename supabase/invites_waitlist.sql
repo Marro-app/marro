@@ -446,12 +446,26 @@ grant execute on function public.redeem_invite_code(text) to authenticated;
 --     client would be an email-enumeration privacy leak, and the only caller
 --     that needs it is the server-side send-invite handler (which already
 --     holds the service-role key).
+--
+--     Bug fix: this used to check ONLY for an auth.users row, which
+--     revoke_access's default "keep their data" mode deliberately leaves
+--     behind (so re-granting later restores everything). That meant a
+--     revoked-but-kept account permanently blocked "Invite a friend" for
+--     that email, even though they had no access at all. Now also requires
+--     current access (mirrors is_email_allowed() in allowed_emails.sql, but
+--     keyed on an arbitrary email instead of the caller's own JWT) so a
+--     revoked account with no access reads as "no account" again.
 create or replace function public.email_has_account(p_email text)
 returns boolean
 language sql security definer set search_path = public stable
 as $$
   select exists (
     select 1 from auth.users where lower(email) = lower(coalesce(p_email, ''))
+  )
+  and (
+    exists (select 1 from public.allowed_emails where email = lower(coalesce(p_email, '')))
+    or exists (select 1 from public.admins where email = lower(coalesce(p_email, '')))
+    or exists (select 1 from public.user_roles where email = lower(coalesce(p_email, '')) and is_ambassador = true)
   );
 $$;
 revoke all on function public.email_has_account(text) from public;

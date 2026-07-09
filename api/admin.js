@@ -286,6 +286,19 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, archived: (data && data.length) > 0 });
       }
 
+      case 'unarchive_code': {
+        // Reverse of archive_code — clears the visibility flag only, same
+        // "purely cosmetic" scope (never touches redeemed_at/revoked_at).
+        const code = String(body.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (!code) return res.status(400).json({ error: 'Missing code' });
+        const { data, error } = await admin.from('invite_codes')
+          .update({ archived_at: null })
+          .eq('code', code).not('archived_at', 'is', null)
+          .select('code');
+        if (error) throw error;
+        return res.status(200).json({ ok: true, unarchived: (data && data.length) > 0 });
+      }
+
       case 'remove_from_waitlist': {
         const email = String(body.email || '').toLowerCase().trim();
         if (!email) return res.status(400).json({ error: 'Missing email' });
