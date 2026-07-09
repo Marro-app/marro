@@ -302,7 +302,7 @@ export function App() {
           const sb = await getSupabase();
           const {data:prof, error} = await sb.from("profiles").select("school").maybeSingle();
           if(!error) setProfile(prof || {school:null});
-        }catch{}
+        }catch{/* profile fetch is best-effort — school just stays unset */}
       }
       catch(e){console.error(e);setData(JSON.parse(JSON.stringify(DEFAULT_STATE)));setSyncStatus("offline");}
       setReady(true);
@@ -346,7 +346,7 @@ export function App() {
   const save = useCallback(async d => {
     const ts = Date.now();
     const json = JSON.stringify({...d, _savedAt: ts});
-    try{await window.storage.set("marro_v8",json);setFlash(true);setTimeout(()=>setFlash(false),1400);}catch{}
+    try{await window.storage.set("marro_v8",json);setFlash(true);setTimeout(()=>setFlash(false),1400);}catch{/* local persist is best-effort — cloud sync below is the durable path */}
     // If a conflict is awaiting resolution, don't overwrite cloud until resolved
     if(syncStatus==="conflict") return;
     clearTimeout(gistTimerRef.current);
@@ -1170,7 +1170,7 @@ export function App() {
       {/* ── Offline banner ── */}
       {syncStatus==="offline" && (
         <Banner type="warn">
-          <strong>You're offline</strong> — your changes are saved on this device and will sync automatically when you reconnect.
+          <strong>You&apos;re offline</strong> — your changes are saved on this device and will sync automatically when you reconnect.
         </Banner>
       )}
 
