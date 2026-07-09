@@ -456,6 +456,23 @@ export const isAdmin = async () => {
   } catch { return false; }
 };
 
+// Founder-readable usage metrics for the Admin tab's "Insights" section
+// (supabase/events.sql / a future admin_usage_metrics() RPC — see AdminTab.jsx
+// InsightsSection for the exact SQL this expects). The `events` table itself
+// is INSERT-only from the client (no SELECT policy — see events.sql), so this
+// goes through a SECURITY DEFINER RPC that checks the caller is in
+// public.admins and only then returns the aggregate counts; a non-admin or a
+// signed-out caller gets no rows back. → {signups_this_week, return_users} or
+// null if the RPC doesn't exist yet / errors / caller isn't an admin.
+export const adminUsageMetrics = async () => {
+  try {
+    const sb = await getSupabase();
+    const {data, error} = await sb.rpc('admin_usage_metrics');
+    if (error || !data) return null;
+    return Array.isArray(data) ? (data[0] || null) : data;
+  } catch { return null; }
+};
+
 // ── In-app notifications (supabase/notifications.sql) ────────────────────────
 // The "something changed" banner: when an admin action affects a user (invite
 // limit raised, ambassador granted, code revoked, someone they invited
