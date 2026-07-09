@@ -249,7 +249,7 @@ export function SavingsTab(){
               <span style={{fontSize:11,color:C.gray}}>{(data.savingsLog||[]).length} {(data.savingsLog||[]).length===1?"entry":"entries"}</span>
             </div>
             {(data.savingsLog||[]).length===0
-              ?<EmptyState>No deposits logged yet — use "Log deposit" above.</EmptyState>
+              ?<EmptyState>No deposits logged yet — use &quot;Log deposit&quot; above.</EmptyState>
               :[...(data.savingsLog||[])].sort((a,b)=>b.date.localeCompare(a.date)).map((entry,i)=>{
                   const allGoals=[...(data.stepGoals||[]),...(data.savingsGoals||[])];
                   const goal=allGoals.find(g=>g.id===entry.goalId);
