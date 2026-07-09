@@ -15,6 +15,7 @@ export const THEMES = {
     glassTooltip: "rgba(16,18,16,0.88)",    // dark glass for chart tooltips + dropdowns
     glassCard:  "rgba(246,239,221,0.07)",   // inline glass surfaces (mirrors --glass-card)
     scrim:      "rgba(0,0,0,0.65)",         // modal overlay backdrop
+    scrimStrong:"rgba(0,0,0,0.80)",         // stacked/nested modal backdrop (over another modal's own glass)
     // Selection / active states — cream, never a semantic hue (rule: selection ≠ danger)
     sel:        "rgba(246,239,221,0.75)",   // selected border
     selBg:      "rgba(246,239,221,0.14)",   // selected fill
@@ -74,6 +75,7 @@ export const THEMES = {
     glassTooltip: "rgba(250,248,242,0.94)",
     glassCard:  "rgba(255,255,255,0.42)",
     scrim:      "rgba(40,38,32,0.35)",
+    scrimStrong:"rgba(40,38,32,0.58)",      // stacked/nested modal backdrop (over another modal's own glass)
     // Selection / active states — ink on light
     sel:        "rgba(38,37,30,0.55)",
     selBg:      "rgba(38,37,30,0.08)",

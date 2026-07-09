@@ -60,7 +60,16 @@ export function App() {
   const [data, setData]         = useState(null);
   const [ready, setReady]       = useState(false);
   const [flash, setFlash]       = useState(false);
-  const [dismissed, setDismissed] = useState({});
+  // Per-event banners ("rsu_"+id, "wkrollover") are meant to reappear for the next
+  // event and are intentionally NOT persisted. The Aid tab's static "how your grant
+  // works" note ("aidnote") is a one-time tip, not tied to any event, so its
+  // dismissal alone is persisted — otherwise it silently reappears on every reload
+  // (looks "stuck"/lingering even though the user already dismissed it).
+  const AIDNOTE_DISMISSED_KEY = "marro_aidnote_dismissed";
+  const [dismissed, setDismissed] = useState(() => {
+    try { return localStorage.getItem(AIDNOTE_DISMISSED_KEY) === "1" ? { aidnote: true } : {}; }
+    catch { return {}; }
+  });
   const [syncStatus, setSyncStatus] = useState(null); // null|"syncing"|"synced"|"offline"|"conflict"
   const [pendingConflict, setPendingConflict] = useState(null);
   const [session, setSession] = useState(undefined); // undefined=restoring, null=logged out, obj=logged in
@@ -444,7 +453,10 @@ export function App() {
   },[]);
 
   const upd = d => { setData(d); save(d); };
-  const dismiss = k => setDismissed(p=>({...p,[k]:true}));
+  const dismiss = k => {
+    setDismissed(p=>({...p,[k]:true}));
+    if(k==="aidnote"){ try{ localStorage.setItem(AIDNOTE_DISMISSED_KEY,"1"); }catch{ /* best-effort only */ } }
+  };
 
   // Archive stale entries on load
   useEffect(()=>{

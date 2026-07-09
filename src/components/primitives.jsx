@@ -151,19 +151,25 @@ export const Banner = ({children, type="info", onClose}) => {
   );
 };
 
-// Module-level stack of currently-open Modal instances (by a per-instance
-// object identity, not id — cheaper and avoids a counter that could collide
-// across fast mount/unmount). Nested modals (a Modal opened from inside
-// another Modal — e.g. "Email this code" inside "Invite friends", or an
-// admin-console confirm inside a profile modal) each register a keydown
-// listener on `document`, so with no coordination BOTH listeners fire on one
-// Escape press: the inner modal closes (correct) AND the outer one closes
-// too (wrong — the whole stack collapses instead of popping one level). Same
-// problem for the Tab focus-trap: both instances fight over where focus
-// wraps. Gating every handler on "am I the topmost modal" fixes both.
+// panelClassName/scrimBg let a caller opt into a more opaque surface for a
+// modal that's stacked ON TOP OF another modal (e.g. "email this code" inside
+// Invite friends) — nesting two default `.mm` glass panels compounds their
+// blur/saturate/brightness and washes out contrast against a busy blurred
+// parent, so nested dialogs pass panelClassName="mm mm-solid" scrimBg={C.scrimStrong}
+// (see index.html's .mm-solid rule + C.scrimStrong). Defaults preserve the
+// existing look for every other (non-nested) modal in the app.
+//
+// modalStack: module-level stack of currently-open Modal instances (by a
+// per-instance object identity, not id — cheaper and avoids a counter that
+// could collide across fast mount/unmount). Nested modals each register a
+// keydown listener on `document`, so with no coordination BOTH listeners fire
+// on one Escape press: the inner modal closes (correct) AND the outer one
+// closes too (wrong — the whole stack collapses instead of popping one level).
+// Same problem for the Tab focus-trap. Gating every handler on "am I the
+// topmost modal" fixes both.
 const modalStack = [];
 
-export const Modal = ({title, onClose, children, width=440}) => {
+export const Modal = ({title, onClose, children, width=440, panelClassName="mm", scrimBg}) => {
   const panelRef = React.useRef(null);
   useEffect(()=>{
     const token = {};
@@ -196,9 +202,10 @@ export const Modal = ({title, onClose, children, width=440}) => {
     };
   },[]);
   return (
-  <div onClick={onClose} style={{position:"fixed",inset:0,background:C.scrim,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(14px)",WebkitBackdropFilter:"blur(14px)",padding:16,boxSizing:"border-box"}}>
-    <div ref={panelRef} role="dialog" aria-modal="true" aria-label={typeof title==="string"?title:undefined} tabIndex={-1} onClick={e=>e.stopPropagation()} className="mm" style={{padding:"24px",maxWidth:width,width:"100%",maxHeight:"90vh",overflowY:"auto",outline:"none",boxSizing:"border-box"}}>
+  <div onClick={onClose} style={{position:"fixed",inset:0,background:scrimBg||C.scrim,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(14px)",WebkitBackdropFilter:"blur(14px)",padding:16,boxSizing:"border-box"}}>
+    <div ref={panelRef} role="dialog" aria-modal="true" aria-label={typeof title==="string"?title:undefined} tabIndex={-1} onClick={e=>e.stopPropagation()} className={panelClassName} style={{padding:"24px",maxWidth:width,width:"100%",maxHeight:"90vh",overflowY:"auto",outline:"none",boxSizing:"border-box"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:16}}>
+
         <div style={{fontWeight:700,fontSize:16,color:C.text}}>{title}</div>
         <XBtn label="Close dialog" onClick={onClose} size={28} iconSize={14}/>
       </div>

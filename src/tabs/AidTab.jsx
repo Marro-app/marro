@@ -1,8 +1,10 @@
+import { useRef } from 'react';
 import { C } from '../lib/theme.js';
 import { fmt, fmtS, moTotal } from '../lib/format.js';
 import { Card, SectionTitle, XBtn, Pill, Banner, ScrollX } from '../components/primitives.jsx';
 import { DateField } from '../components/pickers.jsx';
 import { useApp } from '../context/AppContext.js';
+import { useEscClose } from '../lib/hooks.js';
 
 // Aid & Detail — per-year grant/cost cards + the multi-year overview table.
 // No private state: reads everything shared via useApp(). The add-year and
@@ -11,12 +13,31 @@ import { useApp } from '../context/AppContext.js';
 export function AidTab(){
   const { data, subsMo, dismissed, dismiss, setYrF, upd,
           setConfirmYearRemove, setShowAddYear, totDisburse, totSpend } = useApp();
+
+  // "How your grant works" note — was stuck showing every reload (dismissal
+  // wasn't persisted, so it looked like it never actually closed) and had no
+  // keyboard-dismiss path. dismiss() now persists this one specifically (see
+  // App.jsx); this handles Esc + keeps focus from getting lost when the note
+  // disappears out from under a focused Dismiss button.
+  const aidNoteRef = useRef(null);
+  const panelRef = useRef(null);
+  const aidNoteOpen = !dismissed["aidnote"];
+  const closeAidNote = () => {
+    const active = document.activeElement;
+    const hadFocus = !!(aidNoteRef.current && active && aidNoteRef.current.contains(active));
+    dismiss("aidnote");
+    if (hadFocus) requestAnimationFrame(() => panelRef.current?.focus());
+  };
+  useEscClose(aidNoteOpen, closeAidNote);
+
   return (
-    <div role="tabpanel" id="tab-panel" aria-labelledby="tab-aid" tabIndex={0} style={{display:"flex",flexDirection:"column",gap:16}}>
-      {!dismissed["aidnote"] && (
-        <Banner type="info" onClose={()=>dismiss("aidnote")}>
-          <strong>How your grant works:</strong> Your grant (including health insurance) − tuition & fees − health insurance = disbursed to you for living costs.
-        </Banner>
+    <div role="tabpanel" id="tab-panel" aria-labelledby="tab-aid" tabIndex={0} ref={panelRef} style={{display:"flex",flexDirection:"column",gap:16}}>
+      {aidNoteOpen && (
+        <div ref={aidNoteRef}>
+          <Banner type="info" onClose={closeAidNote}>
+            <strong>How your grant works:</strong> Your grant (including health insurance) − tuition & fees − health insurance = disbursed to you for living costs.
+          </Banner>
+        </div>
       )}
 
       {/* Per-year cards */}
