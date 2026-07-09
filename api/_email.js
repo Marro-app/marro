@@ -155,24 +155,64 @@ export function waitlistConfirmEmail() {
   return shell(inner, "You're getting this because you joined the Marro waitlist. If this wasn't you, you can ignore it.");
 }
 
+// Small uppercase role pill — "Ambassador" / "Admin" — matching the badge
+// style already used in the admin console UI (AdminTab.jsx role badges).
+// Table-cell based (not a styled <span>) so the rounded pill survives Outlook,
+// same pattern as ctaLink's button.
+function rolePill(label) {
+  return `<table role="presentation" cellpadding="0" cellspacing="0"><tr>
+    <td bgcolor="${C.gold}" style="background:${C.gold};border-radius:999px;padding:5px 12px;">
+      <span style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:${C.stage};">${escapeHtml(label)}</span>
+    </td></tr></table>`;
+}
+
+// Ambassador-only "5 → 15" invite-limit upgrade moment — the celebratory
+// stat from the approved design (mocked up + iterated with the founder:
+// simplified to one clear number jump rather than two overlapping stats,
+// no "we need you" framing — just their own impact).
+function upgradeStat() {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.bg};border-radius:10px;">
+    <tr><td align="center" style="padding:20px 16px;">
+      <div style="font-family:Newsreader,Georgia,'Times New Roman',serif;line-height:1;">
+        <span style="font-size:20px;color:${C.muted};text-decoration:line-through;">5</span>
+        <span style="font-size:18px;color:${C.muted};padding:0 10px;">&rarr;</span>
+        <span style="font-size:32px;font-weight:700;color:${C.gold};">15</span>
+      </div>
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:${C.muted};margin-top:8px;">Your invite limit just tripled</div>
+    </td></tr>
+  </table>`;
+}
+
 // congratsEmail({role}) — sent when a member is promoted to ambassador or
 // admin (bug 5: this used to only post an in-app notification, which a
 // promoted member has no way to see if they're not actively signed in).
-// role: 'ambassador' | 'admin'.
+// role: 'ambassador' | 'admin'. Ambassador leans into belonging + their own
+// impact (the invite-limit jump is the concrete, exciting part); admin leans
+// into stewardship/responsibility — a different kind of trust, not a party.
+// Design approved by the founder via mockup iteration before this shipped.
 export function congratsEmail({ role }) {
   const isAdmin = role === 'admin';
-  const heading = isAdmin ? "You're now a Marro admin." : "You're now a Marro ambassador.";
-  const body = isAdmin
-    ? "You now have full access to the Marro admin console — invite codes, waitlist, members, and roles."
-    : "Your invite limit just went up to 15, and you've got a spot on the ambassador roster. Head to Settings → Invite friends to start sharing codes.";
+  const heading = isAdmin ? "You've got a hand on the wheel now." : "Welcome to the inner circle.";
+  const bodyMain = isAdmin
+    ? "You can review the waitlist, grant access, and manage ambassadors — the decisions that shape who's part of Marro from the very start."
+    : "Marro doesn't grow without people like you — students who think med school shouldn't feel like a financial black box, and are willing to bring their friends along.";
+  const bodySecondary = isAdmin
+    ? "Marro is early. That's exactly why this matters: the choices made now about who gets in, and how it feels to join, are the ones that define what this becomes. Thank you for building it with us."
+    : "Every person you invite makes the picture clearer for the one after them — that's what actually moves this forward.";
+  const cta = isAdmin ? 'Open the admin console' : 'Invite your first friend';
   const inner = `
-    <tr><td style="padding:8px 32px 0 32px;">
-      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:17px;line-height:1.5;color:${C.cream};">${escapeHtml(heading)}</div>
+    <tr><td style="padding:16px 32px 0 32px;">${rolePill(isAdmin ? 'Admin' : 'Ambassador')}</td></tr>
+    <tr><td style="padding:14px 32px 0 32px;">
+      <div style="font-family:Newsreader,Georgia,'Times New Roman',serif;font-size:20px;line-height:1.35;color:${C.cream};">${escapeHtml(heading)}</div>
     </td></tr>
-    <tr><td style="padding:16px 32px 0 32px;">
-      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.6;color:${C.muted};">${escapeHtml(body)}</div>
+    <tr><td style="padding:12px 32px 0 32px;">
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:14.5px;line-height:1.65;color:${C.cream};">${escapeHtml(bodyMain)}</div>
     </td></tr>
-    <tr><td style="padding:20px 32px 0 32px;">${ctaLink('Open Marro', 'https://joinmarro.com/')}</td></tr>`;
+    <tr><td style="padding:10px 32px 0 32px;">
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:13.5px;line-height:1.6;color:${C.muted};">${escapeHtml(bodySecondary)}</div>
+    </td></tr>
+    ${isAdmin ? '' : `<tr><td style="padding:16px 32px 0 32px;">${upgradeStat()}</td></tr>`}
+    <tr><td style="padding:22px 32px 0 32px;">${ctaLink(cta, 'https://joinmarro.com/')}</td></tr>`;
   return shell(inner, "You're getting this because your role on Marro just changed. If this wasn't you, please let us know.");
 }
 
