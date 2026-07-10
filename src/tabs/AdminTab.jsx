@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { C } from '../lib/theme.js';
 import { Card, SectionTitle, EmptyState, Divider, Modal, ChoiceGroup, ProgressBar, usePagination, Paginator } from '../components/primitives.jsx';
 import { radioProps } from '../lib/ui-helpers.js';
-import { adminCall } from '../lib/data.js';
+import { adminCall, adminUsageMetrics } from '../lib/data.js';
 
 // Admin console — invite codes, waitlist, ambassador roster, members, and the
 // admin list itself. Visibility is gated by App.jsx (is_admin() client check);
@@ -146,6 +146,7 @@ export default function AdminTab({callerEmail}){
       {loading
         ? <Card><EmptyState>Loading admin console…</EmptyState></Card>
         : <>
+            <InsightsSection/>
             <AmbassadorsSection ambassadors={overview.ambassadors} codes={overview.codes} callerEmail={callerEmail} onChanged={load}/>
             <MembersSection members={overview.members} callerEmail={callerEmail} onChanged={load}/>
             <InviteCodesSection codes={overview.codes} onChanged={load}/>
@@ -153,6 +154,80 @@ export default function AdminTab({callerEmail}){
             <AdminsSection admins={overview.admins} onChanged={load}/>
           </>
       }
+    </div>
+  );
+}
+
+// ── 0. Insights ───────────────────────────────────────────────────────────────
+// Three founder-readable usage numbers. Loaded independently of the main
+// list_overview() fetch (own loading/error state) since it comes from a
+// different data source: a SECURITY DEFINER RPC over the `events` table
+// (supabase/events.sql), which is INSERT-only from the client and has no
+// SELECT policy for `authenticated` — the only client-safe way to read
+// aggregates over it is a SQL function that checks admin status itself and
+// returns just the aggregate counts, never raw rows. See adminUsageMetrics()
+// in src/lib/data.js for the call and the exact `admin_usage_metrics()` SQL
+// this expects (not yet added — see PR/task notes).
+//
+// "Activation" (users who completed aid entry) has no event to aggregate yet
+// — nothing in the app currently logs an aid-entry-completion event (AidTab.jsx
+// logs none today; see src/App.jsx/src/tabs/*.jsx for the full logEvent list) —
+// so it always renders as a "coming soon" tile rather than a number, per the
+// task's fallback for metrics that aren't queryable yet. It is NOT gated on
+// the RPC existing; even once admin_usage_metrics() ships, this tile stays
+// "coming soon" until that instrumentation is added elsewhere.
+function InsightsSection() {
+  const [metrics, setMetrics] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [notReady, setNotReady] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const m = await adminUsageMetrics();
+      if (!alive) return;
+      if (m) setMetrics(m); else setNotReady(true);
+      setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const nf = (n) => (typeof n === "number" && Number.isFinite(n)) ? n.toLocaleString() : null;
+
+  return (
+    <Card>
+      <SectionTitle sub="A quick read on real usage — refreshed each time you open this tab.">Insights</SectionTitle>
+      {loading
+        ? <EmptyState>Loading insights…</EmptyState>
+        : (
+          <dl style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(100%,180px),1fr))", gap:12, margin:0}}>
+            <StatTile label="Signups this week" value={nf(metrics?.signups_this_week)} sub="New accounts created in the last 7 days."/>
+            <StatTile label="Returning users" value={nf(metrics?.return_users)} sub="Active on 2 or more different days."/>
+            <StatTile label="Activation" value={null} sub="Users who completed aid entry — not tracked yet. Coming soon."/>
+          </dl>
+        )
+      }
+      {!loading && notReady && (
+        <div role="status" style={{fontSize:11.5, color:C.gray, marginTop:12, lineHeight:1.5}}>
+          Signups and returning-users counts need a small database function that hasn&apos;t been added yet — they&apos;ll show up here once it is.
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// A single stat tile: dt = label, dd = the number (or a "Coming soon" state
+// when a metric isn't available). "Coming soon" is conveyed with real text,
+// not color alone, so it reads the same to a screen reader as it does visually.
+function StatTile({label, value, sub}) {
+  const available = value != null;
+  return (
+    <div style={{border:`1px solid ${C.border}`, borderRadius:12, padding:14, display:"flex", flexDirection:"column", gap:4}}>
+      <dt style={{fontSize:11, color:C.gray, fontWeight:600, letterSpacing:"0.02em", margin:0}}>{label}</dt>
+      <dd style={{fontSize:available?24:13, fontWeight:available?700:600, color:available?C.text:C.textMid, margin:0}}>
+        {available ? value : "Coming soon"}
+      </dd>
+      {sub && <div style={{fontSize:11, color:C.gray, lineHeight:1.4}}>{sub}</div>}
     </div>
   );
 }

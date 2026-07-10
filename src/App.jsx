@@ -30,7 +30,7 @@ const LandingPage = React.lazy(() => {
 });
 import { ProgramModal, ProfileModal, AvatarModal, MarroIntro, OnboardingFlow, ProgressiveSetup } from './components/onboarding.jsx';
 import { RenewalDialog, ConflictModal, QuickAddModal } from './components/modals.jsx';
-import { HIDDEN_TABS } from './lib/featureFlags.js';
+import { HIDDEN_TABS, SHOW_PHASE2_TILES } from './lib/featureFlags.js';
 import { AppContext } from './context/AppContext.js';
 // Tabs are lazy-loaded so the heavy Recharts dependency (only used by Budget/
 // Charts/Savings) and the other tab code stay OUT of the initial bundle. A
@@ -252,8 +252,6 @@ export function App() {
         if(raw && !localStorage.getItem("marro_theme_v2")) loaded.darkMode=true;
         localStorage.setItem("marro_theme_v2","1");
         if(loaded.logo===undefined) loaded.logo=null;
-        if(!loaded.coverMonths) loaded.coverMonths={};
-        if(!loaded.monthlyDeposits) loaded.monthlyDeposits={};
         if(!loaded.stepGoals) loaded.stepGoals=JSON.parse(JSON.stringify(DEFAULT_STATE.stepGoals));
         if(loaded.stepGoals && !loaded.stepGoals.find(g=>g.id==="step3")) loaded.stepGoals.push({id:"step3",label:"Step 3",targetAmount:1000,targetDate:"2031-06-01",saved:0,monthlyContribution:0});
         if(!loaded.savingsGoals) loaded.savingsGoals=[];
@@ -304,7 +302,7 @@ export function App() {
           const sb = await getSupabase();
           const {data:prof, error} = await sb.from("profiles").select("school").maybeSingle();
           if(!error) setProfile(prof || {school:null});
-        }catch{}
+        }catch{/* profile fetch is best-effort — school just stays unset */}
       }
       catch(e){console.error(e);setData(JSON.parse(JSON.stringify(DEFAULT_STATE)));setSyncStatus("offline");}
       setReady(true);
@@ -348,7 +346,7 @@ export function App() {
   const save = useCallback(async d => {
     const ts = Date.now();
     const json = JSON.stringify({...d, _savedAt: ts});
-    try{await window.storage.set("marro_v8",json);setFlash(true);setTimeout(()=>setFlash(false),1400);}catch{}
+    try{await window.storage.set("marro_v8",json);setFlash(true);setTimeout(()=>setFlash(false),1400);}catch{/* local persist is best-effort — cloud sync below is the durable path */}
     // If a conflict is awaiting resolution, don't overwrite cloud until resolved
     if(syncStatus==="conflict") return;
     clearTimeout(gistTimerRef.current);
@@ -1131,6 +1129,16 @@ export function App() {
                       <Icon name="live" size={14}/>
                       Export my data
                     </button>
+                    {/* Send feedback — real mailto <a> (not a button/onClick+window.open) so it's a
+                        normal navigable link: works with Cmd/Ctrl-click, "Copy link", screen readers,
+                        and browsers that block script-initiated navigation. minHeight 44 gives a real
+                        44x44pt hit target even though sibling rows run narrower (pre-existing gap,
+                        not something this new control should regress — see CLAUDE.md rule 8). Global
+                        a:focus-visible ring (index.html) covers the visible keyboard-focus outline. */}
+                    <a href="mailto:hello@joinmarro.com?subject=Marro%20feedback" className="menu-row" onClick={()=>setSettingsOpen(false)} style={{display:"flex",alignItems:"center",gap:9,width:"100%",minHeight:44,padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.text,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",textDecoration:"none",transition:"background .15s",boxSizing:"border-box"}}>
+                      <Icon name="info" size={14}/>
+                      Send feedback
+                    </a>
                     <button className="menu-row" onClick={()=>{setSettingsOpen(false);setDeleteConfirmText("");setDeleteAccountError(null);setConfirmDeleteAccount(true);}} style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:"8px 10px",borderRadius:8,border:"none",background:"transparent",color:C.danger,fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left",transition:"background .15s"}}>
                       <Icon name="subs" size={14}/>
                       Delete my account
@@ -1162,7 +1170,7 @@ export function App() {
       {/* ── Offline banner ── */}
       {syncStatus==="offline" && (
         <Banner type="warn">
-          <strong>You're offline</strong> — your changes are saved on this device and will sync automatically when you reconnect.
+          <strong>You&apos;re offline</strong> — your changes are saved on this device and will sync automatically when you reconnect.
         </Banner>
       )}
 
@@ -1239,11 +1247,18 @@ export function App() {
         <span style={{fontSize:11,color:C.gray,whiteSpace:"nowrap"}}>{yrRangeLabel(data.years.find(y=>y.id===ay))}</span>
       </div>
 
-      {/* ── Top metrics — slimmed to 3 (Phase 1); runway & debt fill in with Phase 2's loan model ── */}
+      {/* ── Top metrics — Runway & Debt are Phase-2 placeholders ("—", "coming in Phase 2"),
+           hidden pre-launch behind featureFlags.SHOW_PHASE2_TILES (2026-07 audit fix A3);
+           code stays, just no entry point until Phase 2's loan model lands. With only the
+           "Monthly plan" tile left, it's wrapped (rather than left as a bare flex:1 child)
+           so it doesn't stretch to fill the whole row — caps at 320px like a normal card. ── */}
       <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
-        <MetricTile label="Runway"        value="—" sub="coming in Phase 2" color={C.gray}/>
-        <MetricTile label="Monthly plan"  value={fmt(moSpend)} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/>
-        <MetricTile label="Debt"          value="—" sub="coming in Phase 2" color={C.gray}/>
+        {SHOW_PHASE2_TILES && <MetricTile label="Runway" value="—" sub="coming in Phase 2" color={C.gray}/>}
+        {SHOW_PHASE2_TILES
+          ? <MetricTile label="Monthly plan"  value={fmt(moSpend)} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/>
+          : <div style={{flex:"0 1 320px",minWidth:130}}><MetricTile label="Monthly plan"  value={fmt(moSpend)} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/></div>
+        }
+        {SHOW_PHASE2_TILES && <MetricTile label="Debt" value="—" sub="coming in Phase 2" color={C.gray}/>}
       </div>
 
       {/* ── Tabs — Weekly/Charts/Savings/Subscriptions/Categories hidden behind featureFlags.HIDDEN_TABS

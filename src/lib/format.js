@@ -44,10 +44,7 @@ export const DEFAULT_STATE = {
   currentWeekEntries: [],
   subscriptions: [],
   monthlyRollover: {},
-  weeklyRollover: {},
   surplusBank: 0,
-  coverMonths: {},
-  monthlyDeposits: {},
   logo: null,  // legacy field (kept for sync compatibility)
   monthDisabled: {},  // {"0-Aug":["exams"], "0-Sep":["books"]} — yearId-month: disabled cat ids
   preferredName: null,

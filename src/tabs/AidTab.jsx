@@ -35,7 +35,7 @@ export function AidTab(){
       {aidNoteOpen && (
         <div ref={aidNoteRef}>
           <Banner type="info" onClose={closeAidNote}>
-            <strong>How your grant works:</strong> Your grant (including health insurance) − tuition & fees − health insurance = disbursed to you for living costs.
+            <strong>How your total aid works:</strong> Your total aid (including health insurance) − tuition & fees − health insurance = disbursed to you for living costs.
           </Banner>
         </div>
       )}
@@ -44,6 +44,7 @@ export function AidTab(){
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
         {data.years.map((y,i)=>{
           const g=Number(y.grant)||0,tf=Number(y.tuitionFees)||0,hi=Number(y.healthIns)||0;
+          const rawGap=g-tf-hi; // unfloored — negative means costs exceed aid
           const disb=Math.max(g-tf-hi,0),oth=(Number(y.otherIncome)||0)*12;
           const moD=(disb+oth)/12,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
           return (
@@ -62,7 +63,7 @@ export function AidTab(){
                 <Pill ok={moS>=0} warn={moS<0}>{fmtS(moS)}/mo</Pill>
               </div>
               {[
-                {label:"Grant (annual)",       field:"grant",       note:"includes health insurance"},
+                {label:"Total aid (annual)",   field:"grant",       note:"Includes health insurance. May include loans you'll repay — loan tracking is coming soon."},
                 {label:"Tuition & fees",            field:"tuitionFees", note:"paid directly to school"},
                 {label:"Health insurance",          field:"healthIns",   note:"school-covered, deducted from grant"},
                 {label:"Housing (monthly)",         field:null,          value:y.monthly.housing||0, note:"per month", isHousing:true},
@@ -85,6 +86,11 @@ export function AidTab(){
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{color:C.textMid}}>Disbursed/yr</span><strong style={{color:C.teal}}>{fmt(disb)}</strong></div>
                 <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid}}>Monthly spendable</span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
               </div>
+              {rawGap<0 && (
+                <div role="alert" style={{marginTop:8,padding:"10px 12px",background:C.dangerLight,border:`1px solid ${C.dangerMid}`,borderRadius:8,fontSize:12,color:C.danger,fontWeight:600}}>
+                  Your costs exceed your aid by {fmt(Math.abs(rawGap))} this year.
+                </div>
+              )}
             </Card>
           );
         })}
@@ -102,7 +108,7 @@ export function AidTab(){
         <ScrollX className="scrollx" style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead><tr>
-              {["Year","Grant","School costs","Disbursed/yr","Spendable/mo","Budget/mo","Surplus/mo","Cumulative"].map(h=>
+              {["Year","Total aid","School costs","Disbursed/yr","Spendable/mo","Budget/mo","Surplus/mo","Cumulative"].map(h=>
                 <th key={h} style={{textAlign:"left",fontSize:10,color:C.gray,padding:"6px 8px",borderBottom:`1px solid ${C.border}`,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
               )}
             </tr></thead>
@@ -111,12 +117,16 @@ export function AidTab(){
                 let cum=0;
                 return data.years.map(y=>{
                   const g=Number(y.grant)||0,tf=Number(y.tuitionFees)||0,hi=Number(y.healthIns)||0;
+                  const rawGap=g-tf-hi; // unfloored — negative means costs exceed aid
                   const disb=Math.max(g-tf-hi,0),oth=(Number(y.otherIncome)||0)*12;
                   const moD=(disb+oth)/12,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
                   cum+=moS*12;
                   return <tr key={y.id}>
                     <td style={{padding:"8px",fontWeight:600,whiteSpace:"nowrap",fontSize:11,color:C.text}}>{y.label}</td>
-                    <td style={{padding:"8px",color:C.neg,fontWeight:600}}>{g>0?fmt(g):"TBD"}</td>
+                    <td style={{padding:"8px",color:C.neg,fontWeight:600}}>
+                      {g>0?fmt(g):"TBD"}
+                      {rawGap<0 && <span title={`Costs exceed aid by ${fmt(Math.abs(rawGap))} this year`} style={{marginLeft:4,color:C.danger}} aria-label={`Warning: costs exceed aid by ${fmt(Math.abs(rawGap))} this year`}>⚠</span>}
+                    </td>
                     <td style={{padding:"8px",color:C.gray}}>{fmt(tf+hi)}</td>
                     <td style={{padding:"8px",color:C.teal,fontWeight:600}}>{fmt(disb)}</td>
                     <td style={{padding:"8px",fontWeight:600,color:C.text}}>{fmt(moD)}</td>
