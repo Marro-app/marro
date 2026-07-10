@@ -79,7 +79,7 @@ export function ChartsTab(){
               const priorColor  = priorYearsCarryover >= 0 ? C.teal : C.neg;
               return (
                 <Card>
-                  <SectionTitle>Running balance — {yr.label.split("—")[0].trim()}</SectionTitle>
+                  <SectionTitle sub="if you stay on budget">Planned surplus — {yr.label.split("—")[0].trim()}</SectionTitle>
                   <div style={{display:"flex",gap:14,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
                     {priorYearsCarryover!==0 && (
                       <div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.gray}}>

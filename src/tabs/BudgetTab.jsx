@@ -167,7 +167,7 @@ export function BudgetTab(){
               </div>
               
               {[
-                {l:"Grant disbursed to you",    v:fmt(annDisburse)+"/yr",    c:C.teal},
+                {l:"Total aid disbursed to you", v:fmt(annDisburse)+"/yr",    c:C.teal},
                 {l:"Other income",              v:fmt(annOther)+"/yr",       c:C.text},
                 {l:"Monthly spendable",         v:fmt(moSpendable)+"/mo",    c:C.teal,bold:true},
                 {l:"Monthly plan",              v:fmt(moSpend)+"/mo",        c:C.text},
@@ -179,7 +179,7 @@ export function BudgetTab(){
                 </div>
               ))}
               <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0 2px",fontSize:13,fontWeight:700}}>
-                <span>Running balance <span style={{fontSize:10,color:C.gray,fontWeight:400}}>through {MONTH_FULL[selMonth]}</span></span>
+                <span>Planned surplus <span style={{fontSize:10,color:C.gray,fontWeight:400}}>if you stay on budget · through {MONTH_FULL[selMonth]}</span></span>
                 <span style={{color:runningBalance>=0?C.teal:C.neg}}>{fmtS(runningBalance)}</span>
               </div>
               {moSurplus!==0 && (
@@ -202,7 +202,7 @@ export function BudgetTab(){
                 ))}
               </div>
               {budgetVsActual.length===0
-                ? <div style={{textAlign:"center",padding:"28px 16px",fontSize:12,color:C.textMid,border:`1px dashed ${C.borderDark}`,borderRadius:12,background:C.surface}}>No spending logged yet — use <strong>Quick add</strong> to log an expense and it'll show up here.</div>
+                ? <div style={{textAlign:"center",padding:"28px 16px",fontSize:12,color:C.textMid,border:`1px dashed ${C.borderDark}`,borderRadius:12,background:C.surface}}>No spending logged yet — use <strong>Quick add</strong> to log an expense and it&apos;ll show up here.</div>
                 : <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={budgetVsActual} barGap={3} barCategoryGap="32%" onMouseMove={barMove} onMouseLeave={()=>setBarHover(null)}>
                   <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
@@ -247,16 +247,16 @@ export function BudgetTab(){
             </Card>
 
             <Card>
-              <SectionTitle>Running balance</SectionTitle>
+              <SectionTitle sub="if you stay on budget">Planned surplus</SectionTitle>
               <div style={{fontSize:26,fontWeight:700,color:totalAccumulatedBalance>=0?C.teal:C.neg,margin:"6px 0",fontFamily:"'Newsreader',Georgia,serif"}}>{fmtS(totalAccumulatedBalance)}</div>
               <div style={{fontSize:11,color:C.gray,lineHeight:1.6}}>
                 {priorYearsCarryover!==0
                   ? <>Prior years: <strong style={{color:priorYearsCarryover>=0?C.teal:C.neg}}>{fmtS(priorYearsCarryover)}</strong> · This year so far: <strong style={{color:runningBalance>=0?C.teal:C.neg}}>{fmtS(runningBalance)}</strong></>
-                  : <>Cumulative surplus/deficit from {MONTH_FULL[0]} through {MONTH_FULL[selMonth]}.</>
+                  : <>Cumulative surplus/deficit from {MONTH_FULL[0]} through {MONTH_FULL[selMonth]}, if you stay on budget.</>
                 }
               </div>
-              {totalAccumulatedBalance>moSpendable*2 && <div style={{marginTop:8,padding:"6px 10px",background:C.greenLight,borderRadius:8,fontSize:11,color:C.green}}>You're building a healthy cushion. Consider moving some into a high-yield savings account.</div>}
-              {totalAccumulatedBalance<0 && <div style={{marginTop:8,padding:"6px 10px",background:C.negLight,borderRadius:8,fontSize:11,color:C.neg}}>You're running a cumulative deficit. Review spending or adjust your budget.</div>}
+              {totalAccumulatedBalance>moSpendable*2 && <div style={{marginTop:8,padding:"6px 10px",background:C.greenLight,borderRadius:8,fontSize:11,color:C.green}}>You&apos;re building a healthy cushion. Consider moving some into a high-yield savings account.</div>}
+              {totalAccumulatedBalance<0 && <div style={{marginTop:8,padding:"6px 10px",background:C.negLight,borderRadius:8,fontSize:11,color:C.neg}}>You&apos;re running a cumulative deficit. Review spending or adjust your budget.</div>}
             </Card>
 
             <Card>

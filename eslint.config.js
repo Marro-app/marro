@@ -3,6 +3,7 @@ import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 export default [
+  { ignores: ['dist/**'] },
   js.configs.recommended,
   {
     files: ['src/**/*.{js,jsx}'],
@@ -72,10 +73,33 @@ export default [
       globals: {
         process: 'readonly',
         console: 'readonly',
+        fetch: 'readonly',
       },
     },
     rules: {
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+    },
+  },
+  {
+    // PerfOverlay uses raw browser Performance APIs not needed anywhere
+    // else in src/ — scope them here instead of widening the global
+    // browser globals set above.
+    files: ['src/perf/PerfOverlay.jsx'],
+    languageOptions: {
+      globals: {
+        PerformanceObserver: 'readonly',
+      },
+    },
+  },
+  {
+    // dotsEngine's text-scramble effect walks the DOM with a TreeWalker,
+    // which needs the NodeFilter constant — likewise scoped rather than
+    // added to the general browser globals.
+    files: ['src/landing/dotsEngine.js'],
+    languageOptions: {
+      globals: {
+        NodeFilter: 'readonly',
+      },
     },
   },
 ];

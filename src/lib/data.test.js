@@ -9,11 +9,13 @@ const baseState = () => ({
   darkMode: false,
   logo: null,
   surplusBank: 100,
+  preferredName: 'Alex',
+  avatar: { type: 'art', style: 'buddy', color: 'marigold' },
+  program: { degree: 'MD', dual: null, phd: { field: '', institution: '' }, masters: { field: '', institution: '' }, other: { field: '', institution: '' } },
+  setupVersion: 1,
+  archivedYears: [],
   monthlyRollover: { '0-Aug': 50 },
-  monthlyDeposits: {},
   monthDisabled: {},
-  coverMonths: {},
-  weeklyRollover: {},
   years: [{
     grant: 1000, tuitionFees: 0, healthIns: 0, otherIncome: 0,
     housing: 0, housingNote: '', livingAllowance: 0, notes: '',
@@ -42,6 +44,27 @@ describe('diffStates', () => {
   it('flags a scalar edit', () => {
     const b = baseState(); const c = clone(b); c.surplusBank = 200;
     expect(diffStates(b, c)).toEqual({ surplusBank: { b: 100, c: 200 } });
+  });
+
+  it('flags identity/setup scalar edits (preferredName, avatar, program, setupVersion)', () => {
+    const b = baseState(); const c = clone(b);
+    c.preferredName = 'Sam';
+    c.avatar = { type: 'art', style: 'phase', color: 'ink' };
+    c.program = { ...c.program, dual: 'phd' };
+    c.setupVersion = 2;
+    expect(diffStates(b, c)).toEqual({
+      preferredName: { b: 'Alex', c: 'Sam' },
+      avatar: { b: { type: 'art', style: 'buddy', color: 'marigold' }, c: { type: 'art', style: 'phase', color: 'ink' } },
+      program: { b: b.program, c: c.program },
+      setupVersion: { b: 1, c: 2 },
+    });
+  });
+
+  it('flags archivedYears as a whole-array replace when a year is soft-deleted', () => {
+    const b = baseState(); const c = clone(b);
+    const removed = { id: 0, startDate: '2023-08-01', endDate: '2024-08-15' };
+    c.archivedYears = [removed];
+    expect(diffStates(b, c)).toEqual({ archivedYears: { b: [], c: [removed] } });
   });
 
   it('flags nested-map additions with a dotted key', () => {
@@ -84,6 +107,11 @@ describe('diffStates', () => {
 describe('applyChanges round-trips every diff family', () => {
   const cases = {
     'scalar edit': (c) => { c.surplusBank = 200; c.darkMode = true; },
+    'identity/setup scalar edit': (c) => {
+      c.preferredName = 'Sam'; c.avatar = { type: 'google', url: 'https://x/y.png' };
+      c.program = { ...c.program, dual: 'masters' }; c.setupVersion = 2;
+    },
+    'archivedYears replace': (c) => { c.archivedYears = [{ id: 0, startDate: '2023-08-01', endDate: '2024-08-15' }]; },
     'nested-map add + edit': (c) => { c.monthlyRollover['0-Sep'] = 25; c.monthlyRollover['0-Aug'] = 60; },
     'year field / monthly / override': (c) => {
       c.years[0].grant = 1200; c.years[0].monthly.food = 320; c.years[0].monthlyOverrides.Sep.food = 360;
@@ -160,6 +188,43 @@ describe('findConflicts', () => {
     expect(conflicts.map(c => c.key)).toEqual(['surplusBank']);
     expect(mergeLocal).toHaveProperty('darkMode');       // local-only survives
     expect(mergeServer).toHaveProperty('years[0].grant'); // server-only survives
+  });
+});
+
+// ── Real-world two-device sync scenarios (regression coverage for the fields
+// that used to be silently dropped by the merge engine). Mirrors the actual
+// production merge call in App.jsx `save()`: on a no-conflict auto-merge it
+// does `applyChanges(serverClean, mergeLocal)` — start from the server's
+// current state (which already reflects any server-only edits) and layer the
+// device's local-only changes on top. That's the pattern used below, rather
+// than a symmetric two-step merge nothing in the app actually performs. ─────
+describe('two-device merges preserve disjoint edits to the newly-tracked fields', () => {
+  it('preferredName change on device A + a budget edit on device B both survive the merge', () => {
+    const base = baseState();
+    const local = clone(base); local.preferredName = 'Sam';        // device A (this device): identity edit
+    const server = clone(base); server.years[0].monthly.food = 500; // device B: already-synced budget edit
+    const { conflicts, mergeLocal } = findConflicts(diffStates(base, local), diffStates(base, server));
+    expect(conflicts).toEqual([]);
+    const merged = applyChanges(server, mergeLocal);
+    expect(merged.preferredName).toBe('Sam');          // device A's edit survived
+    expect(merged.years[0].monthly.food).toBe(500);    // device B's edit survived
+  });
+
+  it('a year removed (archived) on device A stays recorded as removed after merging with an unrelated edit on device B', () => {
+    const base = baseState();
+    const local = clone(base);
+    const removedYear = { ...local.years[0] };
+    local.archivedYears = [removedYear];
+    local.years = [];                                   // device A: soft-deleted (archived) the only year
+    const server = clone(base); server.surplusBank = 250; // device B: unrelated edit, already on the server
+    const { conflicts, mergeLocal } = findConflicts(diffStates(base, local), diffStates(base, server));
+    expect(conflicts).toEqual([]);
+    const merged = applyChanges(server, mergeLocal);
+    // The authoritative "this year was removed" record — archivedYears — is
+    // now tracked as a scalar and merges correctly: device A's removal wins.
+    expect(merged.archivedYears).toEqual([removedYear]);
+    expect(merged.surplusBank).toBe(250);               // device B's edit survived too
+    expect(merged.years).toEqual([]);                   // the year itself is actually gone, not a ghost entry
   });
 });
 

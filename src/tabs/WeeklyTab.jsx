@@ -127,9 +127,9 @@ export function WeeklyTab(){
             const dateRaw = (cols[dateCol]||"").replace(/"/g,"").trim();
             // Accept ISO (2026-06-09), US (6/9/2026, 06-09-26), with -, / or . separators
             let dateObj = null, m;
-            if ((m = dateRaw.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/))) {
+            if ((m = dateRaw.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/))) {
               dateObj = new Date(+m[1], +m[2]-1, +m[3], 12);
-            } else if ((m = dateRaw.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})$/))) {
+            } else if ((m = dateRaw.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/))) {
               const yr = m[3].length===2 ? 2000+ +m[3] : +m[3];
               dateObj = new Date(yr, +m[1]-1, +m[2], 12);
             } else {
@@ -240,7 +240,7 @@ export function WeeklyTab(){
         <div role="tabpanel" id="tab-panel" aria-labelledby="tab-weekly" tabIndex={0} style={{display:"flex",flexDirection:"column",gap:16}}>
           {weeklyNotice && weeklyNotice.type==="info" && (
             <Banner type="info" onClose={()=>setWeeklyNotice(null)}>
-              <strong>{weeklyNotice.cat}</strong> wasn't in your {weeklyNotice.month} budget, so it's now tracked under <strong>Unbudgeted spending</strong> in the Budget tab. Tap "Add to budget" there if you want to plan for it.
+              <strong>{weeklyNotice.cat}</strong> wasn&apos;t in your {weeklyNotice.month} budget, so it&apos;s now tracked under <strong>Unbudgeted spending</strong> in the Budget tab. Tap &quot;Add to budget&quot; there if you want to plan for it.
             </Banner>
           )}
 
