@@ -166,7 +166,7 @@ export function ConflictModal({pending, data, onResolve}) {
   };
   const autoCount=Object.keys(pending.mergeLocal).length+Object.keys(pending.mergeServer).length;
   return (
-    <Modal title="Sync conflict" onClose={undefined} dismissible={false} width={480}>
+    <Modal title="Sync conflict" dismissible={false} width={480}>
       <div style={{fontSize:13,color:C.textMid,marginBottom:18}}>
         The same {pending.conflicts.length===1?'item was':pending.conflicts.length+' items were'} changed on two devices. Pick which version to keep.
       </div>

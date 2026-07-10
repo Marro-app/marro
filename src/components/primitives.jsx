@@ -211,6 +211,10 @@ export function Paginator({page, totalPages, onChange, idPrefix, totalCount, pag
 // topmost modal" fixes both.
 const modalStack = [];
 
+// NOTE: the mount effect below captures onClose/dismissible from the FIRST
+// render ([] deps — re-running it would re-push the modal-stack token and
+// re-grab focus). Callers must not change these props while a modal is open.
+//
 // dismissible=false is for dialogs that require an explicit in-dialog choice
 // (e.g. ConflictModal) — it disables Escape-to-close, scrim-click-close, and
 // hides the XBtn close button, while keeping role="dialog", aria-modal, the
@@ -229,7 +233,7 @@ export const Modal = ({title, onClose, children, width=440, panelClassName="mm",
     (focusables()[0] || panel)?.focus();
     const onKey = (e) => {
       if(!isTopmost()) return; // a nested modal is open on top of this one — let IT handle the key
-      if(e.key==="Escape"){ if(!dismissible) return; e.stopPropagation(); onClose && onClose(); }
+      if(e.key==="Escape"){ e.stopPropagation(); if(!dismissible) return; onClose && onClose(); } // topmost modal owns Escape even when non-dismissible (swallow, don't leak)
       if(e.key==="Tab"){
         const f = focusables(); if(!f.length) return;
         const first=f[0], last=f[f.length-1];

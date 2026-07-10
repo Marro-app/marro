@@ -579,7 +579,7 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
             <div style={{textAlign:"center",padding:"10px 0"}}>
               <div style={{...head,fontSize:25}} className="ob-rise">You're all set{name.trim()?`, ${name.trim()}`:""}<span style={{color:C.marigold}}>.</span></div>
               <div style={{...sub,maxWidth:280,margin:"8px auto 0"}} className="ob-rise">Next: enter your aid on the Aid &amp; Detail tab to see your monthly number.</div>
-              <button className="ob-cta ob-rise" style={{...ctaPrimary(true),marginTop:22}} onClick={()=>onDone(school)}>Go to my dashboard</button>
+              <button className="ob-cta ob-rise" style={{...ctaPrimary(true),marginTop:24}} onClick={()=>onDone(school)}>Go to my dashboard</button>
             </div>
           )}
         </div>
