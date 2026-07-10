@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { C } from '../lib/theme.js';
 import { Icon } from './icons.jsx';
@@ -211,7 +211,16 @@ export function Paginator({page, totalPages, onChange, idPrefix, totalCount, pag
 // topmost modal" fixes both.
 const modalStack = [];
 
-export const Modal = ({title, onClose, children, width=440, panelClassName="mm", scrimBg}) => {
+// NOTE: the mount effect below captures onClose/dismissible from the FIRST
+// render ([] deps — re-running it would re-push the modal-stack token and
+// re-grab focus). Callers must not change these props while a modal is open.
+//
+// dismissible=false is for dialogs that require an explicit in-dialog choice
+// (e.g. ConflictModal) — it disables Escape-to-close, scrim-click-close, and
+// hides the XBtn close button, while keeping role="dialog", aria-modal, the
+// focus trap, and focus restore intact. Every other/default caller is
+// unaffected (dismissible defaults to true = current behavior).
+export const Modal = ({title, onClose, children, width=440, panelClassName="mm", scrimBg, dismissible=true}) => {
   const panelRef = React.useRef(null);
   useEffect(()=>{
     const token = {};
@@ -224,7 +233,7 @@ export const Modal = ({title, onClose, children, width=440, panelClassName="mm",
     (focusables()[0] || panel)?.focus();
     const onKey = (e) => {
       if(!isTopmost()) return; // a nested modal is open on top of this one — let IT handle the key
-      if(e.key==="Escape"){ e.stopPropagation(); onClose && onClose(); }
+      if(e.key==="Escape"){ e.stopPropagation(); if(!dismissible) return; onClose && onClose(); } // topmost modal owns Escape even when non-dismissible (swallow, don't leak)
       if(e.key==="Tab"){
         const f = focusables(); if(!f.length) return;
         const first=f[0], last=f[f.length-1];
@@ -253,12 +262,12 @@ export const Modal = ({title, onClose, children, width=440, panelClassName="mm",
   // only covered that box, letting page content above/around it show through
   // undimmed. Portaling to body sidesteps the containing-block chain entirely.
   return createPortal((
-  <div onClick={onClose} style={{position:"fixed",inset:0,background:scrimBg||C.scrim,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(14px)",WebkitBackdropFilter:"blur(14px)",padding:16,boxSizing:"border-box"}}>
+  <div onClick={dismissible?onClose:undefined} style={{position:"fixed",inset:0,background:scrimBg||C.scrim,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,backdropFilter:"blur(14px)",WebkitBackdropFilter:"blur(14px)",padding:16,boxSizing:"border-box"}}>
     <div ref={panelRef} role="dialog" aria-modal="true" aria-label={typeof title==="string"?title:undefined} tabIndex={-1} onClick={e=>e.stopPropagation()} className={panelClassName} style={{padding:"24px",maxWidth:width,width:"100%",maxHeight:"90vh",overflowY:"auto",outline:"none",boxSizing:"border-box"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,gap:16}}>
 
         <div style={{fontWeight:700,fontSize:16,color:C.text}}>{title}</div>
-        <XBtn label="Close dialog" onClick={onClose} size={28} iconSize={14}/>
+        {dismissible && <XBtn label="Close dialog" onClick={onClose} size={28} iconSize={14}/>}
       </div>
       {children}
     </div>
@@ -269,11 +278,16 @@ export const Modal = ({title, onClose, children, width=440, panelClassName="mm",
 export const InfoTip = ({text}) => {
   const [show,setShow] = useState(false);
   const timer = React.useRef();
+  const tipId = useId();
   const open  = () => { clearTimeout(timer.current); timer.current = setTimeout(()=>setShow(true),140); };
   const close = () => { clearTimeout(timer.current); setShow(false); };
-  return <span style={{position:"relative",display:"inline-flex"}} onMouseEnter={open} onMouseLeave={close} onClick={()=>setShow(s=>!s)}>
-    <span style={{width:16,height:16,borderRadius:8,background:C.surface,color:C.gray,fontSize:9,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"help",border:`1px solid ${C.border}`}}>i</span>
-    {show && <div style={{position:"absolute",bottom:"calc(100% + 6px)",left:"50%",transform:"translateX(-50%)",transformOrigin:"bottom center",animation:"tipIn 140ms cubic-bezier(0.23,1,0.32,1)",background:C.glassTooltip,color:C.text,fontSize:11,padding:"6px 10px",borderRadius:8,whiteSpace:"normal",width:200,zIndex:999,lineHeight:1.5,boxShadow:"0 4px 16px rgba(0,0,0,0.32)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.border}`}}>{text}</div>}
+  return <span style={{position:"relative",display:"inline-flex"}}>
+    <button type="button" aria-label="More info" aria-expanded={show} aria-describedby={show?tipId:undefined}
+      className="infotip-btn"
+      onMouseEnter={open} onMouseLeave={close} onClick={()=>setShow(s=>!s)} onBlur={close}
+      onKeyDown={e=>{ if(e.key==="Escape"&&show){ e.stopPropagation(); close(); } }} // WCAG 1.4.13: tooltip dismissible without moving focus
+      style={{width:16,height:16,borderRadius:8,background:C.surface,color:C.gray,fontSize:9,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"help",border:`1px solid ${C.border}`,padding:0,margin:0,lineHeight:"normal",fontFamily:"inherit"}}>i</button>
+    {show && <div id={tipId} role="tooltip" style={{position:"absolute",bottom:"calc(100% + 6px)",left:"50%",transform:"translateX(-50%)",transformOrigin:"bottom center",animation:"tipIn 140ms cubic-bezier(0.23,1,0.32,1)",background:C.glassTooltip,color:C.text,fontSize:11,padding:"6px 10px",borderRadius:8,whiteSpace:"normal",width:200,zIndex:999,lineHeight:1.5,boxShadow:"0 4px 16px rgba(0,0,0,0.32)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.border}`}}>{text}</div>}
   </span>;
 };
 

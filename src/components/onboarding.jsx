@@ -368,7 +368,7 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
     // catch-up path in ProgressiveSetup below) — fire once, here only.
     if(firstRun) logEvent('setup_finished', {});
     setStep(5);
-    setTimeout(()=>onDone(school), 1500);
+    setSaving(false);
   };
 
   const cta = {width:"100%",padding:"13px 16px",borderRadius:12,border:"none",fontSize:14.5,fontWeight:600,cursor:"pointer",letterSpacing:"-0.01em"};
@@ -577,9 +577,9 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
 
           {step===5 && (
             <div style={{textAlign:"center",padding:"10px 0"}}>
-              <div style={{marginBottom:16}}><MarroIntro size={300}/></div>
               <div style={{...head,fontSize:25}} className="ob-rise">You're all set{name.trim()?`, ${name.trim()}`:""}<span style={{color:C.marigold}}>.</span></div>
-              <div style={{...sub,maxWidth:280,margin:"8px auto 0"}} className="ob-rise">Opening your dashboard…</div>
+              <div style={{...sub,maxWidth:280,margin:"8px auto 0"}} className="ob-rise">Next: enter your aid on the Aid &amp; Detail tab to see your monthly number.</div>
+              <button className="ob-cta ob-rise" style={{...ctaPrimary(true),marginTop:24}} onClick={()=>onDone(school)}>Go to my dashboard</button>
             </div>
           )}
         </div>

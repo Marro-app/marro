@@ -2,6 +2,11 @@
 
 Newest first. One line per finding: severity · what · fix.
 
+## 2026-07-09 — audit Track B: ConflictModal + InfoTip (branch `ethan/audit-experience-fixes`)
+- **High · ConflictModal had no dialog semantics** (hand-rolled overlay: no `role="dialog"`/`aria-modal`, no focus trap/restore, invisible to SilentUpdater's open-dialog check) → rebuilt on the shared `Modal` primitive with new `dismissible={false}` (Escape/scrim/✕ disabled — conflict requires an explicit choice — semantics kept). Filled button text `#fff` → `C.bg`. Verified live on localhost:3456 via isolated mock mount: `[role="dialog"]` + `aria-modal` present, Tab trap wraps (6 tabs → back to first control), Escape leaves it open, visible focus ring, both-themes screenshots.
+- **High · InfoTip was a `<span onClick>`** (keyboard/SR-invisible) → real `<button type="button">` with `aria-label`/`aria-expanded`/`aria-describedby` → `role="tooltip"`, native Enter/Space, close-on-blur, Escape-to-dismiss (WCAG 1.4.13), 44×44pt hit-slop via new `.infotip-btn::after` (visual 16px unchanged). Verified live: semantics + 44px hit area + focus ring confirmed; call sites unchanged.
+- Known gap (pre-existing, all modals): the year-undo toast (`App.jsx`, z 1200) sits above `Modal`'s z 1000 — flagged in PR #20 for a z-index policy decision, not special-cased here.
+
 ## 2026-07-08 — auth/invite flow redesign (landing modal + InviteGate)
 Verified live on localhost:3456 (signed-out surfaces): sign-up tab renders only Email/Password/Confirm (invite field removed); failed-credentials rescue link is inside the existing `role="alert"` error (announced with it), is a semantic `<button>`, and carries the email into the sign-up tab; `?invite=` deep link auto-opens the correct tab. InviteGate congrats state reuses audited theme tokens (`C.greenLight/greenMid/green` box) and keeps the dual-channel announcement (visible box + existing `role="status"` SR text). **Not yet verified in-browser: the signed-in InviteGate congrats/auto-redeem path** (needs a non-allowlisted session) — pending Vercel-preview click-test before merge.
 

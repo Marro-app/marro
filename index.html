@@ -235,6 +235,13 @@
      even where the visible circle doesn't reach — no layout/visual change. */
   .xbtn { position: relative; }
   .xbtn::after { content: ""; position: absolute; inset: -8px; }
+  /* InfoTip "i" trigger: real <button> so it's keyboard-focusable, but the
+     visible circle must stay a tiny 16px dot inline with text. Strip native
+     button chrome so it looks identical to the old <span>, then use the same
+     ::after hit-slop technique as .xbtn to reach Apple's 44x44pt minimum
+     without growing the visible circle. */
+  .infotip-btn { position: relative; appearance: none; -webkit-appearance: none; }
+  .infotip-btn::after { content: ""; position: absolute; inset: -14px; }
   @media (hover: hover) and (pointer: fine) {
     .xbtn:hover:not(:disabled) { background: var(--input-bg); color: var(--text); transform: scale(1.08); }
     .xbtn-danger:hover:not(:disabled) { color: var(--xbtn-danger, currentColor); }
