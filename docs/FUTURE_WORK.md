@@ -59,6 +59,7 @@ Both items below require the **Supabase service-role key behind a server functio
 - [ ] CSV import: remember per-merchant category corrections (extend `autoCategory` with learned map in state).
 - [ ] Browse-weeks modal: show entry count next to each archived week's total.
 - [ ] Bloom state currently triggers only from "Log deposit" — also trigger when a weekly exams entry overflows a goal to fully funded.
+- [ ] **Mobile landing is missing 2 of the desktop's 8 scenes** (logged 2026-07-09) — `DotsLanding.jsx`'s `sectionContent()` only covers 6 sections (cases 0–5), while the desktop `scenes.jsx` theater has 8 (`SCENE_TICKS`). Missing on mobile: the "Log expenses in seconds" demo (desktop scene 4, the animated `LogList`) and "Medical school milestones" (desktop scene 6). Noting, not fixing — needs a deliberate pass to either add the missing two sections to `sectionContent()` or confirm the trim was intentional for mobile length/performance.
 
 ## Pre-public-launch (Phase 2.5b → before non-WCM testers)
 - ✓ **Google OAuth consent verification** — done 2026-07-05. Custom auth domain, real app logo, verification approved, published out of Testing mode (no more 100-user cap or "unverified app" warning).

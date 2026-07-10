@@ -98,6 +98,7 @@ function sectionContent(index, offline){
         <h2 data-p>Your numbers <em className="lp-acc">stay yours.</em></h2>
         <p className="lp-body">We never sell your personal info. Your budget is private to your account. Details in our <a href="/privacy.html" style={{ color: 'var(--lp-cream63)' }}>Privacy Policy</a>.</p>
         <h2 data-p style={{ marginTop: 22, fontSize: 'clamp(1.35rem,5.5vw,1.9rem)' }}><em className="lp-acc">Free</em> for medical students.</h2>
+        <p className="lp-body">Marro is invite-only during early access — have your invite code ready, or join the waitlist.</p>
         <div className="lp-cta">
           <GetStartedCTA offline={offline} align="center" />
         </div>

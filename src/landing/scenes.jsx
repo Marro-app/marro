@@ -93,6 +93,7 @@ function GetStarted({ GetStartedCTA }){
       <h2>Your numbers stay yours.</h2>
       <p className="lp-body">We never sell your personal info. Your budget is private to your account. Details in our <a href="/privacy.html" style={{ color: 'var(--lp-cream63)' }}>Privacy Policy</a>.</p>
       <h2 style={{ marginTop: 28 }}><em className="lp-serif lp-acc">Free</em> for medical students.</h2>
+      <p className="lp-body">Marro is invite-only during early access — have your invite code ready, or join the waitlist.</p>
       <div className="lp-cta">
         <GetStartedCTA />
       </div>
@@ -192,6 +193,7 @@ export function SrArticle(){
       <h2>Your numbers stay yours.</h2>
       <p>We never sell your personal info. Your budget is private to your account. Details in our Privacy Policy.</p>
       <p>Free for medical students. Made for MD and DO students, at any school.</p>
+      <p>Marro is invite-only during early access — have your invite code ready, or join the waitlist.</p>
     </article>
   );
 }
