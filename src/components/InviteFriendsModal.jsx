@@ -105,7 +105,7 @@ function EmailCodeBtn({codeRow, onSent}){
       onSent?.();
       closeTimer.current = setTimeout(()=>{ setOpen(false); setMsg(null); closeTimer.current = null; }, 1500);
     } else {
-      setMsg({text: res.error || "Couldn't send that email. Please try again.", tone:"error"});
+      setMsg({text: res.error || "We couldn't send that email. Your invite code is still good — try again, or copy the code and share it yourself.", tone:"error"});
     }
   };
 

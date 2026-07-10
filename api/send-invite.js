@@ -129,7 +129,12 @@ export default async function handler(req, res) {
     await admin.from('invite_email_log').insert({ sender_id: callerId, to_email: toEmail, code });
 
     if (!emailed) {
-      return res.status(502).json({ error: sendErr || 'Email could not be sent. Please try again.' });
+      // The code itself is still fine here — the send failed before anything
+      // about the code changed. Say so, and point at the copy-code fallback
+      // that's already rendered right next to this button, so the user isn't
+      // just told "try again" with no other option in view.
+      const reason = sendErr || 'Email could not be sent.';
+      return res.status(502).json({ error: `${reason} Your invite code is still good — try again, or copy the code and share it yourself.` });
     }
 
     // Bind the code to this recipient (first send) / refresh the last-sent
@@ -145,6 +150,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true });
   } catch (e) {
     console.error('send-invite: action failed', e?.message);
-    return res.status(500).json({ error: 'Something went wrong. Please try again.' });
+    return res.status(500).json({ error: 'Something went wrong. Your invite code is still good — try again, or copy the code and share it yourself.' });
   }
 }
