@@ -24,7 +24,7 @@ import { createClient } from '@supabase/supabase-js';
 // Side-effect-free config mirror (audit M3) — see api/_config.js for why this
 // is no longer imported from src/lib/data.js.
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './_config.js';
-import { sendEmail, inviteCodeEmail, waitlistInviteEmail, congratsEmail } from './_email.js';
+import { sendEmail, inviteCodeEmail, waitlistInviteEmail, congratsEmail, countEmailUsage, EMAIL_CAPS } from './_email.js';
 
 // Bounded reads so the overview payload can't blow up as the beta grows.
 const LIST_LIMIT = 500;
@@ -364,10 +364,11 @@ export default async function handler(req, res) {
           .eq('email', email);
         if (wlUpdErr) console.error('admin invite_from_waitlist: waitlist update failed', email, wlUpdErr.message);
 
-        const { ok: emailed, error: sendErr } = await sendEmail({
+        const { ok: emailed, error: sendErr, rateLimited } = await sendEmail({
           to: email,
           subject: "You're off the waitlist — welcome to Marro",
           html: waitlistInviteEmail({ code }),
+          type: 'waitlist_invite',
         });
         // Bug fix: a failed send used to be silently discarded (only `ok` was
         // destructured) — the console DID surface res.emailed===false to the
@@ -379,7 +380,11 @@ export default async function handler(req, res) {
         // haven't redeemed), so they can never sign in to see it. The email
         // (waitlistInviteEmail via Resend) IS the notification channel.
 
-        return res.status(200).json({ ok: true, code, emailed, reinvite });
+        // `email_error` lets the console say WHY the email was skipped (e.g.
+        // the plan-level cap in _email.js) next to the mint-succeeded state,
+        // instead of a generic "failed to send". The invite itself is intact:
+        // the code is minted + bound, so re-inviting later just re-sends it.
+        return res.status(200).json({ ok: true, code, emailed, reinvite, ...(emailed ? {} : { email_error: sendErr, rate_limited: !!rateLimited }) });
       }
 
       case 'grant_access': {
@@ -528,6 +533,7 @@ export default async function handler(req, res) {
             to: email,
             subject: "You're now a Marro ambassador",
             html: congratsEmail({ role: 'ambassador' }),
+            type: 'congrats',
           });
           if (!emailed) console.error('admin set_role: ambassador congrats email failed', email, sendErr);
         } else if (limitChanged) {
@@ -575,6 +581,7 @@ export default async function handler(req, res) {
           to: email,
           subject: "You're now a Marro admin",
           html: congratsEmail({ role: 'admin' }),
+          type: 'congrats',
         });
         if (!emailed) console.error('admin add_admin: congrats email failed', email, sendErr);
         return res.status(200).json({ ok: true });
@@ -590,6 +597,25 @@ export default async function handler(req, res) {
         const { error } = await admin.from('admins').delete().eq('email', email);
         if (error) throw error;
         return res.status(200).json({ ok: true });
+      }
+
+      case 'email_usage': {
+        // Founder visibility into the Resend plan quota without opening the
+        // Resend dashboard: sends in the trailing 24h + current calendar
+        // month (from email_send_log) vs our soft caps and the plan's real
+        // limits. Read-only; feeds the AdminTab Insights tiles.
+        const usage = await countEmailUsage(admin);
+        if (!usage) return res.status(200).json({ ok: true, available: false });
+        return res.status(200).json({
+          ok: true,
+          available: true,
+          day: usage.day,
+          month: usage.month,
+          day_cap: EMAIL_CAPS.day,
+          month_cap: EMAIL_CAPS.month,
+          plan_day_limit: 100,
+          plan_month_limit: 3000,
+        });
       }
 
       default:

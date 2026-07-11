@@ -83,6 +83,7 @@ export default async function handler(req, res) {
       to: email,
       subject: "You're on the Marro waitlist",
       html: waitlistConfirmEmail(),
+      type: 'waitlist_confirm',
     });
     if (!emailed) {
       // Non-fatal — they're on the waitlist either way — but this MUST be

@@ -120,11 +120,23 @@ export default async function handler(req, res) {
       return res.status(429).json({ error: "You've sent a lot of invite emails today — try again tomorrow." });
     }
 
-    const { ok: emailed, error: sendErr } = await sendEmail({
+    const { ok: emailed, error: sendErr, rateLimited } = await sendEmail({
       to: toEmail,
       subject: "You're invited to Marro",
       html: inviteCodeEmail({ code, message }),
+      type: 'invite',
     });
+
+    // Plan-level cap (all of Marro, not this sender — see EMAIL_CAPS in
+    // _email.js). Same shape as the send-failure copy below: nothing is lost,
+    // the code stays unused/unbound so the exact same send can be retried.
+    // Return BEFORE the invite_email_log insert so a skipped send doesn't eat
+    // into their personal 20/day allowance.
+    if (rateLimited) {
+      return res.status(429).json({
+        error: "Marro has hit its daily email limit, so this one couldn't go out. Your invite code is still good — try again tomorrow, or copy the code and share it yourself.",
+      });
+    }
 
     await admin.from('invite_email_log').insert({ sender_id: callerId, to_email: toEmail, code });
 

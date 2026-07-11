@@ -180,19 +180,25 @@ function InsightsSection() {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [notReady, setNotReady] = useState(false);
+  const [emailUsage, setEmailUsage] = useState(null);
 
   useEffect(() => {
     let alive = true;
     (async () => {
-      const m = await adminUsageMetrics();
+      // Independent fetches: the events-RPC metrics and the email quota come
+      // from different sources, and neither should block the other.
+      const [m, eu] = await Promise.all([adminUsageMetrics(), adminCall('email_usage')]);
       if (!alive) return;
       if (m) setMetrics(m); else setNotReady(true);
+      if (eu?.ok && eu.available) setEmailUsage(eu);
       setLoading(false);
     })();
     return () => { alive = false; };
   }, []);
 
   const nf = (n) => (typeof n === "number" && Number.isFinite(n)) ? n.toLocaleString() : null;
+  // "37 / 90" quota reading — null (→ "Coming soon") until the log is live.
+  const quota = (used, cap) => (typeof used === "number" && Number.isFinite(used)) ? `${used.toLocaleString()} / ${cap.toLocaleString()}` : null;
 
   return (
     <Card>
@@ -204,6 +210,8 @@ function InsightsSection() {
             <StatTile label="Signups this week" value={nf(metrics?.signups_this_week)} sub="New accounts created in the last 7 days."/>
             <StatTile label="Returning users" value={nf(metrics?.return_users)} sub="Active on 2 or more different days."/>
             <StatTile label="Activation" value={null} sub="Users who completed aid entry — not tracked yet. Coming soon."/>
+            <StatTile label="Emails today" value={quota(emailUsage?.day, emailUsage?.day_cap ?? 90)} sub={`Sent in the last 24 hours. Sending pauses at ${(emailUsage?.day_cap ?? 90).toLocaleString()} to stay safely under the email plan's ${(emailUsage?.plan_day_limit ?? 100).toLocaleString()}/day limit.`}/>
+            <StatTile label="Emails this month" value={quota(emailUsage?.month, emailUsage?.month_cap ?? 2700)} sub={`Sent since the 1st. Sending pauses at ${(emailUsage?.month_cap ?? 2700).toLocaleString()} to stay safely under the plan's ${(emailUsage?.plan_month_limit ?? 3000).toLocaleString()}/month limit.`}/>
           </dl>
         )
       }
@@ -1194,7 +1202,13 @@ function WaitlistSection({waitlist, onChanged}) {
     if (!res || res.ok === false || res.error) {
       setRow(email, {text: res?.error || "Couldn't send an invite. Please try again.", tone:"error"});
     } else if (res.emailed === false) {
-      setRow(email, {text: `Code minted but the email failed to send — share this code manually: ${res.code}`, tone:"error"});
+      // rate_limited = Marro's plan-level email cap (api/_email.js), not a
+      // Resend outage — say so, since "failed" would send an admin hunting
+      // for a bug that isn't there. Either way the code is minted and bound,
+      // so re-inviting later re-sends it; sharing manually also works now.
+      setRow(email, {text: res.rate_limited
+        ? `Code minted, but Marro hit its daily email limit — re-invite tomorrow to send the email, or share this code manually: ${res.code}`
+        : `Code minted but the email failed to send — share this code manually: ${res.code}`, tone:"error"});
       onChanged();
     } else if (res.reinvite) {
       setRow(email, {text: "Re-invited — a new code was emailed to them (their old code was revoked).", tone:"success"});

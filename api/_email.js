@@ -1,4 +1,6 @@
-// Side-effect-free email helper for the api/ serverless routes.
+// Shared email helper for the api/ serverless routes: Resend transport,
+// templates, and the plan-level send quota (soft caps + email_send_log meter —
+// see supabase/email_send_log.sql).
 //
 // WHY fetch, not the `resend` package: we deliberately add NO npm dependency
 // (repo/build constraint). Resend's REST API is a single POST, so a bare fetch
@@ -13,7 +15,55 @@
 // same rules as supabase/email_templates.md (dark-mode clients only invert
 // unstyled regions), single-column table, 560px, no flex/grid (Outlook).
 
+import { createClient } from '@supabase/supabase-js';
+import { SUPABASE_URL } from './_config.js';
+
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';
+
+// ── Plan-level send quota ────────────────────────────────────────────────────
+// The Resend plan allows 100 emails/day and 3,000/month. These SOFT caps sit
+// ~10% under the real ones because (a) the count-then-send check below is not
+// atomic — parallel serverless invocations can race a few sends past it — and
+// (b) some sends may not be in our log at all (Resend dashboard tests, any
+// future SMTP routing through the same account). Every successful send is
+// logged in email_send_log (supabase/email_send_log.sql) and counted here
+// BEFORE the next send, so we stop gracefully instead of Resend rejecting us.
+export const EMAIL_CAPS = { day: 90, month: 2700 };
+
+// Lazy service-role client for the quota log. Null when the env var is
+// missing — quota checking then fails OPEN (emails still send) so a config
+// gap can never silently stop all email.
+let quotaClient;
+function getQuotaClient() {
+  if (quotaClient !== undefined) return quotaClient;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  quotaClient = key
+    ? createClient(SUPABASE_URL, key, { auth: { autoRefreshToken: false, persistSession: false } })
+    : null;
+  return quotaClient;
+}
+
+// Counts sends in the trailing 24h and the current UTC calendar month
+// (Resend's monthly quota resets on the calendar month).
+// → { day, month } or null if the log is unreadable (callers fail open).
+export async function countEmailUsage(client) {
+  const admin = client || getQuotaClient();
+  if (!admin) return null;
+  const now = new Date();
+  const daySince = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  const monthSince = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  try {
+    const [d, m] = await Promise.all([
+      admin.from('email_send_log').select('id', { count: 'exact', head: true }).gte('sent_at', daySince),
+      admin.from('email_send_log').select('id', { count: 'exact', head: true }).gte('sent_at', monthSince),
+    ]);
+    if (d.error || m.error) throw (d.error || m.error);
+    return { day: d.count || 0, month: m.count || 0 };
+  } catch (e) {
+    console.error('countEmailUsage: quota log unreadable', e?.message);
+    return null;
+  }
+}
 
 // Brand tokens (from src/landing/landing.css — mirrored in email_templates.md).
 const C = {
@@ -24,10 +74,34 @@ const C = {
   muted: 'rgba(248,242,226,.58)', // footer text (--lp-cream40)
 };
 
-// sendEmail({to, subject, html}) → {ok:boolean, error?:string}. Never throws.
-export async function sendEmail({ to, subject, html, from }) {
+// sendEmail({to, subject, html, from?, type?}) → {ok:boolean, error?:string,
+// rateLimited?:true}. Never throws. `type` tags the send in email_send_log
+// ('invite' | 'waitlist_invite' | 'waitlist_confirm' | 'congrats' | ...).
+// When a send would push past the plan-level soft caps above, we DON'T call
+// Resend: we return {ok:false, rateLimited:true} so the caller can degrade
+// the same way it already does for any other send failure (the record the
+// email was about still exists — nothing is lost, only the notification is
+// skipped/deferred).
+export async function sendEmail({ to, subject, html, from, type }) {
   const key = process.env.RESEND_API_KEY;
   if (!key) return { ok: false, error: 'Email is not configured yet.' };
+
+  // Plan-level quota gate. A null usage (log unreadable / no service key)
+  // fails OPEN — better to risk one over-cap send than to stop all email
+  // because counting broke.
+  const usage = await countEmailUsage();
+  if (usage && (usage.day >= EMAIL_CAPS.day || usage.month >= EMAIL_CAPS.month)) {
+    const period = usage.day >= EMAIL_CAPS.day ? 'day' : 'month';
+    console.error(`sendEmail: soft ${period} cap reached (${usage.day}/24h, ${usage.month}/month) — send skipped`, type || 'other');
+    return {
+      ok: false,
+      rateLimited: true,
+      error: period === 'day'
+        ? "Marro has hit its daily email limit, so this email couldn't go out. Please try again tomorrow."
+        : "Marro has hit its monthly email limit, so this email couldn't go out. Please try again after the 1st.",
+    };
+  }
+
   try {
     const res = await fetch(RESEND_ENDPOINT, {
       method: 'POST',
@@ -47,6 +121,14 @@ export async function sendEmail({ to, subject, html, from }) {
       try { const b = await res.json(); detail = b?.message || b?.error || ''; } catch { /* non-JSON */ }
       console.error('sendEmail: Resend returned', res.status, detail);
       return { ok: false, error: 'Email could not be sent.' };
+    }
+    // Meter the successful send (best-effort — never fail a sent email over
+    // bookkeeping; a missed row just makes the soft cap slightly softer,
+    // which the 10% buffer absorbs).
+    const admin = getQuotaClient();
+    if (admin) {
+      const { error: logErr } = await admin.from('email_send_log').insert({ type: type || 'other' });
+      if (logErr) console.error('sendEmail: email_send_log insert failed', logErr.message);
     }
     return { ok: true };
   } catch (e) {
