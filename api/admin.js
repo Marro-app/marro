@@ -611,6 +611,8 @@ export default async function handler(req, res) {
           available: true,
           day: usage.day,
           month: usage.month,
+          day_source: usage.daySource,     // 'resend' | 'internal' — for the AdminTab tile
+          month_source: usage.monthSource,
           day_cap: EMAIL_CAPS.day,
           month_cap: EMAIL_CAPS.month,
           plan_day_limit: 100,

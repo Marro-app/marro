@@ -25,6 +25,19 @@ create table if not exists public.email_send_log (
   type    text not null default 'other'
 );
 
+-- Resend's own ground-truth usage, read off the send API's response headers
+-- (x-resend-monthly-quota — all plans; x-resend-daily-quota — free plan only,
+-- per Resend's docs). Nullable: most rows won't have it (header absent, or
+-- this migration predates the row). We only ever need the MOST RECENT
+-- non-null value of each, so storing it per-row (rather than a separate
+-- single-row table) is enough — "latest row where the column isn't null"
+-- is one query, and it stays chronologically self-documenting. This is what
+-- closes the seeding gap: email_send_log starts empty on deploy, but Resend's
+-- own counters already reflect any pre-existing/dashboard/off-log sends, so
+-- once we've made even one send post-deploy we have ground truth again.
+alter table public.email_send_log add column if not exists resend_reported_daily bigint;
+alter table public.email_send_log add column if not exists resend_reported_monthly bigint;
+
 -- Both quota queries filter on sent_at alone (trailing 24h / current month).
 create index if not exists email_send_log_sent_at_idx
   on public.email_send_log (sent_at);
@@ -33,4 +46,4 @@ alter table public.email_send_log enable row level security;
 -- No policies on purpose: deny-all to clients; service-role only.
 
 comment on table public.email_send_log is
-  'Global Resend send meter — one row per successful email handed to Resend. Read/written only by the service-role backend (api/_email.js soft caps 90/day, 2700/month under the Resend plan''s 100/3000). Client-inaccessible (no RLS policies). See supabase/email_send_log.sql.';
+  'Global Resend send meter — one row per successful email handed to Resend, plus Resend''s own reported daily/monthly quota (from response headers) on the most recent row that has it. Read/written only by the service-role backend (api/_email.js soft caps 90/day, 2700/month under the Resend plan''s 100/3000). Client-inaccessible (no RLS policies). See supabase/email_send_log.sql.';
