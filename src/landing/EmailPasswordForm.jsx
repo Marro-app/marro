@@ -267,7 +267,7 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
 
       {notice && <div role="status" className="lp-epnotice">{notice}</div>}
 
-      {offline && <div role="status" className="lp-note" style={{ color: '#DDA528' }}>You're offline. Reconnect to continue.</div>}
+      {offline && <div role="status" className="lp-note" style={{ color: '#DDA528' }}>You&apos;re offline. Reconnect to continue.</div>}
 
       <button
         type="submit"

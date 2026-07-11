@@ -51,7 +51,7 @@ export const ProgramModal = ({data, upd, school, onClose}) => {
   };
   return (
     <Modal title="Program" onClose={onClose} width={420}>
-      <div style={{fontSize:12.5,color:C.textMid,marginBottom:12}}>You're in a <strong style={{color:C.text}}>{degree}</strong> program (set by your school). Are you pursuing a dual degree?</div>
+      <div style={{fontSize:12.5,color:C.textMid,marginBottom:12}}>You&apos;re in a <strong style={{color:C.text}}>{degree}</strong> program (set by your school). Are you pursuing a dual degree?</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
         {tracks.map(t=>{
           const on = dual===t.v;
@@ -68,9 +68,9 @@ export const ProgramModal = ({data, upd, school, onClose}) => {
       )}
       {dual==="masters" && (
         <div style={{marginTop:14}}>
-          <div style={{fontSize:12,color:C.textMid,marginBottom:5}}>Master's field <span style={{color:C.gray}}>(if you know it)</span></div>
+          <div style={{fontSize:12,color:C.textMid,marginBottom:5}}>Master&apos;s field <span style={{color:C.gray}}>(if you know it)</span></div>
           <input value={mastField} onChange={e=>setMastField(e.target.value)} placeholder="e.g. MPH, MBA, MS Clinical Research" style={fieldStyle}/>
-          <div style={{fontSize:12,color:C.textMid,marginTop:10,marginBottom:1}}>Master's-granting institution</div>
+          <div style={{fontSize:12,color:C.textMid,marginTop:10,marginBottom:1}}>Master&apos;s-granting institution</div>
           {instBlock(mastSame,setMastSame,mastInst,setMastInst,"Institution name")}
         </div>
       )}
@@ -159,7 +159,7 @@ export const ProfileModal = ({uid, onSaved, onClose}) => {
             ))}
           </div>
         )}
-        <button className="txt-act" onClick={()=>{reset();setOther(true);}} style={linkStyle}>My school isn't listed →</button>
+        <button className="txt-act" onClick={()=>{reset();setOther(true);}} style={linkStyle}>My school isn&apos;t listed →</button>
       </>}
       {err && <div style={{marginTop:12,fontSize:12,color:C.neg}}>{err}</div>}
       <button className="btn-fill" onClick={save} disabled={!canSave}
@@ -434,7 +434,7 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
           {step===0 && (
             <div style={{textAlign:"center"}}>
               <div style={{marginBottom:18}}><MarroIntro size={324}/></div>
-              <div style={{...sub,maxWidth:300,margin:"2px auto 0"}} className="ob-rise">A calmer way to handle money through medical school. Let's make it yours — it takes about thirty seconds.</div>
+              <div style={{...sub,maxWidth:300,margin:"2px auto 0"}} className="ob-rise">A calmer way to handle money through medical school. Let&apos;s make it yours — it takes about thirty seconds.</div>
               <button className="ob-cta ob-rise" style={{...ctaPrimary(true),marginTop:26}} onClick={()=>setStep(1)}>Get started</button>
             </div>
           )}
@@ -442,7 +442,7 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
           {step===1 && (
             <div>
               <div style={head}>What should we call you?</div>
-              <div style={sub}>We'll greet you by this name. It's just for you — change it anytime.</div>
+              <div style={sub}>We&apos;ll greet you by this name. It&apos;s just for you — change it anytime.</div>
               <input autoFocus value={name} onChange={e=>setName(e.target.value)} maxLength={40}
                 onKeyDown={e=>{if(e.key==="Enter"&&name.trim())setStep(2);}}
                 placeholder="Your first name" style={{...input,marginTop:22}}/>
@@ -492,7 +492,7 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
                       ))}
                     </div>
                   )}
-                  <button className="txt-act" onClick={()=>{resetSchool();setOther(true);}} style={{marginTop:12,border:"none",background:"transparent",color:C.teal,cursor:"pointer",fontSize:12.5,padding:0}}>My school isn't listed →</button>
+                  <button className="txt-act" onClick={()=>{resetSchool();setOther(true);}} style={{marginTop:12,border:"none",background:"transparent",color:C.teal,cursor:"pointer",fontSize:12.5,padding:0}}>My school isn&apos;t listed →</button>
                 </>}
               </div>
               <button className="ob-cta" style={{...ctaPrimary(!!school),marginTop:20}} disabled={!school} onClick={()=>setStep(4)}>Continue</button>
@@ -522,7 +522,7 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
             return (
             <div>
               <div style={head}>Your program</div>
-              <div style={sub}>This sets up your academic years and tailors Marro to your path. Don't know all of it yet? You can change any of this later in Settings.</div>
+              <div style={sub}>This sets up your academic years and tailors Marro to your path. Don&apos;t know all of it yet? You can change any of this later in Settings.</div>
 
               <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:C.textMid,marginTop:18,marginBottom:8}}>{degree} program — are you doing a dual degree?</div>
               <ChoiceGroup role="radiogroup" ariaLabel="Dual degree" style={{display:"flex",flexWrap:"wrap",gap:8}}>
@@ -542,9 +542,9 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
               )}
               {dual==="masters" && (
                 <div style={{marginTop:14,padding:"12px 13px",borderRadius:12,border:`1px solid ${C.border}`,background:C.surface}}>
-                  <div style={{fontSize:12,color:C.textMid,marginBottom:5}}>Master's field <span style={{color:C.gray}}>(if you know it)</span></div>
+                  <div style={{fontSize:12,color:C.textMid,marginBottom:5}}>Master&apos;s field <span style={{color:C.gray}}>(if you know it)</span></div>
                   <input value={mastField} onChange={e=>setMastField(e.target.value)} placeholder="e.g. MPH, MBA, MS Clinical Research" style={fieldStyle}/>
-                  <div style={{fontSize:12,color:C.textMid,marginTop:10,marginBottom:1}}>Master's-granting institution</div>
+                  <div style={{fontSize:12,color:C.textMid,marginTop:10,marginBottom:1}}>Master&apos;s-granting institution</div>
                   {instBlock(mastSame,setMastSame,mastInst,setMastInst,"Institution name")}
                 </div>
               )}
@@ -577,7 +577,7 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
 
           {step===5 && (
             <div style={{textAlign:"center",padding:"10px 0"}}>
-              <div style={{...head,fontSize:25}} className="ob-rise">You're all set{name.trim()?`, ${name.trim()}`:""}<span style={{color:C.marigold}}>.</span></div>
+              <div style={{...head,fontSize:25}} className="ob-rise">You&apos;re all set{name.trim()?`, ${name.trim()}`:""}<span style={{color:C.marigold}}>.</span></div>
               <div style={{...sub,maxWidth:280,margin:"8px auto 0"}} className="ob-rise">Next: enter your aid on the Aid &amp; Detail tab to see your monthly number.</div>
               <button className="ob-cta ob-rise" style={{...ctaPrimary(true),marginTop:24}} onClick={()=>onDone(school)}>Go to my dashboard</button>
             </div>
