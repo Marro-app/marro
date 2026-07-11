@@ -25,9 +25,14 @@ const RESEND_ENDPOINT = 'https://api.resend.com/emails';
 // ~10% under the real ones because (a) the count-then-send check below is not
 // atomic — parallel serverless invocations can race a few sends past it — and
 // (b) some sends may not be in our log at all (Resend dashboard tests, any
-// future SMTP routing through the same account). Every successful send is
-// logged in email_send_log (supabase/email_send_log.sql) and counted here
-// BEFORE the next send, so we stop gracefully instead of Resend rejecting us.
+// future SMTP routing through the same account, or simply usage from before
+// this table existed). Every successful send is logged in email_send_log
+// (supabase/email_send_log.sql) and counted here BEFORE the next send, so we
+// stop gracefully instead of Resend rejecting us. Gap (b) above is closed by
+// also reading Resend's OWN usage counters off the send API's response
+// headers (x-resend-daily-quota / x-resend-monthly-quota — ground truth,
+// free since we already made the call) and preferring them over our log's
+// count whenever they're known and higher — see countEmailUsage below.
 export const EMAIL_CAPS = { day: 90, month: 2700 };
 
 // Lazy service-role client for the quota log. Null when the env var is
@@ -44,8 +49,17 @@ function getQuotaClient() {
 }
 
 // Counts sends in the trailing 24h and the current UTC calendar month
-// (Resend's monthly quota resets on the calendar month).
-// → { day, month } or null if the log is unreadable (callers fail open).
+// (Resend's monthly quota resets on the calendar month), then reconciles
+// against Resend's OWN reported usage (harvested from send-API response
+// headers by sendEmail below and stashed on the send_log row — see
+// supabase/email_send_log.sql). Resend's number is ground truth: it also
+// reflects sends our log never saw (pre-existing usage from before this
+// table existed, Resend dashboard test sends, anything else on the account).
+// Our log's number can only be equal or behind, never ahead of reality, so
+// we take whichever is higher, per period, and never let a stale/lower
+// Resend snapshot pull the count down.
+// → { day, month, daySource, monthSource } ('resend' | 'internal'), or null
+// if the log is unreadable (callers fail open).
 export async function countEmailUsage(client) {
   const admin = client || getQuotaClient();
   if (!admin) return null;
@@ -58,7 +72,36 @@ export async function countEmailUsage(client) {
       admin.from('email_send_log').select('id', { count: 'exact', head: true }).gte('sent_at', monthSince),
     ]);
     if (d.error || m.error) throw (d.error || m.error);
-    return { day: d.count || 0, month: m.count || 0 };
+    const internalDay = d.count || 0;
+    const internalMonth = m.count || 0;
+
+    // Latest known Resend-reported values (independent, best-effort — a
+    // failure here just means we fall back to the internal count, not a
+    // hard error, since the columns/rows may simply not exist yet).
+    let resendDay = null;
+    let resendMonth = null;
+    try {
+      const [rd, rm] = await Promise.all([
+        admin.from('email_send_log').select('resend_reported_daily')
+          .not('resend_reported_daily', 'is', null)
+          .order('sent_at', { ascending: false }).limit(1),
+        admin.from('email_send_log').select('resend_reported_monthly')
+          .not('resend_reported_monthly', 'is', null)
+          .order('sent_at', { ascending: false }).limit(1),
+      ]);
+      resendDay = rd?.data?.[0]?.resend_reported_daily ?? null;
+      resendMonth = rm?.data?.[0]?.resend_reported_monthly ?? null;
+    } catch (e) {
+      console.error('countEmailUsage: resend-reported columns unreadable, falling back to internal log', e?.message);
+    }
+
+    const day = resendDay != null ? Math.max(resendDay, internalDay) : internalDay;
+    const month = resendMonth != null ? Math.max(resendMonth, internalMonth) : internalMonth;
+    return {
+      day, month,
+      daySource: resendDay != null && resendDay >= internalDay ? 'resend' : 'internal',
+      monthSource: resendMonth != null && resendMonth >= internalMonth ? 'resend' : 'internal',
+    };
   } catch (e) {
     console.error('countEmailUsage: quota log unreadable', e?.message);
     return null;
@@ -73,6 +116,15 @@ const C = {
   gold:  '#DDA528', // accent (--lp-gold)
   muted: 'rgba(248,242,226,.58)', // footer text (--lp-cream40)
 };
+
+// Parses a Resend quota response header ("Your used daily/monthly email
+// sending quota" per Resend's docs — a plain integer count) → number, or
+// null if the header is missing/blank/non-numeric. Never throws.
+function parseQuotaHeader(raw) {
+  if (raw == null || raw === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
 
 // sendEmail({to, subject, html, from?, type?}) → {ok:boolean, error?:string,
 // rateLimited?:true}. Never throws. `type` tags the send in email_send_log
@@ -122,12 +174,25 @@ export async function sendEmail({ to, subject, html, from, type }) {
       console.error('sendEmail: Resend returned', res.status, detail);
       return { ok: false, error: 'Email could not be sent.' };
     }
+    // Harvest Resend's own reported usage off the response headers — free,
+    // since we already made this call. `x-resend-monthly-quota` is sent on
+    // all plans; `x-resend-daily-quota` is documented as free-plan-only, so
+    // it may simply be absent on our plan (parsed to null below, same as any
+    // other missing/malformed header — countEmailUsage treats null as "not
+    // reported" and falls back to the internal log). See Resend's API docs:
+    // https://resend.com/docs/api-reference/rate-limit
+    const resendDaily = parseQuotaHeader(res.headers.get('x-resend-daily-quota'));
+    const resendMonthly = parseQuotaHeader(res.headers.get('x-resend-monthly-quota'));
+
     // Meter the successful send (best-effort — never fail a sent email over
     // bookkeeping; a missed row just makes the soft cap slightly softer,
     // which the 10% buffer absorbs).
     const admin = getQuotaClient();
     if (admin) {
-      const { error: logErr } = await admin.from('email_send_log').insert({ type: type || 'other' });
+      const row = { type: type || 'other' };
+      if (resendDaily != null) row.resend_reported_daily = resendDaily;
+      if (resendMonthly != null) row.resend_reported_monthly = resendMonthly;
+      const { error: logErr } = await admin.from('email_send_log').insert(row);
       if (logErr) console.error('sendEmail: email_send_log insert failed', logErr.message);
     }
     return { ok: true };

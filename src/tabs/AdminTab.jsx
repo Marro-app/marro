@@ -210,8 +210,8 @@ function InsightsSection() {
             <StatTile label="Signups this week" value={nf(metrics?.signups_this_week)} sub="New accounts created in the last 7 days."/>
             <StatTile label="Returning users" value={nf(metrics?.return_users)} sub="Active on 2 or more different days."/>
             <StatTile label="Activation" value={null} sub="Users who completed aid entry — not tracked yet. Coming soon."/>
-            <StatTile label="Emails today" value={quota(emailUsage?.day, emailUsage?.day_cap ?? 90)} sub={`Sent in the last 24 hours. Sending pauses at ${(emailUsage?.day_cap ?? 90).toLocaleString()} to stay safely under the email plan's ${(emailUsage?.plan_day_limit ?? 100).toLocaleString()}/day limit.`}/>
-            <StatTile label="Emails this month" value={quota(emailUsage?.month, emailUsage?.month_cap ?? 2700)} sub={`Sent since the 1st. Sending pauses at ${(emailUsage?.month_cap ?? 2700).toLocaleString()} to stay safely under the plan's ${(emailUsage?.plan_month_limit ?? 3000).toLocaleString()}/month limit.`}/>
+            <StatTile label="Emails today" value={quota(emailUsage?.day, emailUsage?.day_cap ?? 90)} sub={`Sent in the last 24 hours${emailUsage?.day_source === 'resend' ? " (Resend's live count)" : ''}. Sending pauses at ${(emailUsage?.day_cap ?? 90).toLocaleString()} to stay safely under the email plan's ${(emailUsage?.plan_day_limit ?? 100).toLocaleString()}/day limit.`}/>
+            <StatTile label="Emails this month" value={quota(emailUsage?.month, emailUsage?.month_cap ?? 2700)} sub={`Sent since the 1st${emailUsage?.month_source === 'resend' ? " (Resend's live count)" : ''}. Sending pauses at ${(emailUsage?.month_cap ?? 2700).toLocaleString()} to stay safely under the plan's ${(emailUsage?.plan_month_limit ?? 3000).toLocaleString()}/month limit.`}/>
           </dl>
         )
       }
