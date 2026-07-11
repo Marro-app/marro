@@ -9,7 +9,7 @@ import { getSupabase } from '../lib/data.js';
 // app's purpose, not just present a login wall. Signing in still gates the app.
 const FEATURES = [
   { icon:"savings",  title:"Know your monthly budget",
-    body:"Enter your grant and school costs once. Marro shows exactly what you have to live on each month." },
+    body:"Enter your total aid and school costs once. Marro shows exactly what you have to live on each month." },
   { icon:"live",     title:"Track where it goes",
     body:"Log expenses in seconds and see your plan versus what you've actually spent — no surprises." },
   { icon:"exams",    title:"Plan for big costs",
