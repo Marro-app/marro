@@ -9,7 +9,7 @@ import { getSupabase } from '../lib/data.js';
 // app's purpose, not just present a login wall. Signing in still gates the app.
 const FEATURES = [
   { icon:"savings",  title:"Know your monthly budget",
-    body:"Enter your grant and school costs once. Marro shows exactly what you have to live on each month." },
+    body:"Enter your total aid and school costs once. Marro shows exactly what you have to live on each month." },
   { icon:"live",     title:"Track where it goes",
     body:"Log expenses in seconds and see your plan versus what you've actually spent — no surprises." },
   { icon:"exams",    title:"Plan for big costs",
@@ -32,7 +32,7 @@ export const LoginScreen = ({offline}) => {
         </h1>
         <p style={{fontSize:16,color:C.textMid,marginTop:14,marginBottom:0,lineHeight:1.6,textAlign:"center",maxWidth:460}}>
           A budgeting tool made for medical students. Marro turns your financial aid into a simple
-          monthly plan — so you can see what you have to spend, where it's going, and how to stay
+          monthly plan — so you can see what you have to spend, where it&apos;s going, and how to stay
           ahead of big costs like board exams.
         </p>
 
@@ -45,7 +45,7 @@ export const LoginScreen = ({offline}) => {
             <GoogleGlyph/> Continue with Google
           </button>
           <div style={{fontSize:12,color:C.gray,marginTop:10,textAlign:"center"}}>Free for medical students.</div>
-          {offline && <div role="status" style={{fontSize:12,color:C.amber,marginTop:10}}>You're offline — reconnect to sign in.</div>}
+          {offline && <div role="status" style={{fontSize:12,color:C.amber,marginTop:10}}>You&apos;re offline — reconnect to sign in.</div>}
         </div>
 
         {/* How it works — plain explanation of the app's purpose, no login required to read */}

@@ -75,7 +75,7 @@ export function ResetPasswordScreen({ sessionValid, onRequestNewLink, headingRef
   if (!sessionValid){
     return (
       <div className="lp-authmodal lp-authstandalone" role="dialog" aria-modal="true" aria-labelledby={headingId}>
-        <h1 id={headingId} ref={headingRef} tabIndex={-1} className="lp-authheading">This link doesn't work anymore</h1>
+        <h1 id={headingId} ref={headingRef} tabIndex={-1} className="lp-authheading">This link doesn&apos;t work anymore</h1>
         <div role="alert" className="lp-eperr">
           Password reset links expire after a while, or can only be used once. Request a new one to continue.
         </div>
@@ -91,7 +91,7 @@ export function ResetPasswordScreen({ sessionValid, onRequestNewLink, headingRef
       <div className="lp-authmodal lp-authstandalone" role="dialog" aria-modal="true" aria-labelledby={headingId}>
         <h1 id={headingId} ref={headingRef} tabIndex={-1} className="lp-authheading">Password updated</h1>
         <div role="status" className="lp-epnotice">
-          Your password has been changed and you're signed in.
+          Your password has been changed and you&apos;re signed in.
         </div>
         <button
           type="button"

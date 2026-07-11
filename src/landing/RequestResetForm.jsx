@@ -60,7 +60,7 @@ export function RequestResetForm({ offline, autoFocusRef, onBack }){
 
       {sent ? (
         <div role="status" className="lp-epnotice">
-          If an account exists for that email, we've sent a reset link.
+          If an account exists for that email, we&apos;ve sent a reset link.
         </div>
       ) : (
         <form onSubmit={handleSubmit} noValidate className="lp-epform-fields">
@@ -80,7 +80,7 @@ export function RequestResetForm({ offline, autoFocusRef, onBack }){
           </div>
 
           {error && <div role="alert" className="lp-eperr">{error}</div>}
-          {offline && <div role="status" className="lp-note" style={{ color: '#DDA528' }}>You're offline. Reconnect to continue.</div>}
+          {offline && <div role="status" className="lp-note" style={{ color: '#DDA528' }}>You&apos;re offline. Reconnect to continue.</div>}
 
           <button
             type="submit"
