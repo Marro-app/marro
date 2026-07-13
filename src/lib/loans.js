@@ -429,3 +429,26 @@ export function refundPlaybookTrigger({ readings, nextRefund, refundPlaybookSeen
   const jump = (Number(latest.spendable) || 0) - (Number(before.spendable) || 0);
   return jump >= (Number(nextRefund.amount) || 0) * 0.5;
 }
+
+/**
+ * Single source of truth for "which refund cycle are we talking about right
+ * now, and should the UI show the full Refund Playbook card or just a light
+ * 'did it land?' nudge?" — shared by the Loans tab's Playbook card and the
+ * header nudge (walkthrough §7/§9) so the two surfaces can never disagree
+ * about the term or double-trigger on different candidates.
+ *
+ * `confirmedTerm` is whatever term the student most recently clicked "yes,
+ * it landed" for (from either surface) — it only counts as a confirmation
+ * for the CURRENT candidate, so confirming an old term never leaks forward.
+ */
+export function refundNudgeState({ years, readings, refundPlaybookSeen, today, confirmedTerm = null }) {
+  const refunds = estimateRefunds(years || []);
+  const candidate = [...refunds]
+    .filter((r) => r.date && r.date <= today && (!refundPlaybookSeen || refundPlaybookSeen.term !== r.term))
+    .sort((a, b) => (a.date < b.date ? 1 : -1))[0] || null;
+  if (!candidate) return { candidate: null, showPlaybook: false, showNudge: false };
+
+  const confirmed = confirmedTerm != null && confirmedTerm === candidate.term;
+  const showPlaybook = refundPlaybookTrigger({ readings, nextRefund: candidate, refundPlaybookSeen, today, confirmed });
+  return { candidate, showPlaybook, showNudge: !showPlaybook };
+}

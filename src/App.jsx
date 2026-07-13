@@ -4,7 +4,8 @@ import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed
 import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
-import { fmt, fmtS, fmtD, fmtDay, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE } from './lib/format.js';
+import { fmt, fmtS, fmtD, fmtDay, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr } from './lib/format.js';
+import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState } from './lib/loans.js';
 import { BRANDS, BRAND_DOMAINS, getBrandDomain, getBrand } from './lib/brands.js';
 import { US_MED_SCHOOLS, degreeForSchool, DO_DUAL, dualOptionsForSchool } from './lib/schools.js';
 import { AV_PALETTE, avColor, AVATARS, AV_GROUPS } from './lib/avatars.js';
@@ -51,6 +52,52 @@ const AdminTab = React.lazy(() => import('./tabs/AdminTab.jsx'));
 let markedFirstRender = false;
 let markedSessionDecided = false;
 
+// ── Runway header-tile copy (Phase 2 commit 7) ──────────────────────────────
+// Maps computeRunway()'s state machine to the tile's value/sub/color per the
+// plan's walkthrough §5/§9 copy table. `alert:true` marks the state that must
+// carry role="alert" on the tile (a11y rule 7 — the gap warning has to be
+// announced, not just colored). Every sub-line carries its own meaning in
+// plain words, per the "no label ships that a confused M1 would need to
+// google" rule — never a bare number.
+function runwayTileDisplay(runway) {
+  switch (runway.state) {
+    case 'unanchored':
+      return { value: '—', sub: 'add your balance', color: C.gray };
+    case 'growing':
+      return { value: 'Growing', sub: 'spending less than you bring in', color: C.green };
+    case 'through_graduation': {
+      const sub = runway.savings > 0
+        ? <>lasts through graduation<div style={{ marginTop: 2 }}>+{fmt(runway.savings)} set aside in savings</div></>
+        : 'lasts through graduation';
+      return { value: 'On track ✓', sub, color: C.green };
+    }
+    case 'overdrawn':
+      return {
+        value: '$0', color: C.amber, alert: true,
+        sub: runway.coveredBySavings ? 'overdrawn — your savings covers it' : 'overdrawn — no savings cushion yet',
+      };
+    case 'gap': {
+      const sub = <>
+        <span>⚠ {runway.gapDays}d before your ~{fmtDay(runway.nextRefund.date)} refund</span>
+        <div style={{ marginTop: 2 }}>trim ~{fmt(runway.trimPerMonthToClose)}/mo closes it</div>
+        {runway.savings > 0 && <div style={{ marginTop: 2 }}>+{fmt(runway.savings)} set aside in savings if needed</div>}
+      </>;
+      return { value: fmt(runway.spendable), sub, color: C.amber, alert: true };
+    }
+    case 'counting_down': {
+      if (runway.basicallyOnTrack) return { value: fmt(runway.spendable), sub: "you're basically on track ✓", color: C.green };
+      const sub = runway.savings > 0
+        ? <>lasts until ~{fmtDay(runway.runOutDate)}<div style={{ marginTop: 2 }}>+{fmt(runway.savings)} set aside in savings</div></>
+        : <>lasts until ~{fmtDay(runway.runOutDate)}</>;
+      return { value: fmt(runway.spendable), sub, color: C.text };
+    }
+    case 'graduated':
+      return { value: '—', sub: 'all done — congrats! 🎓', color: C.teal };
+    default:
+      return { value: '—', sub: 'add your balance', color: C.gray };
+  }
+}
+
 export function App() {
   if (!markedFirstRender) {
     markedFirstRender = true;
@@ -61,6 +108,11 @@ export function App() {
   const [data, setData]         = useState(null);
   const [ready, setReady]       = useState(false);
   const [flash, setFlash]       = useState(false);
+  // Which refund term the student has clicked "yes, it landed" for (header
+  // nudge or the Loans tab's own nudge — same variable, see refundNudgeState
+  // in lib/loans.js). Session-only by design: the real, persisted record is
+  // refundPlaybookSeen, written once the Playbook card is dismissed.
+  const [refundNudgeConfirmed, setRefundNudgeConfirmed] = useState(null);
   // Per-event banners ("rsu_"+id, "wkrollover") are meant to reappear for the next
   // event and are intentionally NOT persisted. The Aid tab's static "how your grant
   // works" note ("aidnote") is a one-time tip, not tied to any event, so its
@@ -606,6 +658,16 @@ export function App() {
   const totDisburse = data.years.reduce((a,y)=>a+Math.max((Number(y.grant)||0)-(Number(y.tuitionFees)||0)-(Number(y.healthIns)||0),0)+(Number(y.otherIncome)||0)*12,0);
   const totSpend    = data.years.reduce((a,y)=>a+moTotal({...y.monthly,subs:subsMo})*12,0);
 
+  // ── Phase 2: Debt + Runway header tiles (commit 7) ──────────────────────────
+  // gradDate: last academic year's end date — same source LoansTab already
+  // uses for its own debt/runway math, so header and tab never disagree.
+  const gradDate = data.years[data.years.length-1]?.endDate || null;
+  const today = todayStr();
+  const upcomingRefunds = estimateRefunds(data.years).filter(r=>r.date && r.date > today);
+  const debtProjection = projectDebtAtGraduation(data.loans||[], gradDate);
+  const runway = computeRunway({ readings: data.balanceReadings||[], plannedMonthlyBurn: moSpend, upcomingRefunds, gradDate, today });
+  const refundNudge = refundNudgeState({ years: data.years, readings: data.balanceReadings||[], refundPlaybookSeen: data.refundPlaybookSeen, today, confirmedTerm: refundNudgeConfirmed });
+
   // ── Weekly ────────────────────────────────────────────────────────────────
   const currentWeekStart = getMonday(new Date());
   const currentWeekEnd   = getSunday(currentWeekStart);
@@ -889,6 +951,8 @@ export function App() {
     currentWeekStart, currentWeekEnd, currentEntries, archives, lastArchive,
     lastWeekSurplus, thisWeekBudget, viewEntries, viewTotal, viewBudget,
     renewalsDue, renewalsSoon, barData, rolloverReco,
+    // Phase 2: Debt + Runway header tiles + refund nudge (shared with LoansTab)
+    gradDate, debtProjection, runway, refundNudge, refundNudgeConfirmed, setRefundNudgeConfirmed,
     // shared mutation helpers (don't close over any one tab's private form state)
     setMo, setYrF, syncSubs, promoteToBudget, toggleMonthCat, removeWeeklyEntry,
     reverseDeposit, reverseDepositGroup, addCat, reorderCats, delCat,
@@ -1240,19 +1304,41 @@ export function App() {
         <span style={{fontSize:11,color:C.gray,whiteSpace:"nowrap"}}>{yrRangeLabel(data.years.find(y=>y.id===ay))}</span>
       </div>
 
-      {/* ── Top metrics — Runway & Debt are Phase-2 placeholders ("—", "coming in Phase 2"),
-           hidden pre-launch behind featureFlags.SHOW_PHASE2_TILES (2026-07 audit fix A3);
-           code stays, just no entry point until Phase 2's loan model lands. With only the
-           "Monthly plan" tile left, it's wrapped (rather than left as a bare flex:1 child)
-           so it doesn't stretch to fill the whole row — caps at 320px like a normal card. ── */}
-      <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
-        {SHOW_PHASE2_TILES && <MetricTile label="Runway" value="—" sub="coming in Phase 2" color={C.gray}/>}
+      {/* ── Top metrics — Runway & Debt go live behind featureFlags.SHOW_PHASE2_TILES
+           (Phase 2 commit 7). Runway's copy/color come from runwayTileDisplay() above,
+           one branch per computeRunway() state (walkthrough §5/§9); the gap and overdrawn
+           states carry role="alert" so the warning is announced, not just colored. With
+           only the "Monthly plan" tile left when the flag is off, it's wrapped (rather
+           than left as a bare flex:1 child) so it doesn't stretch to fill the whole row —
+           caps at 320px like a normal card. ── */}
+      <div style={{display:"flex",gap:10,marginBottom:SHOW_PHASE2_TILES?10:20,flexWrap:"wrap"}}>
+        {SHOW_PHASE2_TILES && (()=>{ const rt=runwayTileDisplay(runway); return (
+          <MetricTile label="Runway" value={rt.value} sub={rt.sub} color={rt.color}
+            role={rt.alert?"alert":undefined} ariaLive={rt.alert?"assertive":undefined}/>
+        ); })()}
         {SHOW_PHASE2_TILES
           ? <MetricTile label="Monthly plan"  value={fmt(moSpend)} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/>
           : <div style={{flex:"0 1 320px",minWidth:130}}><MetricTile label="Monthly plan"  value={fmt(moSpend)} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/></div>
         }
-        {SHOW_PHASE2_TILES && <MetricTile label="Debt" value="—" sub="coming in Phase 2" color={C.gray}/>}
+        {SHOW_PHASE2_TILES && <MetricTile label="Debt" value={fmt(debtProjection.total)} sub={debtProjection.isEstimate?"estimate":"at graduation"}/>}
       </div>
+
+      {/* "Did your refund land?" nudge (walkthrough §9) — only when the header's own
+          refundNudgeState says a nudge (not the full Playbook card) is the right surface
+          right now. Confirming shares state with the Loans tab's own Playbook card
+          (refundNudgeConfirmed/setRefundNudgeConfirmed) so clicking "yes" here is the
+          same evidence the hardening rules require, wherever it's clicked from. */}
+      {SHOW_PHASE2_TILES && refundNudge.candidate && refundNudge.showNudge && !dismissed["refund_nudge_"+refundNudge.candidate.term] && (
+        <Banner type="info" onClose={()=>dismiss("refund_nudge_"+refundNudge.candidate.term)}>
+          Did your {refundNudge.candidate.term.endsWith("-spring")?"spring":refundNudge.candidate.term.endsWith("-fall")?"fall":"expected"} refund land? Update your balance to see the full picture.
+          <div style={{marginTop:8}}>
+            <button type="button" onClick={()=>{ setRefundNudgeConfirmed(refundNudge.candidate.term); setTab("loans"); }}
+              style={{padding:"6px 14px",minHeight:32,borderRadius:8,border:`1px solid ${C.blue}`,background:"transparent",color:C.blue,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+              Yes, it landed
+            </button>
+          </div>
+        </Banner>
+      )}
 
       {/* ── Tabs — Weekly/Charts/Savings/Subscriptions/Categories hidden behind featureFlags.HIDDEN_TABS
            (Phase 1 simplification: code + data stay, just no entry point). Categories moved into
