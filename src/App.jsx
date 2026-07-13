@@ -39,6 +39,7 @@ import { AppContext } from './context/AppContext.js';
 // that was the main mobile cold-load cost. Each tab is only ever mounted one at
 // a time (mutually-exclusive `tab===...` guards), so code-splitting them is safe.
 const AidTab = React.lazy(() => import('./tabs/AidTab.jsx').then(m => ({ default: m.AidTab })));
+const LoansTab = React.lazy(() => import('./tabs/LoansTab.jsx').then(m => ({ default: m.LoansTab })));
 const SubscriptionsTab = React.lazy(() => import('./tabs/SubscriptionsTab.jsx').then(m => ({ default: m.SubscriptionsTab })));
 const SavingsTab = React.lazy(() => import('./tabs/SavingsTab.jsx').then(m => ({ default: m.SavingsTab })));
 const ChartsTab = React.lazy(() => import('./tabs/ChartsTab.jsx').then(m => ({ default: m.ChartsTab })));
@@ -1272,6 +1273,7 @@ export function App() {
           ["charts","Charts"],
           ["savings","Savings"],
           ["aid","Aid & Detail",0],
+          ["loans","Loans"],
           ["subscriptions","Subscriptions",renewalsDue.length],
           ["customize","Categories"],
           ...(admin ? [["admin","Admin"]] : []),
@@ -1296,6 +1298,9 @@ export function App() {
 
         {/* ══════════════ AID & DETAIL ══════════════ */}
         {tab==="aid" && <AidTab/>}
+
+        {/* ══════════════ LOANS ══════════════ */}
+        {tab==="loans" && <LoansTab/>}
 
         {/* ══════════════ SUBSCRIPTIONS ══════════════ */}
         {tab==="subscriptions" && <SubscriptionsTab/>}
