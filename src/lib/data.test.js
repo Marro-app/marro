@@ -28,6 +28,15 @@ const baseState = () => ({
   savingsLog: [],
   currentWeekEntries: [],
   weeklyArchive: [{ weekStart: '2024-01-01', entries: [{ id: 'e1', amount: 20 }] }],
+  loans: [{
+    id: 'loan1', name: 'Year 1 federal loan', type: 'federal', academicYear: 2025,
+    rate: null, status: 'disbursed',
+    disbursements: [{ id: 'd1', date: '2025-08-05', amount: 20000 }, { id: 'd2', date: '2026-01-10', amount: 20000 }],
+    feePct: null, notes: '',
+  }],
+  balanceReadings: [{ id: 'b1', date: '2026-10-01', spendable: 6400, savings: 12000 }],
+  loanReminderSnooze: null,
+  refundPlaybookSeen: null,
 });
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -99,6 +108,25 @@ describe('diffStates', () => {
     expect(d['weeklyArchive[2024-01-01].entries[e2]']).toEqual({ b: undefined, c: { id: 'e2', amount: 5 } });
     expect(d['weeklyArchive[2024-01-08]']).toEqual({ b: undefined, c: { weekStart: '2024-01-08', entries: [] } });
   });
+
+  it('keys loans and balanceReadings by item id for add and edit (Phase 2)', () => {
+    const b = baseState(); const c = clone(b);
+    c.loans.push({ id: 'loan2', name: 'Year 2 federal loan', type: 'federal', academicYear: 2026, rate: null, status: 'accepted', disbursements: [], feePct: null, notes: '' });
+    c.balanceReadings[0].spendable = 4650;
+    const d = diffStates(b, c);
+    expect(d['loans[loan2]']).toEqual({ b: undefined, c: c.loans[1] });
+    expect(d['balanceReadings[b1]']).toEqual({ b: b.balanceReadings[0], c: c.balanceReadings[0] });
+  });
+
+  it('flags loanReminderSnooze and refundPlaybookSeen scalar edits (Phase 2)', () => {
+    const b = baseState(); const c = clone(b);
+    c.loanReminderSnooze = { choice: 'never', at: '2026-10-01T00:00:00.000Z' };
+    c.refundPlaybookSeen = { term: '2027-spring', at: '2027-01-13T00:00:00.000Z' };
+    expect(diffStates(b, c)).toEqual({
+      loanReminderSnooze: { b: null, c: c.loanReminderSnooze },
+      refundPlaybookSeen: { b: null, c: c.refundPlaybookSeen },
+    });
+  });
 });
 
 // ── Round-trip: applyChanges(base, diff(base,cur)) reproduces cur ────────────
@@ -120,10 +148,25 @@ describe('applyChanges round-trips every diff family', () => {
     'weekly entry add': (c) => { c.weeklyArchive[0].entries.push({ id: 'e2', amount: 5 }); },
     'weekly entry edit': (c) => { c.weeklyArchive[0].entries[0].amount = 99; },
     'whole week add': (c) => { c.weeklyArchive.push({ weekStart: '2024-01-08', entries: [{ id: 'x', amount: 1 }] }); },
+    'loan append + edit': (c) => {
+      c.loans[0].rate = 0.0794;
+      c.loans.push({ id: 'loan2', name: 'Year 2 federal loan', type: 'federal', academicYear: 2026, rate: null, status: 'accepted', disbursements: [], feePct: null, notes: '' });
+    },
+    'balanceReading append + edit': (c) => {
+      c.balanceReadings[0].savings = 13000;
+      c.balanceReadings.push({ id: 'b2', date: '2026-11-01', spendable: 4650, savings: 13000 });
+    },
+    'loanReminderSnooze + refundPlaybookSeen scalar edit': (c) => {
+      c.loanReminderSnooze = { choice: 'never', at: '2026-10-01T00:00:00.000Z' };
+      c.refundPlaybookSeen = { term: '2027-spring', at: '2027-01-13T00:00:00.000Z' };
+    },
     'everything at once': (c) => {
       c.darkMode = true; c.monthDisabled['0-Sep'] = ['books']; c.years[0].monthly.food = 400;
       c.categories.push({ id: 'gym', label: 'Gym' }); c.subscriptions = [];
       c.weeklyArchive[0].entries.push({ id: 'e2', amount: 5 });
+      c.loans.push({ id: 'loan2', name: 'Year 2 federal loan', type: 'federal', academicYear: 2026, rate: null, status: 'accepted', disbursements: [], feePct: null, notes: '' });
+      c.balanceReadings.push({ id: 'b2', date: '2026-11-01', spendable: 4650, savings: 13000 });
+      c.loanReminderSnooze = { choice: 'never', at: '2026-10-01T00:00:00.000Z' };
     },
   };
   for (const [name, mutate] of Object.entries(cases)) {
@@ -224,6 +267,41 @@ describe('two-device merges preserve disjoint edits to the newly-tracked fields'
     expect(merged.darkMode).toBe(true);                 // device B's edit survived too
     expect(merged.years).toEqual([]);                   // the year itself is actually gone, not a ghost entry
   });
+
+  // Loans/balanceReadings are id-keyed exactly like categories/subscriptions, so an
+  // edit on one device and a delete on the other race the same way those already do —
+  // this pins down which side wins so the behavior is deterministic and documented,
+  // not just "whatever applyChanges happens to do."
+  it('a loan edited on device A and deleted on device B: the merge is deterministic (edit loses to delete, since the base state no longer knows the loan existed once server-then-local is applied)', () => {
+    const base = baseState();
+    const local = clone(base); local.loans[0].rate = 0.0794;   // device A: edited the loan
+    const server = clone(base); server.loans = [];              // device B: deleted the loan (already on the server)
+    const { conflicts, mergeLocal } = findConflicts(diffStates(base, local), diffStates(base, server));
+    // Both sides touched loans[loan1] (edit vs. delete) — findConflicts treats any
+    // key present on both sides as a genuine conflict, same as any other field.
+    expect(conflicts).toEqual([{ key: 'loans[loan1]', local: local.loans[0], server: undefined }]);
+    expect(mergeLocal).toEqual({});
+    // Production behavior on a real conflict: the UI surfaces it for the user to
+    // pick a side (App.jsx conflict resolver) rather than silently choosing one —
+    // applying neither side's mergeLocal/mergeServer here reflects that the merge
+    // engine itself takes no action until the conflict is resolved.
+    const merged = applyChanges(server, mergeLocal);
+    expect(merged.loans).toEqual([]); // server's delete stands until the conflict is explicitly resolved
+  });
+
+  it('two devices add a balanceReading on the same date: both rows survive the merge (id-keyed, not date-keyed)', () => {
+    const base = baseState();
+    const local = clone(base);
+    local.balanceReadings.push({ id: 'b-phone', date: '2026-11-01', spendable: 4650, savings: 13000 });
+    const server = clone(base);
+    server.balanceReadings.push({ id: 'b-laptop', date: '2026-11-01', spendable: 4700, savings: 13000 });
+    const { conflicts, mergeLocal } = findConflicts(diffStates(base, local), diffStates(base, server));
+    expect(conflicts).toEqual([]); // different ids, same date — not a conflict, both survive
+    const merged = applyChanges(server, mergeLocal);
+    const nov1 = merged.balanceReadings.filter(r => r.date === '2026-11-01');
+    expect(nov1).toHaveLength(2);
+    expect(nov1.map(r => r.id).sort()).toEqual(['b-laptop', 'b-phone']);
+  });
 });
 
 // ── Conflict-display helpers (the conflict-resolution UI) ────────────────────
@@ -241,6 +319,12 @@ describe('fmtConflictVal', () => {
   it('summarizes objects by name/label', () => {
     expect(fmtConflictVal('subscriptions[s1]', { name: 'Netflix', amount: 15 }, data)).toBe('Netflix — $15');
     expect(fmtConflictVal('stepGoals[step1]', { label: 'Step 1', targetAmount: 850 }, data)).toBe('Step 1 — $850');
+  });
+  it('summarizes a loan by name + total borrowed, and a balance reading by date + amounts', () => {
+    const loan = { name: 'Year 1 federal loan', disbursements: [{ amount: 20000 }, { amount: 20000 }] };
+    expect(fmtConflictVal('loans[loan1]', loan, data)).toBe('Year 1 federal loan — $40,000');
+    const reading = { date: '2026-10-01', spendable: 6400, savings: 12000 };
+    expect(fmtConflictVal('balanceReadings[b1]', reading, data)).toBe('2026-10-01 — $6,400 (+ $12,000 savings)');
   });
 });
 
@@ -263,5 +347,12 @@ describe('conflictLabel', () => {
   });
   it('maps known top-level keys', () => {
     expect(conflictLabel('darkMode', data)).toBe('Dark mode');
+    expect(conflictLabel('loanReminderSnooze', data)).toBe('Loan reminder');
+    expect(conflictLabel('refundPlaybookSeen', data)).toBe('Refund playbook seen');
+  });
+  it('names loans and balance check-ins from data', () => {
+    const d2 = { ...data, loans: [{ id: 'loan1', name: 'Year 1 federal loan' }], balanceReadings: [{ id: 'b1', date: '2026-10-01' }] };
+    expect(conflictLabel('loans[loan1]', d2)).toBe('Loan: Year 1 federal loan');
+    expect(conflictLabel('balanceReadings[b1]', d2)).toBe('Balance check-in (2026-10-01)');
   });
 });
