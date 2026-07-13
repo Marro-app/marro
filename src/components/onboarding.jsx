@@ -312,6 +312,12 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
   const [otherField, setOtherField] = useState(data.program?.other?.field || "");
   const [otherSame, setOtherSame]   = useState(!(data.program?.other?.institution));
   const [otherInst, setOtherInst]   = useState(data.program?.other?.institution || "");
+  // Money step (Phase 2, walkthrough §0) — both skippable, savings optional.
+  // Checking "I have student loans" routes to the Loans tab after setup so
+  // she can go straight into the ~2-minute loan entry the copy promises.
+  const [moneySpendable, setMoneySpendable] = useState("");
+  const [moneySavings, setMoneySavings] = useState("");
+  const [hasLoans, setHasLoans] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const suggestLen = d => d==="phd"?7:d==="masters"?5:4;
   // Escape hatch: this is a hard-gate modal (no Esc/close), so a user who signed in by
@@ -362,12 +368,23 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
     // First-run only: generate the year configs from the chosen program length.
     // On redo we never touch years (would wipe the user's budget data).
     if(firstRun) d.years = generateYearConfigs(startYear, progLen).map(cfg=>({...cfg, monthly:{...BLANK_MONTHLY}, monthlyOverrides:{}}));
+    // Money step (skippable) — only append a reading if she actually answered
+    // "available to spend". Savings is optional even then (stays null, same
+    // as every other balance check-in — see src/lib/loans.js).
+    const spendableAnswered = moneySpendable.trim() !== "" && !isNaN(Number(moneySpendable));
+    if(spendableAnswered){
+      d.balanceReadings = [...(d.balanceReadings||[]), {
+        id: `br_${Date.now()}`, date: todayStr(),
+        spendable: Number(moneySpendable) || 0,
+        savings: moneySavings.trim() !== "" && !isNaN(Number(moneySavings)) ? Number(moneySavings) : null,
+      }];
+    }
     d.setupVersion = SETUP_VERSION;
     upd(d);
     // First-run onboarding actually completing (not the grandfathered/progressive
     // catch-up path in ProgressiveSetup below) — fire once, here only.
     if(firstRun) logEvent('setup_finished', {});
-    setStep(5);
+    setStep(6);
     setSaving(false);
   };
 
@@ -376,7 +393,7 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
   const input = {width:"100%",padding:"13px 14px",borderRadius:12,border:`1px solid ${C.border}`,background:"transparent",color:C.text,fontSize:15,outline:"none",boxSizing:"border-box"};
   const head = {fontFamily:"'Newsreader',Georgia,serif",fontSize:25,fontWeight:600,color:C.text,letterSpacing:"-0.02em",lineHeight:1.15};
   const sub  = {fontSize:13,color:C.textMid,marginTop:8,lineHeight:1.55};
-  const dotsTotal = 4; // name, avatar, school, program
+  const dotsTotal = 5; // name, avatar, school, program, money
   const dotIdx = step-1; // welcome(0) shows none
 
   // Keyboard focus trap: this is a hard-gate modal (no Escape/cancel on first run),
@@ -422,7 +439,7 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
           </div>
         )}
         {/* progress dots */}
-        {step>=1 && step<=4 && (
+        {step>=1 && step<=5 && (
           <div style={{display:"flex",gap:6,justifyContent:"center",marginBottom:26}}>
             {Array.from({length:dotsTotal}).map((_,i)=>(
               <div key={i} style={{height:5,borderRadius:5,transition:"all .3s cubic-bezier(0.23,1,0.32,1)",width:i===dotIdx?22:5,background:i<=dotIdx?C.marigold:C.border}}/>
@@ -569,17 +586,46 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
               </div>
               <div style={{fontSize:11,color:C.gray,marginTop:12}}>Your years run from Fall {startYear} to {startYear+progLen}. You can change any dates later in the Aid tab.</div>
               {err && <div role="alert" style={{marginTop:12,fontSize:12,color:C.danger}}>{err}</div>}
-              <button className="ob-cta" style={{...ctaPrimary(!saving),marginTop:err?12:18}} disabled={saving} onClick={finish}>{saving?"Setting up…":"Finish"}</button>
+              <button className="ob-cta" style={{...ctaPrimary(true),marginTop:err?12:18}} onClick={()=>setStep(5)}>Continue</button>
               <button onClick={()=>setStep(3)} className="txt-act" style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.textMid,fontSize:12.5}}>← Back</button>
             </div>
             );
           })()}
 
           {step===5 && (
+            <div>
+              <div style={head}>Last one — so Marro can tell you how long your money will last:</div>
+              <div style={sub}>Both are optional — skip either and Marro just shows an estimate until you fill them in.</div>
+
+              <div style={{marginTop:20}}>
+                <label htmlFor="ob-money-spendable" style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:C.textMid,display:"block",marginBottom:6}}>Available to spend</label>
+                <input id="ob-money-spendable" type="number" min="0" inputMode="decimal" placeholder="$0" value={moneySpendable}
+                  aria-label="Available to spend, across all accounts you spend from"
+                  onChange={e=>setMoneySpendable(e.target.value)} style={input}/>
+              </div>
+              <div style={{marginTop:14}}>
+                <label htmlFor="ob-money-savings" style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:C.textMid,display:"block",marginBottom:6}}>Set aside in savings (optional)</label>
+                <input id="ob-money-savings" type="number" min="0" inputMode="decimal" placeholder="$0" value={moneySavings}
+                  aria-label="Set aside in savings, optional"
+                  onChange={e=>setMoneySavings(e.target.value)} style={input}/>
+              </div>
+              <label style={{display:"flex",alignItems:"center",gap:9,marginTop:16,fontSize:13,color:C.text,cursor:"pointer"}}>
+                <input type="checkbox" checked={hasLoans} onChange={e=>setHasLoans(e.target.checked)} style={{width:18,height:18,flexShrink:0}}/>
+                I have student loans
+              </label>
+              {hasLoans && <div style={{fontSize:11.5,color:C.textMid,marginTop:6,marginLeft:27,lineHeight:1.5}}>We&apos;ll set those up next — takes ~2 min.</div>}
+
+              {err && <div role="alert" style={{marginTop:12,fontSize:12,color:C.danger}}>{err}</div>}
+              <button className="ob-cta" style={{...ctaPrimary(!saving),marginTop:err?12:20}} disabled={saving} onClick={finish}>{saving?"Setting up…":"Finish"}</button>
+              <button onClick={()=>setStep(4)} className="txt-act" style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.textMid,fontSize:12.5}}>← Back</button>
+            </div>
+          )}
+
+          {step===6 && (
             <div style={{textAlign:"center",padding:"10px 0"}}>
               <div style={{...head,fontSize:25}} className="ob-rise">You&apos;re all set{name.trim()?`, ${name.trim()}`:""}<span style={{color:C.marigold}}>.</span></div>
-              <div style={{...sub,maxWidth:280,margin:"8px auto 0"}} className="ob-rise">Next: enter your aid on the Aid &amp; Detail tab to see your monthly number.</div>
-              <button className="ob-cta ob-rise" style={{...ctaPrimary(true),marginTop:24}} onClick={()=>onDone(school)}>Go to my dashboard</button>
+              <div style={{...sub,maxWidth:280,margin:"8px auto 0"}} className="ob-rise">{hasLoans ? "Next: add your loans so Marro can show what you’ll owe at graduation." : "Next: enter your aid on the Aid & Detail tab to see your monthly number."}</div>
+              <button className="ob-cta ob-rise" style={{...ctaPrimary(true),marginTop:24}} onClick={()=>onDone(school,{landOnLoans:hasLoans})}>Go to my dashboard</button>
             </div>
           )}
         </div>
@@ -596,35 +642,121 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
 // the question(s) they're missing — no full re-onboarding.
 //
 // Each step: { key, sinceVersion, isPending(data)→bool, title, sub, Body }.
-//   Body({data, commit}) renders the question UI and calls commit(patch) with a
-//   shallow state patch (merged + advances). Reuse the glass `.mm` shell + tokens.
+//   Body({data, commit, setLandOnLoans}) renders the question UI and calls
+//   commit(patch) with a shallow state patch (merged + advances). Reuse the
+//   glass `.mm` shell + tokens.
+
+// v2 money step — the same "Last one — so Marro can tell you how long your
+// money will last" question OnboardingFlow asks new users inline (walkthrough
+// §0), shown once to existing users who finished setup before this shipped.
+// Both fields skippable; checking "I have student loans" routes to the Loans
+// tab once this closes (via setLandOnLoans, read by ProgressiveSetup below).
+function MoneySetupBody({data, commit, setLandOnLoans}){
+  const [spendable, setSpendable] = useState("");
+  const [savings, setSavings] = useState("");
+  const [hasLoans, setHasLoans] = useState(false);
+  const input = {width:"100%",padding:"13px 14px",borderRadius:12,border:`1px solid ${C.border}`,background:"transparent",color:C.text,fontSize:15,outline:"none",boxSizing:"border-box"};
+  const cta = {width:"100%",padding:"13px 16px",borderRadius:12,border:"none",fontSize:14.5,fontWeight:600,cursor:"pointer",letterSpacing:"-0.01em",background:C.text,color:C.bg};
+  const finishStep = () => {
+    setLandOnLoans(hasLoans);
+    const spendableAnswered = spendable.trim() !== "" && !isNaN(Number(spendable));
+    if(!spendableAnswered){ commit({}); return; }
+    commit({
+      balanceReadings: [...(data.balanceReadings||[]), {
+        id: `br_${Date.now()}`, date: todayStr(),
+        spendable: Number(spendable) || 0,
+        savings: savings.trim() !== "" && !isNaN(Number(savings)) ? Number(savings) : null,
+      }],
+    });
+  };
+  return (
+    <div>
+      <div style={{marginTop:2}}>
+        <label htmlFor="ps-money-spendable" style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:C.textMid,display:"block",marginBottom:6}}>Available to spend</label>
+        <input id="ps-money-spendable" type="number" min="0" inputMode="decimal" placeholder="$0" value={spendable}
+          aria-label="Available to spend, across all accounts you spend from"
+          onChange={e=>setSpendable(e.target.value)} style={input}/>
+      </div>
+      <div style={{marginTop:14}}>
+        <label htmlFor="ps-money-savings" style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:C.textMid,display:"block",marginBottom:6}}>Set aside in savings (optional)</label>
+        <input id="ps-money-savings" type="number" min="0" inputMode="decimal" placeholder="$0" value={savings}
+          aria-label="Set aside in savings, optional"
+          onChange={e=>setSavings(e.target.value)} style={input}/>
+      </div>
+      <label style={{display:"flex",alignItems:"center",gap:9,marginTop:16,fontSize:13,color:C.text,cursor:"pointer"}}>
+        <input type="checkbox" checked={hasLoans} onChange={e=>setHasLoans(e.target.checked)} style={{width:18,height:18,flexShrink:0}}/>
+        I have student loans
+      </label>
+      {hasLoans && <div style={{fontSize:11.5,color:C.textMid,marginTop:6,marginLeft:27,lineHeight:1.5}}>We&apos;ll set those up next — takes ~2 min.</div>}
+      <button className="ob-cta" style={{...cta,marginTop:20}} onClick={finishStep}>Finish</button>
+      <button onClick={()=>{ setLandOnLoans(false); commit({}); }} className="txt-act" style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.textMid,fontSize:12.5}}>Skip</button>
+    </div>
+  );
+}
+
 const SETUP_STEPS = [
-  // v1 (program shape) is collected inline in OnboardingFlow for new users and
-  // existing users are grandfathered, so nothing is pending here yet. Future
-  // questions (e.g. term-date confirmation, aid-letter upload) go here.
+  // v2 (money step, Phase 2) — sinceVersion:2 so only accounts stamped below
+  // version 2 see it. Brand-new users answer the equivalent question inline
+  // in OnboardingFlow (step 5 above) and finish already stamped at the
+  // current SETUP_VERSION, so isPending is moot for them by the time they'd
+  // ever reach ProgressiveSetup. isPending re-checks the data itself (not
+  // just the version number) so a user who somehow already has a reading or
+  // a loan on file isn't asked again.
+  {
+    key: "money",
+    sinceVersion: 2,
+    isPending: (d) => (d.balanceReadings||[]).length===0 && (d.loans||[]).length===0,
+    title: "Last one — so Marro can tell you how long your money will last:",
+    sub: "Both are optional — skip either and Marro just shows an estimate until you fill them in.",
+    Body: MoneySetupBody,
+  },
 ];
 
-export const ProgressiveSetup = ({data, upd}) => {
+export const ProgressiveSetup = ({data, upd, setTab}) => {
   const pending = React.useMemo(() => SETUP_STEPS.filter(s => (data.setupVersion||0) < s.sinceVersion && s.isPending(data)), []); // eslint-disable-line react-hooks/exhaustive-deps
   const [i, setI] = useState(0);
+  const landOnLoansRef = React.useRef(false);
+  const setLandOnLoans = v => { landOnLoansRef.current = v; };
   const bumpVersion = () => { const d = JSON.parse(JSON.stringify(data)); d.setupVersion = SETUP_VERSION; upd(d); };
   // Nothing actually missing (e.g. empty registry / grandfathered) → silently catch up.
   React.useEffect(() => { if(!pending.length) bumpVersion(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keyboard focus trap — same hard-gate pattern as OnboardingFlow (WCAG 2.4.3):
+  // this dialog has no Escape/close affordance either, so Tab must stay inside it.
+  const dlgRef = React.useRef(null);
+  useEffect(()=>{
+    const panel = dlgRef.current; if(!panel) return;
+    const focusables = () => [...panel.querySelectorAll('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])')]
+      .filter(el=>!el.disabled && el.offsetParent!==null);
+    const onKey = (e) => {
+      if(e.key!=="Tab") return;
+      const f = focusables(); if(!f.length) return;
+      const first=f[0], last=f[f.length-1];
+      if(!panel.contains(document.activeElement)){ e.preventDefault(); first.focus(); }
+      else if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
+      else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return ()=>document.removeEventListener("keydown", onKey);
+  },[i, pending.length]);
+
   if(!pending.length) return null;
 
   const step = pending[i];
   const commit = patch => {
     const d = JSON.parse(JSON.stringify(data));
     Object.assign(d, patch || {});
-    if(i+1 >= pending.length) d.setupVersion = SETUP_VERSION;  // last one → mark current
+    const isLast = i+1 >= pending.length;
+    if(isLast) d.setupVersion = SETUP_VERSION;  // last one → mark current
     upd(d);
-    if(i+1 < pending.length) setI(i+1);
+    if(isLast){ if(landOnLoansRef.current && setTab) setTab("loans"); }
+    else setI(i+1);
   };
   const head = {fontFamily:"'Newsreader',Georgia,serif",fontSize:25,fontWeight:600,color:C.text,letterSpacing:"-0.02em",lineHeight:1.15};
   const sub  = {fontSize:13,color:C.textMid,marginTop:8,lineHeight:1.55};
 
   return (
-    <div role="dialog" aria-modal="true" aria-label="Finish setting up Marro" style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:C.scrim,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)"}}>
+    <div ref={dlgRef} role="dialog" aria-modal="true" aria-label="Finish setting up Marro" style={{position:"fixed",inset:0,zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:C.scrim,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)"}}>
       <div className="mm" style={{position:"relative",width:"100%",maxWidth:420,padding:"36px 30px 30px",overflow:"hidden"}}>
         {pending.length>1 && (
           <div style={{display:"flex",gap:6,justifyContent:"center",marginBottom:26}}>
@@ -637,7 +769,7 @@ export const ProgressiveSetup = ({data, upd}) => {
         <div style={head}>{step.title}</div>
         {step.sub && <div style={sub}>{step.sub}</div>}
         <div key={step.key} className="ob-step" style={{marginTop:18}}>
-          <step.Body data={data} commit={commit}/>
+          <step.Body data={data} commit={commit} setLandOnLoans={setLandOnLoans}/>
         </div>
       </div>
     </div>
