@@ -7,9 +7,10 @@ import { useApp } from '../context/AppContext.js';
 import { radioProps } from '../lib/ui-helpers.js';
 import {
   effectiveRate, isRateEstimated, loanPrincipal, projectDebtAtGraduation,
+  estimateRefunds, computeRunway, loanReturnWindows, refundPlaybookTrigger,
 } from '../lib/loans.js';
 
-// Loans tab — Phase 2 ("Loans, Debt & Runway"), commit 4.
+// Loans tab — Phase 2 ("Loans, Debt & Runway"), commits 4 + 6 (Refund Playbook).
 //
 // Every string in this file was checked against the plan's "no label ships
 // that a confused M1 would need to google" banned-jargon table before this
@@ -341,8 +342,130 @@ function ReminderBanner({ data, upd }) {
   );
 }
 
+// ── Refund Playbook (commit 6) ──────────────────────────────────────────────
+// One-time educational card that appears when a semester's aid refund lands
+// (walkthrough §7) — see the plan's "Refund Playbook card" content rules
+// (compliance-reviewed): a range not bank names, earnings framed as an
+// example, FDIC stated accurately, a tax-form heads-up, the 120-day return
+// window framed as "many students choose to…" never "you should," never a
+// suggestion to invest, and a footer disclaimer that this is education, not
+// individualized advice. Dismissing writes refundPlaybookSeen so it shows at
+// most once per semester's refund. A days-count in the return-window bullet
+// is only ever a hard number when the disbursement date was user-confirmed
+// (dateConfirmed) — otherwise it reads as a soft "roughly N days."
+const MONTH_MS = 30.44 * 24 * 60 * 60 * 1000;
+const PLAYBOOK_APY = 0.04; // illustrative midpoint of the "roughly 3.5–4.5%" range quoted in the card
+
+function RefundPlaybook({ data, upd, moSpend }) {
+  const today = todayStr();
+  const gradDate = data.years?.[data.years.length - 1]?.endDate || null;
+  const readings = data.balanceReadings || [];
+  const refunds = estimateRefunds(data.years || []);
+  const seen = data.refundPlaybookSeen;
+  const [confirmedTerm, setConfirmedTerm] = useState(null); // "yes, my refund landed" — this session only until it writes refundPlaybookSeen
+
+  // The most recent refund whose expected date has passed and hasn't been
+  // shown yet for its term — the only candidate this render considers.
+  const candidate = [...refunds]
+    .filter((r) => r.date && r.date <= today && (!seen || seen.term !== r.term))
+    .sort((a, b) => (a.date < b.date ? 1 : -1))[0] || null;
+
+  if (!candidate) return null;
+
+  const confirmed = confirmedTerm === candidate.term;
+  const show = refundPlaybookTrigger({ readings, nextRefund: candidate, refundPlaybookSeen: seen, today, confirmed });
+
+  const dismiss = () => {
+    const d = JSON.parse(JSON.stringify(data));
+    d.refundPlaybookSeen = { term: candidate.term, at: new Date().toISOString() };
+    upd(d);
+  };
+
+  if (!show) {
+    // "Did your refund land?" nudge (walkthrough §9) — shown once the expected
+    // date has passed but nothing has auto-detected a balance jump yet. Confirming
+    // is itself the evidence the hardening rules require (never a bare guess).
+    const seasonWord = candidate.term.endsWith('-spring') ? 'spring' : candidate.term.endsWith('-fall') ? 'fall' : 'expected';
+    return (
+      <Banner type="info">
+        Did your {seasonWord} refund land? Update your balance below to see the full picture.
+        <div style={{ marginTop: 8 }}>
+          <button type="button" onClick={() => setConfirmedTerm(candidate.term)}
+            style={{ padding: '6px 14px', minHeight: 32, borderRadius: 8, border: `1px solid ${C.blue}`, background: 'transparent', color: C.blue, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+            Yes, it landed
+          </button>
+        </div>
+      </Banner>
+    );
+  }
+
+  // ── Numbers this card shows — every one is computed, never guessed ──
+  const sortedReadings = [...readings].filter((r) => r.date <= today).sort((a, b) => (a.date < b.date ? -1 : 1));
+  const latest = sortedReadings[sortedReadings.length - 1] || null;
+  const spendable = latest ? Number(latest.spendable) || 0 : null;
+
+  const nextAfter = refunds.find((r) => r.date && r.date > candidate.date) || null;
+  const horizonDate = nextAfter?.date || gradDate;
+  const monthsNeeded = horizonDate ? Math.max(1, Math.round((new Date(horizonDate + 'T12:00:00') - new Date(candidate.date + 'T12:00:00')) / MONTH_MS)) : null;
+
+  const upcomingForBurn = refunds.filter((r) => r.date && r.date > candidate.date);
+  const runway = computeRunway({ readings, plannedMonthlyBurn: moSpend, upcomingRefunds: upcomingForBurn, gradDate, today });
+  // A measured burn straddling the refund that JUST landed reads as strongly
+  // negative/"growing" (the refund itself looks like a giant month of savings) —
+  // that's real math, not a bug, but useless for "what does the rest of the
+  // semester cost." Fall back to the plan whenever the measured number isn't a
+  // real positive spend rate.
+  const burnAmount = runway.burn?.amount > 0 ? runway.burn.amount : (moSpend ?? null);
+
+  const semesterNeed = monthsNeeded != null && burnAmount != null ? monthsNeeded * burnAmount : null;
+  const parkAmount = spendable != null && semesterNeed != null ? Math.max(spendable - semesterNeed, 0) : null;
+  const monthsToHorizon = monthsNeeded;
+  const earningsEstimate = parkAmount != null && monthsToHorizon != null ? parkAmount * PLAYBOOK_APY * (monthsToHorizon / 12) : null;
+
+  const windows = loanReturnWindows(data.loans || [], today).sort((a, b) => a.daysLeft - b.daysLeft);
+  const window = windows[0] || null;
+
+  return (
+    <div role="region" aria-labelledby="playbook-heading" style={{ background: C.blueLight, border: `1px solid ${C.blueMid}`, borderRadius: 12, padding: '16px 18px', position: 'relative' }}>
+      <div style={{ position: 'absolute', top: 10, right: 10 }}>
+        <XBtn label="Dismiss — I've seen this" onClick={dismiss} />
+      </div>
+      <div id="playbook-heading" style={{ fontSize: 15, fontWeight: 700, color: C.text, paddingRight: 30 }}>📬 Your refund landed — a smart way to think about it</div>
+
+      <ol style={{ margin: '12px 0 0', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13, color: C.text, lineHeight: 1.55 }}>
+        <li>
+          {semesterNeed != null
+            ? <>This stretch needs about <strong>{fmt(semesterNeed)}</strong> ({monthsNeeded} month{monthsNeeded === 1 ? '' : 's'} × your ~{fmt(burnAmount)}/month pace).</>
+            : <>Add your budget and a balance check-in and Marro can estimate what this stretch needs to cover.</>}
+          {' '}Many students keep about one month&apos;s worth in checking.
+        </li>
+        <li>
+          Consider parking the rest in savings.{' '}
+          {parkAmount != null && parkAmount > 0
+            ? <>Many online banks currently pay roughly 3.5–4.5% — {fmt(parkAmount)} parked for {monthsToHorizon} month{monthsToHorizon === 1 ? '' : 's'} could earn ~{fmt(earningsEstimate)} while staying instantly available and FDIC-insured (covered up to $250,000 per bank).</>
+            : <>Many online banks currently pay roughly 3.5–4.5% while staying instantly available and FDIC-insured (covered up to $250,000 per bank).</>}
+          {' '}(Heads up: savings interest may generate a small tax form — usually called a 1099-INT.)
+        </li>
+        <li>
+          Borrowed more than you need? Unused federal loan money can be returned within 120 days of when it arrives — the interest and the fee on the returned part are cancelled, like it never happened.
+          {window
+            ? <> {window.dateConfirmed
+                ? <>You have <strong>{window.daysLeft} days</strong> left on that money.</>
+                : <>You have <strong>roughly {window.daysLeft} days</strong> left — confirm the exact date with your aid office.</>}</>
+            : null}
+          {' '}Your financial aid office can help you decide.
+        </li>
+      </ol>
+
+      <div style={{ marginTop: 12, fontSize: 10.5, color: C.gray, lineHeight: 1.5 }}>
+        General education, not individualized financial advice — confirm specifics with your loan servicer or aid office.
+      </div>
+    </div>
+  );
+}
+
 export function LoansTab() {
-  const { data, upd } = useApp();
+  const { data, upd, moSpend } = useApp();
   const [moreOpenIds, setMoreOpenIds] = useState(() => new Set());
   const toggleMore = (id) => setMoreOpenIds((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -355,6 +478,7 @@ export function LoansTab() {
 
   return (
     <div role="tabpanel" id="tab-panel" aria-labelledby="tab-loans" tabIndex={0} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <RefundPlaybook data={data} upd={upd} moSpend={moSpend} />
       <ReminderBanner data={data} upd={upd} />
 
       {loans.length === 0 && (
