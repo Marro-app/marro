@@ -540,10 +540,10 @@ export function diffStates(base, cur) {
   // and safe — it only loses data if BOTH devices archive/restore in the same
   // sync window, which `findConflicts` will surface as a conflict rather than
   // silently dropping either side.
-  for (const k of ['darkMode','logo','surplusBank','preferredName','avatar','program','setupVersion','archivedYears']) {
+  for (const k of ['darkMode','logo','preferredName','avatar','program','setupVersion','archivedYears']) {
     if (js(base[k]) !== js(cur[k])) ch[k] = {b:base[k], c:cur[k]};
   }
-  for (const k of ['monthlyRollover','monthDisabled']) {
+  for (const k of ['monthDisabled']) {
     const bk=base[k]||{}, ck=cur[k]||{};
     for (const sk of new Set([...Object.keys(bk),...Object.keys(ck)]))
       if (js(bk[sk])!==js(ck[sk])) ch[`${k}.${sk}`]={b:bk[sk],c:ck[sk]};
@@ -624,7 +624,7 @@ export function applyChanges(state, changes) {
       } else { s.years[idx][rest]=val; }
       continue;
     }
-    m=key.match(/^(monthlyRollover|monthDisabled)\.(.+)$/);
+    m=key.match(/^(monthDisabled)\.(.+)$/);
     if (m) { s[m[1]]=s[m[1]]||{}; if (val==null) delete s[m[1]][m[2]]; else s[m[1]][m[2]]=val; continue; }
     m=key.match(/^(categories|subscriptions|stepGoals|savingsGoals|savingsLog|currentWeekEntries)\[(.+)\]$/);
     if (m) {
@@ -654,7 +654,7 @@ export function applyChanges(state, changes) {
   return s;
 }
 
-export const MONEY_KEYS=['monthly','budget','housing','amount','grant','tuition','health','income','allowance','target','saved','surplusBank','fee'];
+export const MONEY_KEYS=['monthly','budget','housing','amount','grant','tuition','health','income','allowance','target','saved','fee'];
 export function fmtConflictVal(key, val, data) {
   if (val==null) return '(removed)';
   if (typeof val==='boolean') return val?'On':'Off';
@@ -678,6 +678,6 @@ export function conflictLabel(key, data) {
   m=key.match(/^savingsGoals\[(.+)\]$/);                   if (m) { const g=(data?.savingsGoals||[]).find(g=>g.id===m[1]); return `Savings goal: ${g?.label||m[1]}`; }
   m=key.match(/^subscriptions\[(.+)\]$/);                  if (m) { const s=(data?.subscriptions||[]).find(s=>s.id===m[1]); return `Subscription: ${s?.name||m[1]}`; }
   m=key.match(/^categories\[(.+)\]$/);                     if (m) return `Category: ${catLabel(m[1])}`;
-  return ({darkMode:'Dark mode',logo:'App logo',surplusBank:'Surplus bank'})[key]||key;
+  return ({darkMode:'Dark mode',logo:'App logo'})[key]||key;
 }
 (function(){setInterval(()=>{const now=new Date();if(now.getDay()===0&&now.getHours()===23&&now.getMinutes()===59)window._triggerArchive&&window._triggerArchive()},60000)})();

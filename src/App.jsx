@@ -4,7 +4,7 @@ import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed
 import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
-import { fmt, fmtS, fmtD, fmtDay, fmtA, moTotal, todayStr, getMonday, getSunday, daysUntil, subMonthlyTotal, getYearMonthStr, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE } from './lib/format.js';
+import { fmt, fmtS, fmtD, fmtDay, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE } from './lib/format.js';
 import { BRANDS, BRAND_DOMAINS, getBrandDomain, getBrand } from './lib/brands.js';
 import { US_MED_SCHOOLS, degreeForSchool, DO_DUAL, dualOptionsForSchool } from './lib/schools.js';
 import { AV_PALETTE, avColor, AVATARS, AV_GROUPS } from './lib/avatars.js';
@@ -244,7 +244,6 @@ export function App() {
         }
         const loaded = raw ? JSON.parse(raw) : JSON.parse(JSON.stringify(DEFAULT_STATE));
         // Migrate: add new fields if missing
-        if(loaded.surplusBank===undefined) loaded.surplusBank=0;
         if(!loaded.monthDisabled) loaded.monthDisabled={};
         if(loaded.darkMode===undefined) loaded.darkMode=!window.matchMedia("(prefers-color-scheme: light)").matches;
         // One-time migration: before the theme system existed the toggle was inert and
@@ -622,19 +621,6 @@ export function App() {
       })()
     : thisWeekBudget;
 
-  // Monthly rollover
-  const today = todayStr();
-  const currentMonth = getYearMonthStr(today);
-  const lastMonthKey = (() => {
-    const [y,m] = currentMonth.split("-").map(Number);
-    const lm = m===1?12:m-1;
-    const ly = m===1?y-1:y;
-    return `${ly}-${String(lm).padStart(2,"0")}`;
-  })();
-  const monthRollovers = data.monthlyRollover||{};
-  const lastMonthRollover = monthRollovers[lastMonthKey]||0;
-  const moSpendableWithRollover = moSpendable + lastMonthRollover/30; // spread over 30 days
-
   // Renewal check
   const renewalsDue = subs.filter(s=>s.active!==false&&!s.renewalPrompted&&daysUntil(s.renewal)!==null&&daysUntil(s.renewal)<=0);
   const renewalsSoon = subs.filter(s=>s.active!==false&&daysUntil(s.renewal)!==null&&daysUntil(s.renewal)>0&&daysUntil(s.renewal)<=14);
@@ -894,7 +880,6 @@ export function App() {
     totDisburse, totSpend, getMonthValIdx, getMonthVal, weeklyBudget,
     currentWeekStart, currentWeekEnd, currentEntries, archives, lastArchive,
     lastWeekSurplus, thisWeekBudget, viewEntries, viewTotal, viewBudget,
-    lastMonthRollover, moSpendableWithRollover,
     renewalsDue, renewalsSoon, barData, rolloverReco,
     // shared mutation helpers (don't close over any one tab's private form state)
     setMo, setYrF, syncSubs, promoteToBudget, toggleMonthCat, removeWeeklyEntry,

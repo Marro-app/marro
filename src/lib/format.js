@@ -43,8 +43,6 @@ export const DEFAULT_STATE = {
   weeklyArchive: [],
   currentWeekEntries: [],
   subscriptions: [],
-  monthlyRollover: {},
-  surplusBank: 0,
   logo: null,  // legacy field (kept for sync compatibility)
   monthDisabled: {},  // {"0-Aug":["exams"], "0-Sep":["books"]} — yearId-month: disabled cat ids
   preferredName: null,

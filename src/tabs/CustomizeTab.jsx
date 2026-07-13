@@ -99,7 +99,7 @@ export function CustomizeTab(){
 
               // 5. Rollover — universal app behavior, not school-specific
               notes.push({title:"Rollover",
-                body:"Unspent weekly money rolls into next week automatically. Leftover monthly money rolls into the next month with a suggestion for what to do with it."});
+                body:"Unspent weekly money rolls into next week automatically."});
 
               return notes.map((n,i)=>(
                 <div key={i} style={{padding:"10px 0",borderBottom:i<notes.length-1?`1px solid ${C.border}`:"none"}}>

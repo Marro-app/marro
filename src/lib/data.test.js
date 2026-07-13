@@ -8,14 +8,12 @@ import {
 const baseState = () => ({
   darkMode: false,
   logo: null,
-  surplusBank: 100,
   preferredName: 'Alex',
   avatar: { type: 'art', style: 'buddy', color: 'marigold' },
   program: { degree: 'MD', dual: null, phd: { field: '', institution: '' }, masters: { field: '', institution: '' }, other: { field: '', institution: '' } },
   setupVersion: 1,
   archivedYears: [],
-  monthlyRollover: { '0-Aug': 50 },
-  monthDisabled: {},
+  monthDisabled: { '0-Aug': ['exams'] },
   years: [{
     grant: 1000, tuitionFees: 0, healthIns: 0, otherIncome: 0,
     housing: 0, housingNote: '', livingAllowance: 0, notes: '',
@@ -42,8 +40,8 @@ describe('diffStates', () => {
   });
 
   it('flags a scalar edit', () => {
-    const b = baseState(); const c = clone(b); c.surplusBank = 200;
-    expect(diffStates(b, c)).toEqual({ surplusBank: { b: 100, c: 200 } });
+    const b = baseState(); const c = clone(b); c.darkMode = true;
+    expect(diffStates(b, c)).toEqual({ darkMode: { b: false, c: true } });
   });
 
   it('flags identity/setup scalar edits (preferredName, avatar, program, setupVersion)', () => {
@@ -68,8 +66,8 @@ describe('diffStates', () => {
   });
 
   it('flags nested-map additions with a dotted key', () => {
-    const b = baseState(); const c = clone(b); c.monthlyRollover['0-Sep'] = 25;
-    expect(diffStates(b, c)).toEqual({ 'monthlyRollover.0-Sep': { b: undefined, c: 25 } });
+    const b = baseState(); const c = clone(b); c.monthDisabled['0-Sep'] = ['books'];
+    expect(diffStates(b, c)).toEqual({ 'monthDisabled.0-Sep': { b: undefined, c: ['books'] } });
   });
 
   it('flags a year field, a monthly budget, and an override independently', () => {
@@ -106,13 +104,13 @@ describe('diffStates', () => {
 // ── Round-trip: applyChanges(base, diff(base,cur)) reproduces cur ────────────
 describe('applyChanges round-trips every diff family', () => {
   const cases = {
-    'scalar edit': (c) => { c.surplusBank = 200; c.darkMode = true; },
+    'scalar edit': (c) => { c.darkMode = true; c.logo = 'https://x/logo.png'; },
     'identity/setup scalar edit': (c) => {
       c.preferredName = 'Sam'; c.avatar = { type: 'google', url: 'https://x/y.png' };
       c.program = { ...c.program, dual: 'masters' }; c.setupVersion = 2;
     },
     'archivedYears replace': (c) => { c.archivedYears = [{ id: 0, startDate: '2023-08-01', endDate: '2024-08-15' }]; },
-    'nested-map add + edit': (c) => { c.monthlyRollover['0-Sep'] = 25; c.monthlyRollover['0-Aug'] = 60; },
+    'nested-map add + edit': (c) => { c.monthDisabled['0-Sep'] = ['books']; c.monthDisabled['0-Aug'] = ['exams','books']; },
     'year field / monthly / override': (c) => {
       c.years[0].grant = 1200; c.years[0].monthly.food = 320; c.years[0].monthlyOverrides.Sep.food = 360;
     },
@@ -123,7 +121,7 @@ describe('applyChanges round-trips every diff family', () => {
     'weekly entry edit': (c) => { c.weeklyArchive[0].entries[0].amount = 99; },
     'whole week add': (c) => { c.weeklyArchive.push({ weekStart: '2024-01-08', entries: [{ id: 'x', amount: 1 }] }); },
     'everything at once': (c) => {
-      c.surplusBank = 999; c.monthlyRollover['0-Sep'] = 25; c.years[0].monthly.food = 400;
+      c.darkMode = true; c.monthDisabled['0-Sep'] = ['books']; c.years[0].monthly.food = 400;
       c.categories.push({ id: 'gym', label: 'Gym' }); c.subscriptions = [];
       c.weeklyArchive[0].entries.push({ id: 'e2', amount: 5 });
     },
@@ -138,7 +136,7 @@ describe('applyChanges round-trips every diff family', () => {
 
   it('does not mutate the input state', () => {
     const b = baseState(); const snapshot = clone(b);
-    const c = clone(b); c.surplusBank = 500;
+    const c = clone(b); c.darkMode = true;
     applyChanges(b, diffStates(b, c));
     expect(b).toEqual(snapshot);
   });
@@ -162,30 +160,30 @@ describe('applyChanges round-trips every diff family', () => {
 describe('findConflicts', () => {
   it('reports a conflict when both sides changed the same key', () => {
     const b = baseState();
-    const local = clone(b); local.surplusBank = 300;
-    const server = clone(b); server.surplusBank = 400;
+    const local = clone(b); local.preferredName = 'Sam';
+    const server = clone(b); server.preferredName = 'Jamie';
     const { conflicts, mergeLocal, mergeServer } = findConflicts(diffStates(b, local), diffStates(b, server));
-    expect(conflicts).toEqual([{ key: 'surplusBank', local: 300, server: 400 }]);
+    expect(conflicts).toEqual([{ key: 'preferredName', local: 'Sam', server: 'Jamie' }]);
     expect(mergeLocal).toEqual({});
     expect(mergeServer).toEqual({});
   });
 
   it('auto-merges disjoint edits from each side', () => {
     const b = baseState();
-    const local = clone(b); local.surplusBank = 300;             // only local
-    const server = clone(b); server.years[0].grant = 1500;       // only server
+    const local = clone(b); local.preferredName = 'Sam';          // only local
+    const server = clone(b); server.years[0].grant = 1500;        // only server
     const { conflicts, mergeLocal, mergeServer } = findConflicts(diffStates(b, local), diffStates(b, server));
     expect(conflicts).toEqual([]);
-    expect(mergeLocal).toHaveProperty('surplusBank');
+    expect(mergeLocal).toHaveProperty('preferredName');
     expect(mergeServer).toHaveProperty('years[0].grant');
   });
 
   it('separates conflicting from non-conflicting keys in one pass', () => {
     const b = baseState();
-    const local = clone(b); local.surplusBank = 300; local.darkMode = true;
-    const server = clone(b); server.surplusBank = 400; server.years[0].grant = 1500;
+    const local = clone(b); local.preferredName = 'Sam'; local.darkMode = true;
+    const server = clone(b); server.preferredName = 'Jamie'; server.years[0].grant = 1500;
     const { conflicts, mergeLocal, mergeServer } = findConflicts(diffStates(b, local), diffStates(b, server));
-    expect(conflicts.map(c => c.key)).toEqual(['surplusBank']);
+    expect(conflicts.map(c => c.key)).toEqual(['preferredName']);
     expect(mergeLocal).toHaveProperty('darkMode');       // local-only survives
     expect(mergeServer).toHaveProperty('years[0].grant'); // server-only survives
   });
@@ -216,14 +214,14 @@ describe('two-device merges preserve disjoint edits to the newly-tracked fields'
     const removedYear = { ...local.years[0] };
     local.archivedYears = [removedYear];
     local.years = [];                                   // device A: soft-deleted (archived) the only year
-    const server = clone(base); server.surplusBank = 250; // device B: unrelated edit, already on the server
+    const server = clone(base); server.darkMode = true; // device B: unrelated edit, already on the server
     const { conflicts, mergeLocal } = findConflicts(diffStates(base, local), diffStates(base, server));
     expect(conflicts).toEqual([]);
     const merged = applyChanges(server, mergeLocal);
     // The authoritative "this year was removed" record — archivedYears — is
     // now tracked as a scalar and merges correctly: device A's removal wins.
     expect(merged.archivedYears).toEqual([removedYear]);
-    expect(merged.surplusBank).toBe(250);               // device B's edit survived too
+    expect(merged.darkMode).toBe(true);                 // device B's edit survived too
     expect(merged.years).toEqual([]);                   // the year itself is actually gone, not a ghost entry
   });
 });
@@ -264,6 +262,6 @@ describe('conflictLabel', () => {
     expect(conflictLabel('categories[food]', data)).toBe('Category: Food');
   });
   it('maps known top-level keys', () => {
-    expect(conflictLabel('surplusBank', data)).toBe('Surplus bank');
+    expect(conflictLabel('darkMode', data)).toBe('Dark mode');
   });
 });
