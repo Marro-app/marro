@@ -258,9 +258,16 @@ export function App() {
         // Defensive: a row missing categories would crash render (cats.forEach) — reseed defaults.
         if(!Array.isArray(loaded.categories) || !loaded.categories.length) loaded.categories = JSON.parse(JSON.stringify(DEFAULT_CATS));
         // Grandfather existing users: a saved state without setupVersion predates
-        // progressive setup — treat them as current so we don't nag them for v1 steps
-        // (their years are already configured). Brand-new states keep null → onboarding.
-        if(loaded.setupVersion===undefined) loaded.setupVersion = raw ? SETUP_VERSION : null;
+        // progressive setup entirely — their years are already configured, so they
+        // don't need the original onboarding flow again. But backfilling straight to
+        // the CURRENT SETUP_VERSION (rather than 1, the version that actually existed
+        // when progressive setup shipped) would silently skip every step added since
+        // then — including the balance/loans step this fix exists for — because
+        // ProgressiveSetup only shows steps with `sinceVersion` > the user's stamped
+        // version. Stamping their true era (1) instead lets each later step's own
+        // `sinceVersion` decide whether to show it. Brand-new states (`raw` falsy)
+        // keep null → full onboarding.
+        if(loaded.setupVersion===undefined) loaded.setupVersion = raw ? 1 : null;
         // Program track (dual-degree). Backfill the shape; degree is re-derived from the
         // school wherever it's used, so a missing/stale value here is harmless.
         if(!loaded.program || typeof loaded.program!=="object")
