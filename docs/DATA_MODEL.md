@@ -12,14 +12,17 @@ years             [{id, label, type, grant, tuitionFees, healthIns, otherIncome,
 weeklyArchive     [{weekStart, weekEnd, entries:[{id,catId,amount,note,date,depositId?}], total}]
 currentWeekEntries [{id,catId,amount,note,date,depositId?}]
 subscriptions     [{id,name,amount,cycle,renewal,active}]
-monthlyRollover   {yyyy-mm: amount}
-surplusBank       number
 monthDisabled     {"ay-MonthName": [catIds]}
 darkMode          bool
 stepGoals / savingsGoals  [{id,label,targetAmount,targetDate,saved,monthlyContribution}]
 savingsLog        [{id,goalId,amount,date,note,weeklyEntryId?,budgetAdded?}]
+loans             [{id,name,type:"federal"|"private",academicYear,rate,status,disbursements,feePct,notes,asOfBalance,asOfDate}]
+balanceReadings   [{id,date,spendable,savings}]   // append-only; see "Phase 2" section below
+loanReminderSnooze  null | {choice:"never", at:iso}
+refundPlaybookSeen  null | {term:"2027-spring", at:iso}
 _savedAt          number (timestamp on every save — drives 3-way merge)
 ```
+**Removed 2026-07-13 (Phase 2 commit 1 — dead-field cleanup):** `monthlyRollover` and `surplusBank` used to live here. Both were dead code — the app promised in Settings copy that "leftover monthly money rolls into next month," but nothing ever actually wrote a value into either field, so the promise was false. Removed along with the UI that referenced them; the real, working weekly rollover (`lastWeekSurplus`/`thisWeekBudget`, unrelated despite the similar name) was untouched. Detail: `PRODUCT_DECISIONS.md` "Phase 2 commit 1."
 
 ### savingsLog entry (key to linkage)
 - `weeklyEntryId` — `"e_<ts>"` linked weekly entry (if auto-created)
@@ -48,6 +51,45 @@ moSpendable = (annGrant - tuition - healthIns + otherIncome*12) / 12
 moSurplus   = moSpendable - moSpend - unbudgetedTotal   // rounded
 weeklyBudget= moSpendable / 4.333 (+ last week's rollover)
 ```
+
+---
+
+## Phase 2: Loans, Debt & Runway (2026-07-13)
+
+All the math here lives in **`src/lib/loans.js`** — a pure, fully-tested file with no React/App dependencies, built specifically so the numbers behind the Debt and Runway header tiles are hand-checkable and unit-testable in total isolation. Read that file's header comment + `docs/PRODUCT_DECISIONS.md` "Phase 2 commit 3" for the worked studentaid.gov example it was verified against, and the "Phase 2 commit 7" entry for how the header tiles consume it. This section covers the **data shapes**, not the formulas.
+
+### `loan` shape
+```
+{ id, name, type:"federal"|"private", academicYear:2026,
+  rate: null|decimal,             // null = infer from the federal rate table (private loans: 0 until entered)
+  status: "offered"|"accepted"|"disbursed",   // manual entries default "disbursed"
+  disbursements: [{id, date, amount, dateConfirmed}],  // the chunks the money actually arrives in (fall/spring, or 3-4x for some schools)
+  feePct: null|decimal,            // null = 1.057% for federal, 0 for private
+  notes,
+  asOfBalance: null|number, asOfDate: null|iso }  // alternate entry mode — see below
+```
+**Two entry modes, never mixed:** the default mode sums `disbursements` (the *original amount borrowed*, grossed up by the fee); the alternate "balance as of [date]" mode (`asOfBalance`/`asOfDate` both set) uses that number as-is and accrues interest only from `asOfDate` forward. The second mode exists because studentaid.gov's own "current balance" already has years of interest baked in — typing that number into the default mode would double-count the interest already accrued (interest-on-interest). Only one mode is active per loan (`asOfDate != null` short-circuits the disbursement-based math everywhere in `loans.js`).
+
+Only `status: "accepted"` or `"disbursed"` loans count toward the Debt tile — an `"offered"` loan is money the student hasn't committed to yet.
+
+### `balanceReadings` — append-only, id-keyed
+```
+{ id, date:"2026-10-01", spendable:6400, savings:12000|null }
+```
+One entry per check-in ("about how much do you have available for living costs right now?"). `savings` is optional and, when the student leaves it blank, the check-in UI pre-fills the input with the *last known* savings value so a reading is never accidentally recorded as "$0 in savings" — but the stored value itself can genuinely be `null` (never asked/answered). Readings are never edited or deleted after the fact, only appended to — the full history is what lets `computeRunway` measure real spending pace between any two dates.
+
+**Burn-from-total rule:** the monthly spending pace `computeRunway` measures is derived from the **total** of `spendable + savings` between two readings, never from `spendable` alone. This is deliberate: if a student moves $8,000 from checking into savings, that's a transfer, not $8,000 of spending — measuring `spendable` alone would read it as a giant spending spree that month. The countdown itself still anchors on `spendable` (that's the number that actually runs out day to day); the total is only used to compute the underlying pace.
+
+**Balance-anchor design rationale (why ask for a balance instead of tracking transactions):** real life can't break it. A parent's gift, cash spending, a forgotten subscription, a refund — everything nets into the next balance reading automatically, with no receipts and no bank login. The trade-off is resolution (a monthly number, not a live feed) and the "≥14 days apart" rule below.
+
+### `loanReminderSnooze` / `refundPlaybookSeen` — scalar, last-write-wins
+`loanReminderSnooze: null | {choice:"never", at:iso}` — dismissing the empty-Loans-tab reminder banner. `refundPlaybookSeen: null | {term:"2027-spring", at:iso}` — one Refund Playbook card per refund cycle; a new term always gets a fresh card even after a prior term was dismissed.
+
+### Runway's state machine (`computeRunway`, `src/lib/loans.js`)
+Returns one of 7 states, each carrying only the fields relevant to it: `unanchored` (no balance readings yet), `growing` (spending less than she brings in), `through_graduation` (comfortably lasts), `counting_down` (a real countdown to a run-out date, incl. a `basicallyOnTrack` sub-case when the gap to the next refund is under 7 days), `gap` (runs out before the next refund — carries a trim-per-month suggestion), `overdrawn` (spendable ≤ $0 — carries whether savings covers it), and `graduated` (suppressed — money no longer needs to "last"). A measured burn rate is only trusted once two readings are ≥14 days apart; under that, the student's budgeted plan fills in instead (labeled `burn.source:"plan"`) rather than trusting a single noisy day.
+
+### Merge engine (`src/lib/data.js`)
+`loans` and `balanceReadings` are id-keyed buckets (each item diffs/merges independently — two devices adding different loans, or checking in on the same day, both survive a merge). `loanReminderSnooze` and `refundPlaybookSeen` are plain scalar fields (last-write-wins, same as `darkMode`/`preferredName`).
 
 ---
 
