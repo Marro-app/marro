@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, ReferenceLine } from 'recharts';
 import { C, CHART_COLORS, tipProps } from '../lib/theme.js';
 import { fmt, fmtS, fmtDay, todayStr, MONTH_NAMES, getMonday, getSunday } from '../lib/format.js';
+import { DAYS_PER_MONTH } from '../lib/constants.js';
 import { Card, SectionTitle, EmptyState, Pill, RingProgress, XBtn, Modal } from '../components/primitives.jsx';
 import { DateField } from '../components/pickers.jsx';
 import { useApp } from '../context/AppContext.js';
@@ -329,7 +330,7 @@ export function SavingsTab(){
               // Months to graduation = months from now to last year's end date
               const lastYearEnd = new Date(data.years[data.years.length-1].endDate||"2031-06-30");
               const now = new Date();
-              const moToGrad = Math.max(1, Math.round((lastYearEnd - now) / (1000*60*60*24*30.44)));
+              const moToGrad = Math.max(1, Math.round((lastYearEnd - now) / (1000*60*60*24*DAYS_PER_MONTH)));
               const gradIdx = Math.min(moToGrad, 60) - 1;
               const gradBal = projData[gradIdx]?.balance ?? projData[projData.length-1]?.balance;
               const hysaPct = totalAccumulatedBalance * (apy/100);
@@ -405,7 +406,7 @@ export function SavingsTab(){
                 const annualSav=mSav*12;
                 const r=apy/100/12;
                 const lastYearEnd=new Date(data.years[data.years.length-1].endDate||"2031-06-30");
-                const moLeft=Math.max(1,Math.round((lastYearEnd-new Date())/(1000*60*60*24*30.44)));
+                const moLeft=Math.max(1,Math.round((lastYearEnd-new Date())/(1000*60*60*24*DAYS_PER_MONTH)));
                 const savGrowth=r>0?mSav*(Math.pow(1+r,moLeft)-1)/r:mSav*moLeft;
                 recs.push({color:C.teal,text:`You're saving ${fmt(mSav)}/mo (${fmt(annualSav)}/yr). Over your remaining ~${moLeft} months of school, that compounds to ${fmt(Math.round(savGrowth))} at ${apy||0}% APY.`});
               }
