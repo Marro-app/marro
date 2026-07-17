@@ -7,7 +7,7 @@
 > **Operating principle:** phases are ordered by what we **learn about real users soonest**, not by what's technically next. Ship to strangers, measure, respond. Hide features rather than delete them — everything hidden stays on the shelf.
 
 ## Done (detail in HISTORY.md)
-✓ Phase 1 core app · ✓ Phase 2 savings & charts · ✓ Phase 2.5 Marro UI overhaul · ✓ Phase 2.5b auth + Supabase · ✓ Phase 3 school-agnostic generalization · ✓ Phase 3.5 foundation (Vite migration, component split, PWA cache fix, Vitest 62 tests, Sentry)
+✓ Phase 1 core app · ✓ Phase 2 savings & charts · ✓ Phase 2.5 Marro UI overhaul · ✓ Phase 2.5b auth + Supabase · ✓ Phase 3 school-agnostic generalization · ✓ Phase 3.5 foundation (Vite migration, component split, PWA cache fix, Vitest 62 tests, Sentry) · ✓ Phase 2 money core — loans, debt, runway (2026-07-13, detail below)
 
 ---
 
@@ -30,7 +30,29 @@
 
 **Done when:** 3 visible tabs + settings; a stranger can join unaided (pending Google); usage is visible; users can leave with their data.
 
-## Phase 2 — Money core: loans, runway, new onboarding (~2–3 wks)
+## Phase 2 — Money core: loans, runway, new onboarding — ✓ shipped 2026-07-13
+
+**Built exactly as scoped in the Phase 2 plan (`PRODUCT_DECISIONS.md` "Phase 2 commit 1–7" entries; full walkthrough archived alongside the plan). Scope was corrected in a few places from the original lines below — each correction is called out, with the reason and where the cut item moved to.**
+
+- ✓ **Onboarding money step — 2 questions, not 5.** Original scope below promised 5 (total borrowed, next disbursement, rent/fixed costs, family/partner support, other income). What shipped: one skippable screen asking **available to spend** + **savings (optional)**, plus an "I have student loans" checkbox that routes to the Loans tab. Rent/fixed costs and other income were already collected elsewhere in existing Budget/Aid setup — repeating them in a second screen would have violated the plan's own "one idea per screen, no screen asks more than two things" rule. Family/partner support as a distinct field was cut; it flows through the existing "other income" field.
+- ✓ **Debt at graduation, with real daily-simple interest** (`src/lib/loans.js`) — calculated the same way federal servicers do, hand-checked against a studentaid.gov worked example (`PRODUCT_DECISIONS.md` "Phase 2 commit 3"). Shows as a calm "estimate" badge whenever any counted loan is private, rate-inferred, or date-inferred.
+- ✓ **Runway** ("$X lasts until ~date," or "Growing," "On track ✓," a gap warning with a trim suggestion, "overdrawn," or "all done" after graduation) — a 7-state machine (`computeRunway`) built on balance check-ins, not transaction tracking, so gifts/cash spending/forgotten subscriptions never break it.
+- ✓ **Loans tab** — editable, user-named loans; calm "Estimate — add your loans to make this exact" badge when incomplete; offered/accepted/disbursed status field in the model from v1 (built specifically so the future aid-letter scanner can drop in without a redesign).
+- ✓ **Refund Playbook** — a one-time educational card when a semester's aid refund lands (how much to keep in checking, a savings-parking range with FDIC/tax notes, and a per-loan 120-day return-window countdown) — not in the original scope below, added during design because it's the single highest-leverage moment in a med student's financial year.
+- **Scope correction — no "rough post-residency monthly payment."** The original line below promised this on the payoff screen. **Deliberately not built**: the federal government eliminated the old repayment plans in July 2026 and the replacement rules aren't finalized — guessing at the biggest number in a student's post-grad life isn't something this app will do. Revisit once the rules settle (tracked in Phase 8, "Repayment simulator + PSLF").
+- **Scope correction — no Home-screen runway redesign.** The original line below described the Home tab centering on a countdown + "upcoming big costs" replacing the Step-savings rings. **What shipped instead: the existing header Debt/Runway tiles went live** (commit 7) — a smaller, lower-risk change than redesigning Home. The bigger Home-screen redesign is still a real idea, just not this phase's — see the new Phase 2.6 line below.
+- **Scope correction — no retroactive Grant/Loans split.** The original line below promised splitting old single-scalar "Total aid" entries into separate Grant and Loans fields after the fact. **Deliberately not built** (see "What we're deliberately NOT building" in the Phase 2 plan): there's no reliable way to know, after the fact, how much of a past "Total aid" number was grants versus loans, and guessing would silently corrupt real historical numbers. What shipped instead is **additive**: real loan tracking starts fresh in the new Loans tab; existing Aid/Budget "Total aid" entries are untouched.
+
+**Done when:** ✓ fresh account → debt + runway on screen in <5 min; numbers hand-checked against a studentaid.gov example (`PRODUCT_DECISIONS.md` "Phase 2 commit 3").
+
+### Phase 2 follow-ups (moved out of this phase, not forgotten)
+- **Phase 2.6 — Home-screen runway redesign.** Center Home on the runway countdown + an "upcoming big costs" list (Step fees, interview season), as originally scoped above — now that the header tiles have proven the underlying math live in production, redesigning Home around it is lower-risk. Replaces the Step savings-goal rings.
+- **Repayment simulator (post-residency monthly payment)** — moved to Phase 8, gated on the federal government finalizing the post-OBBBA repayment-plan rules. Research the actual rules first; never build loan policy from memory.
+- **Aid-letter scanner (Phase 4 AI)** — photograph an award letter, auto-fill loan amounts/dates/rate as a "Suggested" (unconfirmed) entry the student confirms. The Loans tab's offered/accepted/disbursed status field exists specifically so this can drop in without a data-model change.
+- **Known v1 limitations, documented not hidden** (full list in the Phase 2 plan's "Who this works for" section): no dedicated MD/PhD-style monthly-stipend mode (approximated via "other income"); international/DACA students use the Private loan type (covers the math, not cosigner nuances); quarter-system schools' refund timing shows as a wider estimate than semester schools.
+
+<details>
+<summary>Original Phase 2 scope (2026-07-01 revision) — kept for history, superseded by the shipped scope above</summary>
 
 One integrated build. Specs already locked — build as designed: loan-capture model + snapshot + Offered≠Accepted≠Disbursed (`PRODUCT_DECISIONS.md` 2026-06-28 entries).
 - **Onboarding money step (5 questions):** total borrowed so far (skippable; the one federal/non-federal toggle) · next disbursement amount + rough date · rent + fixed monthly costs · **family/partner support (monthly)** · other income (monthly).
@@ -40,6 +62,7 @@ One integrated build. Specs already locked — build as designed: loan-capture m
 - **Split "Total aid" into real Grant + Loans sections (follow-up to the Phase 1 Track A A2 fix, 2026-07-09, `PRODUCT_DECISIONS.md`).** The audit fix relabeled the header/tab figure to "Total aid" with a footnote ("may include loans you'll repay — loan tracking is coming soon") but left the data model untouched — it's still a single scalar `grant` field. This item is the real fix, not just a UI split: add a distinct `loans` field alongside `grant`, migrate existing single-scalar state (a state/sync change through the 3-way merge engine in `src/lib/data.js`, same pattern as the Phase 1 Track A sync fix — old clients with only `grant` must merge cleanly against new clients with both fields), build real loan input UI (amounts, terms), and show Grant and Loans as separate lines in Aid/Budget that sum to the total shown today. Naturally rolls up into this phase's loan-capture model/Loans tab work — build it as part of that, not standalone.
 
 **Done when:** fresh account → debt + runway on screen in <5 min; numbers hand-checked against studentaid.gov examples.
+</details>
 
 ## Phase 3 — The rhythm: monthly check-in + weekly digest (~1–2 wks)
 
