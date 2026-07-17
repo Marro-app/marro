@@ -5,6 +5,7 @@ import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
 import { fmt, fmtS, fmtD, fmtDay, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE } from './lib/format.js';
+import { WEEKS_PER_MONTH, USMLE_STEP_FEE_ESTIMATE } from './lib/constants.js';
 import { BRANDS, BRAND_DOMAINS, getBrandDomain, getBrand } from './lib/brands.js';
 import { US_MED_SCHOOLS, degreeForSchool, DO_DUAL, dualOptionsForSchool } from './lib/schools.js';
 import { AV_PALETTE, avColor, AVATARS, AV_GROUPS } from './lib/avatars.js';
@@ -39,6 +40,7 @@ import { AppContext } from './context/AppContext.js';
 // that was the main mobile cold-load cost. Each tab is only ever mounted one at
 // a time (mutually-exclusive `tab===...` guards), so code-splitting them is safe.
 const AidTab = React.lazy(() => import('./tabs/AidTab.jsx').then(m => ({ default: m.AidTab })));
+const LoansTab = React.lazy(() => import('./tabs/LoansTab.jsx').then(m => ({ default: m.LoansTab })));
 const SubscriptionsTab = React.lazy(() => import('./tabs/SubscriptionsTab.jsx').then(m => ({ default: m.SubscriptionsTab })));
 const SavingsTab = React.lazy(() => import('./tabs/SavingsTab.jsx').then(m => ({ default: m.SavingsTab })));
 const ChartsTab = React.lazy(() => import('./tabs/ChartsTab.jsx').then(m => ({ default: m.ChartsTab })));
@@ -609,7 +611,7 @@ export function App() {
   const currentWeekStart = getMonday(new Date());
   const currentWeekEnd   = getSunday(currentWeekStart);
   const currentEntries   = data.currentWeekEntries||[];
-  const weeklyBudget     = moSpendable/4.333;
+  const weeklyBudget     = moSpendable/WEEKS_PER_MONTH;
   const archives         = [...(data.weeklyArchive||[])].sort((a,b)=>b.weekStart.localeCompare(a.weekStart));
 
   // Weekly rollover: check last week surplus
@@ -862,7 +864,7 @@ export function App() {
     const recs = [];
     const yrData = data.years.find(y=>y.id===ay)||data.years[0];
     if(!(yrData.monthly.savings||0)) recs.push(`Consider building an emergency fund (goal: ${fmt(moSpend*3)})`);
-    if(!(yrData.monthly.exams||0)) recs.push(`Set aside ${fmt(surplus)} for USMLE Step exams (~$850 each)`);
+    if(!(yrData.monthly.exams||0)) recs.push(`Set aside ${fmt(surplus)} for USMLE Step exams (~${fmt(USMLE_STEP_FEE_ESTIMATE)} each)`);
     if(subsMo < 50) recs.push(`Consider adding a study resource (UWorld, Amboss) for ${fmt(surplus)}/mo`);
     recs.push(`Add it to savings — even ${fmt(surplus)}/mo compounds significantly over your training`);
     return recs[0];
@@ -1272,6 +1274,7 @@ export function App() {
           ["charts","Charts"],
           ["savings","Savings"],
           ["aid","Aid & Detail",0],
+          ["loans","Loans"],
           ["subscriptions","Subscriptions",renewalsDue.length],
           ["customize","Categories"],
           ...(admin ? [["admin","Admin"]] : []),
@@ -1296,6 +1299,9 @@ export function App() {
 
         {/* ══════════════ AID & DETAIL ══════════════ */}
         {tab==="aid" && <AidTab/>}
+
+        {/* ══════════════ LOANS ══════════════ */}
+        {tab==="loans" && <LoansTab/>}
 
         {/* ══════════════ SUBSCRIPTIONS ══════════════ */}
         {tab==="subscriptions" && <SubscriptionsTab/>}

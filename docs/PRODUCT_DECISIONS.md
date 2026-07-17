@@ -177,3 +177,175 @@ Four issues surfaced once Subscriptions lived inside the "Fixed monthly costs" m
 - **`src/lib/loans.test.js`** — new tests covering every function, the hand-checked interest example (asserted to the cent, independently verified), all 6 runway states, and every hardening bullet from the plan's adversarial review (same-date coalescing without NaN, <14-day window falls back to plan, near-zero burn → growing, future-date rejection, refund-straddle netting vs. out-of-window refunds not netted, gradDate-in-past suppression, overdrawn with/without savings coverage, checking→savings transfer not misread as spending, null-savings coalescing, cushion-extension math, long-span reading normalization, gap→clears-after-refund recompute, <7-day gap flooring, pre-2022 `isRateEstimated`, as-of-balance accrual anchored only to `asOfDate` with no double-counting, inferred vs. confirmed return-window dates, estimateRefunds floor/window/garbage-date guards, loanReturnWindows expiry filtering, refundPlaybookTrigger's jump threshold / seen-term suppression / confirm-path). All dollar figures in gap/trim tests were computed independently (Node) rather than hand-estimated, then pinned into the test as exact expected values.
 - No visible product change — nothing calls this file yet (commit 4 wires it into the Loans tab, commit 7 wires it into the header tiles).
 - Verification: `npm test` 133/133 passing (was 77 after commit 2), `npm run build` clean, `npm run lint` unchanged at 111 pre-existing warnings / 0 errors.
+
+## Phase 2 commit 4 — LoansTab + balance check-in (2026-07-13, branch mo/phase2-loans-tab, stacked on mo/phase2-cleanup)
+- **New `src/tabs/LoansTab.jsx`** — new "Loans" tab (visible, not hidden) mirroring `AidTab.jsx`'s patterns: `Card` grid, dashed "+ Add loan" button, labelled inputs, `XBtn` deletes. Per-loan card shows name/type/school-year/amount up front; status, fee-percent override, and notes fold behind a "More options" toggle (status defaults to "Money received" for manual entries, matching the plan). "Amount you borrowed that year" is a single annual-total field that auto-splits evenly into editable disbursement rows (`splitEvenly`, cent-accurate remainder distribution), defaulting to 2 rows dated ~Aug 5 / ~Jan 10 off the loan's academic year, with "+ add another part" for 3–4-disbursement schools. Editing a disbursement's date directly sets `dateConfirmed:true` (feeds `loanReturnWindows`' hard-vs-soft countdown copy in commit 6).
+- **Rate entry**: federal loans show the table-derived rate as read-only auto-filled text; private loans (and any federal loan `isRateEstimated`, e.g. pre-2022) get an editable percent input with a soft (non-blocking) "that seems high — double-check?" nudge above 20%, plus a small ✓ once a value is entered — never a hard block, per the plan's "gentle" framing.
+- **"Original amount, not today's balance" vs. as-of-balance mode**: a single toggle link switches a loan between the two entry modes described in the plan; switching into as-of-mode prefills the balance field from `loanPrincipal()` (rounded to cents — an earlier pass surfaced raw floating-point noise here, see UI_AUDIT_LOG) and today's date; switching back clears both fields, reverting to disbursement-row math.
+- **Balance check-in**: two fields (spendable required, savings optional, prefilled from the most recent reading that had one) that append a `balanceReadings` row dated `todayStr()` — no date picker shown to the student (the walkthrough never asks for one), which also sidesteps the plan's "future-date rejection" concern entirely for this UI (the append always uses today; `computeRunway`'s own future-date guard in `loans.js` still applies defensively to any reading regardless of source). A typo guard (>3× or >$20K swing from the last reading) requires an inline "Yes, that's right"/"Let me fix it" confirm (`role="alert"`, Cancel-left/primary-right per rule 9) before saving. Reading history renders read-only, newest first — no delete affordance, matching the data model's "append-only" comment in `format.js`.
+- **Reminder banner**: shows only when `loans.length===0 && loanReminderSnooze===null`; "Remind me later" is session-only local component state (reappears on next load/tab-visit), "Don't show again" persists `loanReminderSnooze:{choice:"never",at:iso}` via the normal sync path.
+- **Estimate badge**: exact copy "Estimate — add your loans to make this exact" via `<Banner type="info">`, shown in the summary card whenever `projectDebtAtGraduation(...).isEstimate` is true. Summary card (and the whole debt total) only renders once at least one loan is `accepted`/`disbursed` — an all-`offered` loan list still shows the empty-teaching state's dashed-button grid with no summary card, since nothing is counted yet.
+- **Type toggle a11y fix mid-implementation**: initially built Federal/Private as two independent buttons (both in the natural Tab order); caught in the mock-mount keyboard pass that this diverged from the app's own roving-tabindex `ChoiceGroup`/`radioProps` convention (used by `TabBtn`/`YrBtn`). Rewired onto `ChoiceGroup` + `radioProps` — now Tab lands once on the active option and arrow keys move+select within the group, consistent with the rest of the app. Logged in UI_AUDIT_LOG.md.
+- **Header tiles (Debt/Runway) are still commit 7** — `LoansTab`'s own summary card computes `projectDebtAtGraduation` locally using `data.years[data.years.length-1].endDate` as the graduation date (the same convention `SavingsTab.jsx` already uses for its projected-graduation-balance card), so the tab is fully usable standalone before the header tiles go live.
+- **Visual verification**: no real Google-authenticated session was available in this environment, so verification used the **isolated mock-mount pattern** (temporary `mockmount.html` + `src/mockmount-entry.jsx`, deleted before commit — not part of the diff): `AppContext.Provider` fed a mock `data` object (two loans — one federal two-part, one private single-part — plus two balance readings) with a local-state-only `upd` (no persistence, no real user data touched). Checked both themes, keyboard-only Tab/Arrow navigation, the typo-guard confirm flow, the as-of-balance toggle, and the empty/zero-loans state (`?empty=1`). Findings in UI_AUDIT_LOG.md 2026-07-13.
+- Copy read-through against the plan's banned-jargon table (acceptance criterion): no "disbursement", "principal", "interest accrual", "capitalization", "origination fee", or "APY" anywhere in the shipped strings — see the "Money usually arrives in two parts", "amount you borrowed", "the ~1% fee the government takes off the top", and plain-English status-option copy in the file itself.
+- Verification: `npm test` 133/133 passing (unchanged — no new pure logic to test beyond what `loans.test.js` already covers; LoansTab is UI composition over the already-tested `loans.js` functions), `npm run build` clean (new `LoansTab` chunk lazy-loads, ~18KB/~6KB gzip), `npm run lint` unchanged at 111 pre-existing warnings / 0 errors (0 new warnings from `LoansTab.jsx`).
+
+## Phase 2.6 Package A — per-type loan interest model, picker, return card (2026-07-17, amending branch mo/phase2-loans-tab / PR #27, pre-merge)
+
+Amends the still-unmerged Phase 2 stack per the founder's "amend in place" call
+(implementation plan open question Q3) — corrections to behavior PR #27
+introduces, landing before the stack merges so the preview reflects the fix.
+
+- **A1 — `LOAN_INTEREST_PROFILE` (`src/lib/loans.js`)**: added the per-type accrual
+  profile (verbatim from the design appendix) for `directUnsubGrad`, `gradPLUS`,
+  `directUnsubUndergrad`, `directSubUndergrad`, `hpsl`, `pcl`, `lds`, `perkins`,
+  `private`, `otherUserRate`. New `loanTypeKey(loan)` resolver: `subtype` wins
+  when set; a legacy loan (`subtype:null`/absent) resolves exactly as today —
+  `type:"private"` → `"private"`, everything else → `"directUnsubGrad"`. Every
+  rate/fee/accrual function now routes through this resolver instead of
+  checking `loan.type` directly. **Mandatory regression test asserts
+  bit-identical output** for `subtype:null` loans (the original $20,000 @
+  8.07% hand-check, still $6,180.15 to the cent).
+- **Rate-table widening + a real bug found while verifying**: extended
+  `FEDERAL_GRAD_UNSUB_RATES` back to 2013-14 (was 2022-23) and added
+  `FEDERAL_GRAD_PLUS_RATES` + `FEDERAL_UNDERGRAD_UNSUB_RATES` (2013-14 through
+  2026-27), all independently verified 2026-07-17 against
+  savingforcollege.com's reproduction of the studentaid.gov historical table
+  and an FSA Partners electronic announcement for 2026-27 (both fetched live,
+  not from memory, per the implementation plan's explicit instruction).
+  **Correction**: the existing 2024 grad-unsub entry was `0.0653` — that is
+  actually the 2024-25 *undergraduate* rate; the real grad/professional rate
+  (confirmed via FSA Partners' "Interest Rates for Direct Loans First
+  Disbursed Between July 1, 2024 and June 30, 2025" announcement) is `0.0808`.
+  This means every grad-loan debt projection for a 2024-disbursed loan was
+  understating accrued interest by ~1.55 points until this fix. This deviates
+  from the implementation plan's "existing 2022-2026 values are verified —
+  don't touch" instruction; fixed anyway because the plan's own verification
+  mandate takes precedence over a claim that turned out to be wrong, and this
+  is exactly the kind of silent-wrong-number bug CLAUDE.md's money-math rule
+  exists to catch. HRSA_RATE (5%, HPSL/PCL/LDS) and PERKINS_RATE (5%) added as
+  fixed statutory rates (not tables) — per the design's decision #1, verified
+  fact. Grad PLUS fee `FEDERAL_GRAD_PLUS_FEE = 0.04228`, distinct from the
+  standard `FEDERAL_ORIGINATION_FEE = 0.01057`.
+- **`accruedInterest` now consults `profile.accruesInSchool`** — a loan whose
+  type resolves to a non-accruing profile (HPSL/PCL/LDS, Direct Sub undergrad,
+  Perkins) accrues **$0** toward the graduation-horizon number, fixing the bug
+  the design's decision #1 called out: a 5% HPSL loan was previously priced as
+  if it accrued interest in school like a Direct Unsub loan, overstating the
+  student's projected debt.
+- **`projectDebtAtGraduation`'s `isEstimate` flag refined**: previously keyed
+  off the raw `type==="private"` field, which would have wrongly flagged every
+  HPSL/PCL/LDS loan (which store `type:"private"` for legacy-math-fallback
+  purposes only, per A2 below) as "an estimate" even with a fully known,
+  federally-fixed rate and confirmed dates. Now keyed off `loanTypeKey(loan)`
+  — only genuine `"private"`/`"otherUserRate"` types are unconditionally
+  flagged; HPSL-family loans with real data now correctly show as NOT an
+  estimate.
+- **A3 — `returnSavingsAtGraduation(loans, window, gradDate, returnAmount)`**:
+  wraps two `projectDebtAtGraduation` calls (with/without the disbursement
+  reduced by the returned amount, capped at the disbursement's own amount) and
+  returns the full dollar delta. **Deliberate interpretation call**: the
+  implementation plan's back-of-envelope hand-check for this function
+  (`$3,000 returned → fee ($31.71) + interest (~$856) ≈ $888 saved`) omits the
+  $3,000 principal itself from "savings." That undercounts what "saves $X by
+  graduation" should mean: returning the money means the student never owes
+  that principal back AT ALL, so the honest number is the full debt-tile
+  delta — principal (fee-grossed) + interest, not just the marginal
+  fee/interest cost of having held it. Implemented as the full delta;
+  `loans.test.js` documents the independently-derived hand-check ($3,878.30
+  for the plan's own scenario numbers) and the reasoning. Flagging this since
+  it diverges from the plan's literal arithmetic (the plan itself says "the
+  test uses its own hand-derived numbers," anticipating this).
+- **A2 — 5-first-class loan-type picker (`src/tabs/LoansTab.jsx`)**: the old
+  Federal/Private `SegButton` pair replaced with a labelled `<select>`
+  (`LOAN_TYPE_OPTIONS`) — Direct Unsub (grad, most common), Grad PLUS, "from
+  college (undergrad)" (with a small Subsidized/Unsubsidized checkbox once
+  selected), the HPSL/PCL/LDS row (collapses pcl/lds display onto the same
+  option — identical profile, distinct keys in data only), Private, and
+  "Other / I'll enter my rate." Selecting an option writes both `subtype` and
+  `type` (`type` kept for legacy-math-fallback + sync compat, per the plan).
+  HPSL-family selection shows an inline "interest-free while you're in school
+  and during residency" `Banner`. The rate-display condition (read-only known
+  rate vs. editable input) was changed from `loan.type==='federal' &&
+  !estimated` to `loan.rate==null && !estimated`: the old condition (a)
+  mislabeled a fixed 5% HPSL rate as needing manual entry (wrong `type`) and
+  (b) had a latent bug where typing a manual rate into any federal loan's
+  input would make `estimated` flip false next render and permanently hide
+  the input behind a misleadingly-labeled read-only "the federal rate" line —
+  fixed as part of this same edit since it's the exact code path A2 touches.
+- **A2 — entry-mode framing**: the small underlined "or enter today's balance
+  instead" toggle link replaced with an explicit two-option `ChoiceGroup`
+  ("My award letter (amount offered/borrowed)" vs. "My current balance on
+  studentaid.gov"), per the plan's "situation-based entry" framing. No new
+  math — `asOfBalance`/`asOfDate` already existed; this is copy/UX only.
+- **A3 — persistent 120-day return card**: new `ReturnWindowCard`, rendered
+  above the loan grid whenever `loanReturnWindows(...)` returns any open
+  window (independent of the one-time Refund Playbook, which lands later in
+  the stack). Surplus-dollar quantification is conservative by design: it
+  only computes a number once there's a real MEASURED burn rate (two balance
+  check-ins ≥14 days apart — the same trust gate `computeRunway` itself uses)
+  and a projectable next-refund date; otherwise the card still shows (window
+  + plain-language education) with no fabricated dollar claim, per the plan's
+  explicit "be honest, not clever" instruction.
+- **Audit fixes folded in** (`docs/hardcoded-values-audit.md` Package-A-relevant items):
+  new `src/lib/constants.js` — single home for `WEEKS_PER_MONTH` (4.333),
+  `DAYS_PER_MONTH` (30.44, re-exported from `loans.js`'s existing constant),
+  `LOAN_RETURN_WINDOW_DAYS` (120), `DISBURSEMENT_FALLBACK_CYCLE` +
+  `disbFallbackDate()`, `DEFAULT_SAVINGS_APY` (0.04), `HYSA_RATE_RANGE_COPY`,
+  `FDIC_INSURANCE_CAP`, and the 2026 exam-fee constants
+  (`USMLE_STEP_FEE_ESTIMATE=695`, `COMLEX_LEVEL1_FEE_ESTIMATE=745`,
+  `COMLEX_LEVEL2CE_FEE_ESTIMATE=730`), each with the `⚠ MAINTENANCE`
+  comment style `loans.js` already used for its rate table.
+  - **Disbursement fallback dates unified**: `loans.js`'s
+    `fillMissingDisbursementDates` (previously a 2-date Aug15/Jan15 fallback)
+    and `LoansTab.jsx`'s `DISB_DEFAULTS` (previously a 4-date Aug5/Jan10/
+    Mar1/May1 rotation) disagreed on the same real-world fact. Now both call
+    the same `disbFallbackDate()` — the 4-date cycle is canonical.
+  - **USMLE Step fee corrected 850→695**: `format.js`'s `DEFAULT_STATE.stepGoals`
+    seed and the two user-visible copy strings (`App.jsx`'s Budget-tab
+    recommendation, `BudgetTab.jsx`'s COA-table tip) now read
+    `USMLE_STEP_FEE_ESTIMATE` instead of a hardcoded `850` — the 2026 verified
+    fee is $695 (studentaid/NBME fee schedule, see the design doc's decision
+    #13 research). Package B (`stepGoals` removal) will delete this seed
+    entirely; until then, no user-visible string should show the old number.
+  - **Weeks/days-per-month de-duplicated**: `App.jsx:613` and
+    `WeeklyTab.jsx:329` (`4.333`), and `WeeklyTab.jsx`'s "spendable ÷ 4.33"
+    display string (previously a different, truncated precision than the
+    real constant — now interpolates the same value), now import
+    `WEEKS_PER_MONTH`. `SavingsTab.jsx`'s two inline `30.44` month-length
+    calcs now import `DAYS_PER_MONTH` from `constants.js` instead of
+    re-typing the literal.
+  - **`DEFAULT_SAVINGS_APY`** added to `constants.js` now so it exists before
+    the Refund Playbook branch (`mo/phase2-playbook`, #29) is forward-merged
+    — its `PLAYBOOK_APY` local constant will be pointed at this shared value
+    at that point in the stack (not yet, since that code doesn't exist on
+    this branch).
+- **New tests** (`loans.test.js`, +14): `loanTypeKey` resolution (explicit +
+  legacy), the mandatory subtype:null regression, HPSL/PCL/LDS zero-accrual +
+  no-fee + not-an-estimate, Direct Sub undergrad zero-accrual, Grad PLUS
+  fee-inflated-principal + distinct-rate-table, otherUserRate
+  behaves-like-private (with and without a rate entered), and
+  `returnSavingsAtGraduation` (hand-check, disbursement-amount cap, null/zero
+  edge cases, other-loans-untouched). Two pre-existing tests
+  (`effectiveRate`'s clamp test, `isRateEstimated`'s pre-2022 test) updated to
+  use a genuinely out-of-table year (2008) now that the table runs back to
+  2013.
+- **Visual verification**: isolated mock-mount pattern (temporary
+  `mockmount.html` + `src/mockmount-entry.jsx`, deleted before commit — same
+  pattern as commit 4), three mock loans (legacy federal, HPSL, Grad PLUS)
+  plus two balance readings. Verified both themes (a mid-verification light-
+  theme rendering glitch traced to the harness never calling the app's
+  `applyTheme()` — `C` mutates in place and only updates on that call, not on
+  setting `data-theme` alone — not a real app bug; fixed by seeding
+  `localStorage` before reload so the pre-paint guard + `applyTheme` ran in
+  the normal order), the type picker (native `<select>`, keyboard-native),
+  the entry-mode `ChoiceGroup` (roving-tabindex radio pair, matches the app's
+  existing convention), the HPSL banner, and the return-window cards (both
+  rendered, correct days-left, no fabricated dollar figure since the mock's
+  2 readings + measured burn path was exercised and produced a real number
+  — confirmed against the debt tile's live recompute after toggling entry
+  mode). No console errors.
+- Verification: `npm test` 147/147 passing (was 133), `npm run build` clean,
+  `npm run lint` unchanged at 111 pre-existing warnings / 0 errors (0 new
+  warnings from any file touched in this commit).
