@@ -36,7 +36,7 @@ export const MONTH_FULL = ["August","September","October","November","December",
 // Progressive setup: bump SETUP_VERSION whenever a NEW onboarding question is added.
 // New users answer everything in OnboardingFlow; existing users whose stored
 // setupVersion is behind get a focused popup for just the missing step(s).
-export const SETUP_VERSION = 1;
+export const SETUP_VERSION = 2; // v2: added the money step (Phase 2, walkthrough §0) — see onboarding.jsx SETUP_STEPS
 
 export const DEFAULT_STATE = {
   setupVersion: null,  // null = brand new (run onboarding); set to SETUP_VERSION when complete

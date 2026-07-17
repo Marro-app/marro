@@ -1171,9 +1171,9 @@ export function App() {
       {/* ── Conflict modal ── */}
       <BlobHealth over={moSurplus<0} bloom={bloom}/>
       {pendingConflict && <ConflictModal pending={pendingConflict} data={data} onResolve={resolveConflict}/>}
-      {profile && !profile.school && <OnboardingFlow uid={session.user.id} user={session.user} data={data} upd={upd} onDone={s=>setProfile({school:s})}/>}
+      {profile && !profile.school && <OnboardingFlow uid={session.user.id} user={session.user} data={data} upd={upd} onDone={(s,opts)=>{setProfile({school:s}); if(opts?.landOnLoans) setTab("loans");}}/>}
       {/* Existing users who finished onboarding but are behind on a newer setup question */}
-      {profile && profile.school && (data.setupVersion||0) < SETUP_VERSION && <ProgressiveSetup data={data} upd={upd}/>}
+      {profile && profile.school && (data.setupVersion||0) < SETUP_VERSION && <ProgressiveSetup data={data} upd={upd} setTab={setTab}/>}
       {editSchool && <ProfileModal uid={session.user.id} onSaved={s=>{setProfile({school:s});setEditSchool(false);}} onClose={()=>setEditSchool(false)}/>}
       {editProgram && <ProgramModal data={data} upd={upd} school={profile.school} onClose={()=>setEditProgram(false)}/>}
       {editAvatar && <AvatarModal data={data} upd={upd} user={session.user} onClose={()=>setEditAvatar(false)}/>}
