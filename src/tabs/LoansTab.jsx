@@ -6,8 +6,10 @@ import { DateField } from '../components/pickers.jsx';
 import { useApp } from '../context/AppContext.js';
 import { radioProps } from '../lib/ui-helpers.js';
 import {
-  effectiveRate, isRateEstimated, loanPrincipal, projectDebtAtGraduation,
+  effectiveRate, isRateEstimated, loanPrincipal, projectDebtAtGraduation, loanTypeKey,
+  computeRunway, estimateRefunds, loanReturnWindows, returnSavingsAtGraduation,
 } from '../lib/loans.js';
+import { disbFallbackDate, DAYS_PER_MONTH } from '../lib/constants.js';
 
 // Loans tab — Phase 2 ("Loans, Debt & Runway"), commit 4.
 //
@@ -20,35 +22,46 @@ import {
 // rate"), no bare offered/accepted/disbursed (→ plain-English status labels).
 // See docs/PRODUCT_DECISIONS.md "Phase 2 commit 4" for the read-through log.
 
-const DISB_DEFAULTS = [
-  { m: 8, d: 5, yrOffset: 0 },
-  { m: 1, d: 10, yrOffset: 1 },
-  { m: 3, d: 1, yrOffset: 1 },
-  { m: 5, d: 1, yrOffset: 1 },
-];
-const pad2 = (n) => String(n).padStart(2, '0');
-function defaultDisbDate(academicYear, i) {
-  const t = DISB_DEFAULTS[i % DISB_DEFAULTS.length];
-  return `${academicYear + t.yrOffset}-${pad2(t.m)}-${pad2(t.d)}`;
-}
 function splitEvenly(total, n) {
   const cents = Math.round((Number(total) || 0) * 100);
   const base = Math.floor(cents / n);
   const remainder = cents - base * n;
   return Array.from({ length: n }, (_, i) => (base + (i < remainder ? 1 : 0)) / 100);
 }
-const newDisb = (academicYear, i, amount = 0) => ({ id: `db_${Date.now()}_${i}_${Math.floor(Math.random() * 1e4)}`, amount, date: defaultDisbDate(academicYear, i), dateConfirmed: false });
+const newDisb = (academicYear, i, amount = 0) => ({ id: `db_${Date.now()}_${i}_${Math.floor(Math.random() * 1e4)}`, amount, date: disbFallbackDate(academicYear, i), dateConfirmed: false });
 const blankLoan = () => {
   const y = new Date().getFullYear();
   return {
     id: `ln_${Date.now()}_${Math.floor(Math.random() * 1e4)}`,
-    name: '', type: 'federal', academicYear: y, rate: null,
+    name: '', type: 'federal', subtype: null, academicYear: y, rate: null,
     status: 'disbursed',
     disbursements: [newDisb(y, 0), newDisb(y, 1)],
     feePct: null, notes: '',
     asOfBalance: null, asOfDate: null,
   };
 };
+
+// ── 5-first-class loan-type picker (A2) ──────────────────────────────────────
+// Each option writes BOTH `subtype` (drives the interest-model math in
+// loans.js) and `type` (kept for legacy-math-fallback + sync compat, per the
+// implementation plan §3.2: 1-3 store type:"federal", 4-6 store
+// type:"private" — the HPSL family, "Private", and "Other" all get manual-
+// rate-style handling if an older client ever reads just `type`).
+const LOAN_TYPE_OPTIONS = [
+  { key: 'directUnsubGrad', type: 'federal', label: 'Federal — Direct Unsubsidized (most common)' },
+  { key: 'gradPLUS', type: 'federal', label: 'Federal — Grad PLUS' },
+  { key: 'directUnsubUndergrad', type: 'federal', label: 'Federal — from college (undergrad)' },
+  { key: 'hpsl', type: 'private', label: 'School health-professions loan (HPSL / Primary Care / LDS — often 5%)' },
+  { key: 'private', type: 'private', label: 'Private' },
+  { key: 'otherUserRate', type: 'private', label: "Other / I'll enter my rate" },
+];
+const HPSL_FAMILY = new Set(['hpsl', 'pcl', 'lds']);
+const UNDERGRAD_KEYS = new Set(['directUnsubUndergrad', 'directSubUndergrad']);
+/** Which picker option should read as selected for a given loan — collapses pcl/lds onto the "hpsl" row per the design (identical profile; keys stay distinct in the data only). */
+function pickerKeyFor(loan) {
+  const key = loanTypeKey(loan);
+  return HPSL_FAMILY.has(key) ? 'hpsl' : key;
+}
 
 const inputStyle = (extra = {}) => ({ border: `1px solid ${C.border}`, borderRadius: 8, padding: '6px 9px', background: C.bg, color: C.text, fontSize: 13, boxSizing: 'border-box', ...extra });
 const labelStyle = { fontSize: 11, color: C.textMid, marginBottom: 4, display: 'block', fontWeight: 600 };
@@ -114,12 +127,16 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
       </div>
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 160px' }}>
-          <span style={labelStyle} id={`ln-type-lbl-${loan.id}`}>Type</span>
-          <ChoiceGroup role="radiogroup" ariaLabelledby={`ln-type-lbl-${loan.id}`} style={{ display: 'flex', gap: 6 }}>
-            <SegButton active={loan.type === 'federal'} ariaLabel="Federal loan" onClick={() => patch((l) => { l.type = 'federal'; })}>Federal</SegButton>
-            <SegButton active={loan.type === 'private'} ariaLabel="Private loan" onClick={() => patch((l) => { l.type = 'private'; })}>Private</SegButton>
-          </ChoiceGroup>
+        <div style={{ flex: '1 1 220px' }}>
+          <label style={labelStyle} htmlFor={`ln-type-${loan.id}`}>Type</label>
+          <select id={`ln-type-${loan.id}`} value={pickerKeyFor(loan)} aria-label="Loan type"
+            onChange={(e) => {
+              const opt = LOAN_TYPE_OPTIONS.find((o) => o.key === e.target.value);
+              patch((l) => { l.subtype = opt.key; l.type = opt.type; });
+            }}
+            style={inputStyle({ width: '100%' })}>
+            {LOAN_TYPE_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
         </div>
         <div style={{ flex: '1 1 120px' }}>
           <label style={labelStyle} htmlFor={`ln-year-${loan.id}`}>School year</label>
@@ -127,6 +144,34 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
             onChange={(e) => patch((l) => { l.academicYear = Number(e.target.value) || l.academicYear; })}
             style={inputStyle({ width: '100%' })} />
         </div>
+      </div>
+
+      {HPSL_FAMILY.has(loan.subtype) && (
+        <div style={{ marginBottom: 12 }}>
+          <Banner type="info">Interest-free while you’re in school and during residency — this loan doesn’t start growing until you begin paying it back.</Banner>
+        </div>
+      )}
+
+      {UNDERGRAD_KEYS.has(loan.subtype) && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 12, color: C.textMid, cursor: 'pointer' }}>
+          <input type="checkbox" checked={loan.subtype === 'directSubUndergrad'}
+            onChange={(e) => patch((l) => { l.subtype = e.target.checked ? 'directSubUndergrad' : 'directUnsubUndergrad'; })} />
+          This one is Subsidized (interest-free while you’re in school)
+        </label>
+      )}
+
+      <div style={{ marginBottom: 10 }}>
+        <span style={labelStyle} id={`ln-entrymode-lbl-${loan.id}`}>What are you looking at?</span>
+        <ChoiceGroup role="radiogroup" ariaLabelledby={`ln-entrymode-lbl-${loan.id}`} style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <SegButton active={!asOfMode} ariaLabel="My award letter — the amount I was offered or borrowed"
+            onClick={() => patch((l) => { l.asOfDate = null; l.asOfBalance = null; })}>
+            My award letter (amount offered/borrowed)
+          </SegButton>
+          <SegButton active={asOfMode} ariaLabel="My current balance on studentaid.gov"
+            onClick={() => patch((l) => { l.asOfDate = todayStr(); l.asOfBalance = Math.round(loanPrincipal(l) * 100) / 100; })}>
+            My current balance on studentaid.gov
+          </SegButton>
+        </ChoiceGroup>
       </div>
 
       {!asOfMode ? (
@@ -177,16 +222,22 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
         </div>
       )}
 
-      <button type="button" className="txt-act" onClick={() => patch((l) => { if (asOfMode) { l.asOfDate = null; l.asOfBalance = null; } else { l.asOfDate = todayStr(); l.asOfBalance = Math.round(loanPrincipal(l) * 100) / 100; } })}
-        style={{ background: 'none', border: 'none', color: C.gray, fontSize: 11, textDecoration: 'underline', cursor: 'pointer', padding: '2px 0', marginTop: 4 }}>
-        {asOfMode ? 'or enter what you originally borrowed instead' : 'or enter today’s balance as of a date instead'}
-      </button>
-
-      {/* ── Rate ── */}
+      {/* ── Rate ──
+          Shown read-only whenever the resolved rate is a known, confirmed
+          fact (a table lookup or a fixed statutory rate) AND the student
+          hasn't typed a manual override — `loan.rate == null && !estimated`.
+          (Keying this off `loan.type==='federal'` alone, the pre-Package-A
+          way, mislabeled a fixed-5% HPSL/PCL/LDS rate as needing manual
+          entry, and — separately — permanently hid the rate input the
+          moment a manually-typed override made `estimated` flip to false.) */}
       <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
-        {loan.type === 'federal' && !estimated ? (
+        {loan.rate == null && !estimated ? (
           <div style={{ fontSize: 12, color: C.textMid }}>
-            Interest rate: <strong style={{ color: C.text }}>{(effectiveRate(loan) * 100).toFixed(2)}%</strong> (the federal rate for {loan.academicYear}–{String((loan.academicYear + 1) % 100).padStart(2, '0')} loans)
+            {HPSL_FAMILY.has(loanTypeKey(loan)) || loanTypeKey(loan) === 'perkins' ? (
+              <>Interest rate: <strong style={{ color: C.text }}>{(effectiveRate(loan) * 100).toFixed(2)}%</strong> (a fixed rate for this loan type)</>
+            ) : (
+              <>Interest rate: <strong style={{ color: C.text }}>{(effectiveRate(loan) * 100).toFixed(2)}%</strong> (the federal rate for {loan.academicYear}–{String((loan.academicYear + 1) % 100).padStart(2, '0')} loans)</>
+            )}
           </div>
         ) : (
           <div>
@@ -327,6 +378,79 @@ function BalanceCheckin({ data, upd }) {
   );
 }
 
+// ── Persistent 120-day return card (A3) ──────────────────────────────────────
+//
+// "Surplus loan money isn't wealth" — walkthrough §5. Renders above the loan
+// grid whenever any return window is still open (`loanReturnWindows`,
+// recomputed fresh on every render, never cached by loan id, so an edited
+// disbursement date is never stale — same discipline as the rest of this
+// file). Independent of the one-time Refund Playbook card (added later in
+// the stack): this one never goes away while a window is genuinely open.
+//
+// Surplus estimation is deliberately conservative ("be honest, not clever" —
+// implementation plan §3.3): it only quantifies a dollar figure once there's
+// a real MEASURED burn rate (two balance check-ins ≥14 days apart — the same
+// trust gate `computeRunway` itself uses) and a next-refund date to project
+// to. Without that history, the card still shows — with the window and the
+// plain-language education — just without inventing a savings number from
+// nothing.
+function surplusEstimateForWindow(data, disbAmount, today) {
+  const readings = [...(data.balanceReadings || [])].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  if (readings.length < 2) return null;
+  const gradDate = data.years?.[data.years.length - 1]?.endDate || null;
+  const refunds = estimateRefunds(data.years || []);
+  const runway = computeRunway({ readings, plannedMonthlyBurn: 0, upcomingRefunds: refunds, gradDate, today });
+  if (!runway.burn || runway.burn.source !== 'measured') return null; // not enough real history to trust a burn rate
+  const nextRefund = refunds.find((r) => r.date && r.date > today);
+  if (!nextRefund) return null;
+  const monthsToNextRefund = (new Date(`${nextRefund.date}T12:00:00`) - new Date(`${today}T12:00:00`)) / (24 * 60 * 60 * 1000) / DAYS_PER_MONTH;
+  const latest = readings[readings.length - 1];
+  const latestTotal = (Number(latest.spendable) || 0) + (Number(latest.savings) || 0);
+  const surplus = Math.min(disbAmount, Math.max(0, latestTotal - runway.burn.amount * monthsToNextRefund));
+  return surplus;
+}
+
+function ReturnWindowCard({ data, today }) {
+  const loans = data.loans || [];
+  const windows = loanReturnWindows(loans, today);
+  if (windows.length === 0) return null;
+  const gradDate = data.years?.[data.years.length - 1]?.endDate || null;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {windows.map((w) => {
+        const loan = loans.find((l) => l.id === w.loanId);
+        const disb = loan?.disbursements?.find((d) => d.id === w.disbursementId);
+        const disbAmount = Number(disb?.amount) || 0;
+        const surplus = surplusEstimateForWindow(data, disbAmount, today);
+        const saved = surplus && surplus > 0 ? returnSavingsAtGraduation(loans, w, gradDate, surplus) : null;
+        return (
+          <Card key={`${w.loanId}_${w.disbursementId}`} style={{ borderLeft: `3px solid ${C.blue}` }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <span aria-hidden="true" style={{ fontSize: 18, lineHeight: 1 }}>⏳</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: C.text, marginBottom: 4 }}>
+                  You can still return borrowed money you didn’t need — {w.dateConfirmed ? `${w.daysLeft} days left` : `roughly ${w.daysLeft} days left, confirm with your aid office`}
+                </div>
+                <div style={{ fontSize: 12, color: C.textMid, lineHeight: 1.6 }}>
+                  Federal loans can be returned within 120 days of arriving — the interest <strong>and</strong> the fee on the returned part are cancelled, like you never borrowed it.
+                  {surplus != null && surplus > 0 && (
+                    <>
+                      {' '}Based on your numbers, about <strong style={{ color: C.text }}>{fmt(surplus)}</strong> of this money looks like more than your plan needs
+                      {saved != null && saved > 0 && <> — returning it saves about <strong style={{ color: C.text }}>{fmt(saved)}</strong> by graduation</>}.
+                    </>
+                  )}
+                  {' '}Your aid office handles it.
+                </div>
+              </div>
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
 function ReminderBanner({ data, upd }) {
   const [snoozedThisSession, setSnoozedThisSession] = useState(false);
   if (data.loans.length > 0 || data.loanReminderSnooze != null || snoozedThisSession) return null;
@@ -356,6 +480,7 @@ export function LoansTab() {
   return (
     <div role="tabpanel" id="tab-panel" aria-labelledby="tab-loans" tabIndex={0} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <ReminderBanner data={data} upd={upd} />
+      <ReturnWindowCard data={data} today={todayStr()} />
 
       {loans.length === 0 && (
         <EmptyState>

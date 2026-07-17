@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
-  FEDERAL_GRAD_UNSUB_RATES, FEDERAL_ORIGINATION_FEE,
-  effectiveRate, isRateEstimated, effectiveFeePct, loanPrincipal, accruedInterest,
+  FEDERAL_GRAD_UNSUB_RATES, FEDERAL_GRAD_PLUS_RATES, FEDERAL_ORIGINATION_FEE, FEDERAL_GRAD_PLUS_FEE, HRSA_RATE,
+  effectiveRate, isRateEstimated, effectiveFeePct, loanPrincipal, accruedInterest, loanTypeKey,
   projectDebtAtGraduation, computeRunway, estimateRefunds, loanReturnWindows,
-  refundPlaybookTrigger,
+  refundPlaybookTrigger, returnSavingsAtGraduation,
 } from './loans.js';
 
 // A minimal, valid loan — override fields per test.
@@ -24,7 +24,9 @@ describe('effectiveRate', () => {
     expect(effectiveRate(makeLoan({ academicYear: 2025, rate: 0.05 }))).toBe(0.05);
   });
   it('clamps to the nearest known year when the academicYear predates or postdates the table', () => {
-    expect(effectiveRate(makeLoan({ academicYear: 2019 }))).toBe(FEDERAL_GRAD_UNSUB_RATES[2022]);
+    // Table now runs 2013-14 → 2026-27 (Package A widened it) — a genuinely
+    // out-of-range year needs to be before 2013 or after 2026.
+    expect(effectiveRate(makeLoan({ academicYear: 2008 }))).toBe(FEDERAL_GRAD_UNSUB_RATES[2013]);
     expect(effectiveRate(makeLoan({ academicYear: 2031 }))).toBe(FEDERAL_GRAD_UNSUB_RATES[2026]);
   });
   it('a private loan with no rate entered reads as 0 (caller must check isRateEstimated)', () => {
@@ -40,8 +42,8 @@ describe('isRateEstimated', () => {
   it('true for a private loan with no rate typed in', () => {
     expect(isRateEstimated(makeLoan({ type: 'private', rate: null }))).toBe(true);
   });
-  it('true for a federal loan whose academicYear falls outside the published table (pre-2022)', () => {
-    expect(isRateEstimated(makeLoan({ academicYear: 2019, rate: null }))).toBe(true);
+  it('true for a federal loan whose academicYear falls outside the published table (pre-2013)', () => {
+    expect(isRateEstimated(makeLoan({ academicYear: 2008, rate: null }))).toBe(true);
   });
   it('false for a federal loan inside the table with no override', () => {
     expect(isRateEstimated(makeLoan({ academicYear: 2025, rate: null }))).toBe(false);
@@ -459,5 +461,159 @@ describe('refundPlaybookTrigger', () => {
   it('does not fire before the refund date has even passed', () => {
     const readings = [{ id: 'r1', date: '2027-01-05', spendable: 6400, savings: 0 }];
     expect(refundPlaybookTrigger({ readings, nextRefund, refundPlaybookSeen: null, today: '2027-01-10' })).toBe(false);
+  });
+});
+
+// ── Package A: per-type loan interest model (2026-07-17) ─────────────────────
+// Founder decision #1 — each loan type carries its own accrual profile
+// instead of one global "always accrues" assumption. The mandatory guard
+// here is the regression test: every loan that existed before this model
+// (subtype:null) must price IDENTICALLY to pre-change behavior.
+
+describe('loanTypeKey', () => {
+  it('subtype always wins when set', () => {
+    expect(loanTypeKey(makeLoan({ subtype: 'hpsl', type: 'private' }))).toBe('hpsl');
+    expect(loanTypeKey(makeLoan({ subtype: 'gradPLUS', type: 'federal' }))).toBe('gradPLUS');
+  });
+  it('legacy resolution (subtype null/undefined): private type → "private", anything else → "directUnsubGrad"', () => {
+    expect(loanTypeKey(makeLoan({ type: 'private', subtype: null }))).toBe('private');
+    expect(loanTypeKey(makeLoan({ type: 'federal', subtype: null }))).toBe('directUnsubGrad');
+    expect(loanTypeKey(makeLoan({ type: 'federal' }))).toBe('directUnsubGrad'); // subtype entirely absent (pre-Package-A synced loan)
+  });
+});
+
+describe('MANDATORY REGRESSION — subtype:null loans price bit-identically to pre-Package-A behavior', () => {
+  it('the original $20,000 @ 8.07% hand-check (2026-08-01 → 2030-05-15 ≈ $6,181) is unchanged with an explicit subtype:null', () => {
+    const loan = makeLoan({
+      subtype: null,
+      academicYear: 2026,
+      disbursements: [{ id: 'd1', date: '2026-08-01', amount: 20000 }],
+    });
+    const total = accruedInterest(loan, '2030-05-15');
+    expect(Math.round(total * 100) / 100).toBe(6180.15); // identical to the pre-Package-A hand-check
+    expect(loanPrincipal(loan)).toBeCloseTo(20000 * (1 + FEDERAL_ORIGINATION_FEE), 6);
+  });
+  it('a fully legacy loan (no subtype field at all) resolves through the same path as an explicit null', () => {
+    const withNull = makeLoan({ subtype: null, academicYear: 2025 });
+    const withoutField = makeLoan({ academicYear: 2025 });
+    delete withoutField.subtype;
+    expect(effectiveRate(withoutField)).toBe(effectiveRate(withNull));
+    expect(accruedInterest(withoutField, '2028-01-01')).toBeCloseTo(accruedInterest(withNull, '2028-01-01'), 8);
+    expect(projectDebtAtGraduation([withoutField], '2029-05-15').total)
+      .toBeCloseTo(projectDebtAtGraduation([withNull], '2029-05-15').total, 8);
+  });
+});
+
+describe('HPSL / PCL / LDS — interest-free through school (founder decision #1)', () => {
+  it('$20,000 @ 5% disbursed in the fall: zero accrued interest at graduation, no origination fee, debt tile = $20,000 flat', () => {
+    const loan = makeLoan({
+      subtype: 'hpsl', type: 'private', academicYear: 2026, rate: null,
+      disbursements: [{ id: 'd1', date: '2026-08-05', amount: 20000 }],
+    });
+    expect(effectiveRate(loan)).toBe(HRSA_RATE); // fixed 5%, not a table lookup
+    expect(effectiveFeePct(loan)).toBe(0); // HRSA loans carry no origination fee
+    expect(accruedInterest(loan, '2030-05-15')).toBe(0); // accruesInSchool:false — the whole point of the fix
+    expect(loanPrincipal(loan)).toBe(20000); // no fee inflation
+
+    const { total, byLoan } = projectDebtAtGraduation([loan], '2030-05-15');
+    expect(total).toBe(20000);
+    expect(byLoan[0].interest).toBe(0);
+    expect(byLoan[0].isEstimate).toBe(false); // a known statutory rate + confirmed dates is NOT an "estimate"
+  });
+  it('PCL and LDS share the identical profile (distinct keys, same behavior)', () => {
+    const pcl = makeLoan({ subtype: 'pcl', type: 'private', disbursements: [{ id: 'd1', date: '2026-08-05', amount: 10000 }] });
+    const lds = makeLoan({ subtype: 'lds', type: 'private', disbursements: [{ id: 'd1', date: '2026-08-05', amount: 10000 }] });
+    expect(accruedInterest(pcl, '2030-01-01')).toBe(0);
+    expect(accruedInterest(lds, '2030-01-01')).toBe(0);
+    expect(effectiveRate(pcl)).toBe(HRSA_RATE);
+    expect(effectiveRate(lds)).toBe(HRSA_RATE);
+  });
+});
+
+describe('Direct Subsidized (undergrad) — interest-free in school', () => {
+  it('accrues $0 toward the graduation number, same mechanism as HPSL', () => {
+    const loan = makeLoan({ subtype: 'directSubUndergrad', type: 'federal', academicYear: 2025, disbursements: [{ id: 'd1', date: '2025-08-05', amount: 5000 }] });
+    expect(accruedInterest(loan, '2029-05-15')).toBe(0);
+  });
+});
+
+describe('Grad PLUS — fee-inflated principal, own rate table', () => {
+  it('4.228% fee inflates principal, and the rate comes from the PLUS table (not the grad-unsub table)', () => {
+    const loan = makeLoan({ subtype: 'gradPLUS', type: 'federal', academicYear: 2026, rate: null, disbursements: [{ id: 'd1', date: '2026-08-01', amount: 20000 }] });
+    expect(effectiveFeePct(loan)).toBe(FEDERAL_GRAD_PLUS_FEE);
+    expect(effectiveRate(loan)).toBe(FEDERAL_GRAD_PLUS_RATES[2026]); // 9.07% — published FSA Partners 2026-27 rate, distinct from the 8.07% grad-unsub rate
+    expect(effectiveRate(loan)).not.toBe(FEDERAL_GRAD_UNSUB_RATES[2026]);
+    expect(loanPrincipal(loan)).toBeCloseTo(20000 * (1 + FEDERAL_GRAD_PLUS_FEE), 6);
+    // Fee alone (before any interest) should push it well above the raw amount borrowed.
+    expect(loanPrincipal(loan)).toBeGreaterThan(20000 * (1 + FEDERAL_ORIGINATION_FEE)); // materially more than the standard Direct Loan fee
+  });
+});
+
+describe('otherUserRate — behaves exactly like today\'s private path when the student enters a rate', () => {
+  it('uses the entered rate, standard no-fee-unless-set behavior, accrues normally', () => {
+    const loan = makeLoan({ subtype: 'otherUserRate', type: 'private', rate: 0.095, disbursements: [{ id: 'd1', date: '2026-08-01', amount: 15000 }] });
+    expect(effectiveRate(loan)).toBe(0.095);
+    expect(effectiveFeePct(loan)).toBe(0);
+    expect(isRateEstimated(loan)).toBe(false); // rate was explicitly entered
+    expect(accruedInterest(loan, '2027-08-01')).toBeCloseTo(15000 * 0.095, 0); // ~1 year simple interest
+  });
+  it('with no rate entered, reads as 0% and flags estimated (mirrors bare private-loan behavior)', () => {
+    const loan = makeLoan({ subtype: 'otherUserRate', type: 'private', rate: null });
+    expect(effectiveRate(loan)).toBe(0);
+    expect(isRateEstimated(loan)).toBe(true);
+  });
+});
+
+// ── returnSavingsAtGraduation (A3) ────────────────────────────────────────────
+describe('returnSavingsAtGraduation', () => {
+  it('hand-check: returning $3,000 from a 2026-08-01 disbursement (8.07% + 1.057% fee) ~3.46yrs before graduation', () => {
+    // Independently derived (not from the implementation): days(2026-08-01 → 2030-01-15) = 1263.
+    // Reducing that disbursement by $3,000 shrinks the fee-grossed principal by
+    // 3000 × 1.01057 = 3031.71, and the interest that would have accrued on
+    // that grossed slice by 3031.71 × .0807/365 × 1263 ≈ 846.59. The honest
+    // total "less owed at graduation" is the FULL delta the debt tile would
+    // show — principal AND interest — not just the marginal fee/interest
+    // cost, because returning the money means never owing that principal
+    // back at all: 3031.71 + 846.59 = 3878.30.
+    const loan = makeLoan({
+      id: 'l1', academicYear: 2026, subtype: null, type: 'federal',
+      disbursements: [{ id: 'd1', date: '2026-08-01', amount: 20000 }],
+    });
+    const window = { loanId: 'l1', disbursementId: 'd1' };
+    const delta = returnSavingsAtGraduation([loan], window, '2030-01-15', 3000);
+    expect(Math.round(delta * 100) / 100).toBe(3878.30);
+  });
+
+  it('caps the return at the disbursement\'s own amount — can\'t return more than arrived', () => {
+    const loan = makeLoan({ id: 'l1', academicYear: 2026, disbursements: [{ id: 'd1', date: '2026-08-01', amount: 2000 }] });
+    const window = { loanId: 'l1', disbursementId: 'd1' };
+    const cappedAt2000 = returnSavingsAtGraduation([loan], window, '2030-01-15', 2000);
+    const requestedMore = returnSavingsAtGraduation([loan], window, '2030-01-15', 50000);
+    expect(requestedMore).toBeCloseTo(cappedAt2000, 6);
+  });
+
+  it('never negative, and 0 for a missing loan/disbursement or non-positive amount', () => {
+    const loan = makeLoan({ id: 'l1', disbursements: [{ id: 'd1', date: '2026-08-01', amount: 5000 }] });
+    expect(returnSavingsAtGraduation([loan], { loanId: 'nope', disbursementId: 'd1' }, '2030-01-15', 1000)).toBe(0);
+    expect(returnSavingsAtGraduation([loan], { loanId: 'l1', disbursementId: 'nope' }, '2030-01-15', 1000)).toBe(0);
+    expect(returnSavingsAtGraduation([loan], { loanId: 'l1', disbursementId: 'd1' }, '2030-01-15', 0)).toBe(0);
+    expect(returnSavingsAtGraduation([loan], { loanId: 'l1', disbursementId: 'd1' }, '2030-01-15', -500)).toBe(0);
+    expect(returnSavingsAtGraduation([loan], null, '2030-01-15', 1000)).toBe(0);
+  });
+
+  it('leaves other loans in the portfolio untouched (only the targeted disbursement shrinks)', () => {
+    const targeted = makeLoan({ id: 'l1', academicYear: 2026, disbursements: [{ id: 'd1', date: '2026-08-01', amount: 20000 }] });
+    const other = makeLoan({ id: 'l2', academicYear: 2025, disbursements: [{ id: 'd2', date: '2025-08-05', amount: 10000 }] });
+    const window = { loanId: 'l1', disbursementId: 'd1' };
+    const before = projectDebtAtGraduation([targeted, other], '2030-01-15');
+    const otherRowBefore = before.byLoan.find((l) => l.loanId === 'l2');
+    returnSavingsAtGraduation([targeted, other], window, '2030-01-15', 3000);
+    // Re-derive "after" the same way the function does, to confirm l2's own total never moved.
+    const after = projectDebtAtGraduation(
+      [{ ...targeted, disbursements: [{ id: 'd1', date: '2026-08-01', amount: 17000 }] }, other],
+      '2030-01-15',
+    );
+    const otherRowAfter = after.byLoan.find((l) => l.loanId === 'l2');
+    expect(otherRowAfter.total).toBeCloseTo(otherRowBefore.total, 6);
   });
 });
