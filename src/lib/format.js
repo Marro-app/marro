@@ -43,8 +43,6 @@ export const DEFAULT_STATE = {
   weeklyArchive: [],
   currentWeekEntries: [],
   subscriptions: [],
-  monthlyRollover: {},
-  surplusBank: 0,
   logo: null,  // legacy field (kept for sync compatibility)
   monthDisabled: {},  // {"0-Aug":["exams"], "0-Sep":["books"]} — yearId-month: disabled cat ids
   preferredName: null,
@@ -60,6 +58,10 @@ export const DEFAULT_STATE = {
   ],
   savingsGoals: [],
   savingsLog: [],
+  loans: [],                 // flat top-level, id-keyed — see src/lib/loans.js for the loan shape
+  balanceReadings: [],       // [{id, date:"2026-10-01", spendable:6400, savings:12000|null}] append-only, id-keyed
+  loanReminderSnooze: null,  // null | {choice:"never", at:iso}
+  refundPlaybookSeen: null,  // null | {term:"2027-spring", at:iso} — one card per refund cycle
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

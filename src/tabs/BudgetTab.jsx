@@ -17,9 +17,9 @@ import { useApp } from '../context/AppContext.js';
 export function BudgetTab(){
   const { data, cats, ay, yr, yrStartYear, selMonth, setSelMonth, subs, subsMo, disabledCats,
           moSpend, moSpendable, moSurplus, runningBalance, totalAccumulatedBalance,
-          priorYearsCarryover, annDisburse, annOther, lastMonthRollover, allEntriesFlat,
+          priorYearsCarryover, annDisburse, annOther, allEntriesFlat,
           getMonthVal, spentInMonth, unbudgetedCats, unbudgetedTotal, promoteToBudget,
-          toggleMonthCat, setMo, setYrF, reorderCats, rolloverReco, addCat,
+          toggleMonthCat, setMo, setYrF, reorderCats, addCat,
           newCatName, setNewCatName, newCatIcon, setNewCatIcon, iconPickOpen, setIconPickOpen } = useApp();
   const [dragCat, setDragCat] = useState(null);
   const [dragOverCat, setDragOverCat] = useState(null);
@@ -217,16 +217,6 @@ export function BudgetTab(){
                 </BarChart>
               </ResponsiveContainer>}
             </Card>
-
-            {lastMonthRollover>0 && (
-              <Card>
-                <SectionTitle>Last month rollover</SectionTitle>
-                <div style={{fontSize:13,color:C.text,marginBottom:8}}>You had <strong style={{color:C.green}}>{fmt(lastMonthRollover)}</strong> left over last month.</div>
-                <div style={{fontSize:12,color:C.gray,lineHeight:1.6}}>
-                  Recommendation: {rolloverReco(lastMonthRollover)||"Move to savings."}
-                </div>
-              </Card>
-            )}
 
             <Card>
               <SectionTitle>Health checks</SectionTitle>

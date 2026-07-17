@@ -8,14 +8,12 @@ import {
 const baseState = () => ({
   darkMode: false,
   logo: null,
-  surplusBank: 100,
   preferredName: 'Alex',
   avatar: { type: 'art', style: 'buddy', color: 'marigold' },
   program: { degree: 'MD', dual: null, phd: { field: '', institution: '' }, masters: { field: '', institution: '' }, other: { field: '', institution: '' } },
   setupVersion: 1,
   archivedYears: [],
-  monthlyRollover: { '0-Aug': 50 },
-  monthDisabled: {},
+  monthDisabled: { '0-Aug': ['exams'] },
   years: [{
     grant: 1000, tuitionFees: 0, healthIns: 0, otherIncome: 0,
     housing: 0, housingNote: '', livingAllowance: 0, notes: '',
@@ -30,6 +28,15 @@ const baseState = () => ({
   savingsLog: [],
   currentWeekEntries: [],
   weeklyArchive: [{ weekStart: '2024-01-01', entries: [{ id: 'e1', amount: 20 }] }],
+  loans: [{
+    id: 'loan1', name: 'Year 1 federal loan', type: 'federal', academicYear: 2025,
+    rate: null, status: 'disbursed',
+    disbursements: [{ id: 'd1', date: '2025-08-05', amount: 20000 }, { id: 'd2', date: '2026-01-10', amount: 20000 }],
+    feePct: null, notes: '',
+  }],
+  balanceReadings: [{ id: 'b1', date: '2026-10-01', spendable: 6400, savings: 12000 }],
+  loanReminderSnooze: null,
+  refundPlaybookSeen: null,
 });
 
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -42,8 +49,8 @@ describe('diffStates', () => {
   });
 
   it('flags a scalar edit', () => {
-    const b = baseState(); const c = clone(b); c.surplusBank = 200;
-    expect(diffStates(b, c)).toEqual({ surplusBank: { b: 100, c: 200 } });
+    const b = baseState(); const c = clone(b); c.darkMode = true;
+    expect(diffStates(b, c)).toEqual({ darkMode: { b: false, c: true } });
   });
 
   it('flags identity/setup scalar edits (preferredName, avatar, program, setupVersion)', () => {
@@ -68,8 +75,8 @@ describe('diffStates', () => {
   });
 
   it('flags nested-map additions with a dotted key', () => {
-    const b = baseState(); const c = clone(b); c.monthlyRollover['0-Sep'] = 25;
-    expect(diffStates(b, c)).toEqual({ 'monthlyRollover.0-Sep': { b: undefined, c: 25 } });
+    const b = baseState(); const c = clone(b); c.monthDisabled['0-Sep'] = ['books'];
+    expect(diffStates(b, c)).toEqual({ 'monthDisabled.0-Sep': { b: undefined, c: ['books'] } });
   });
 
   it('flags a year field, a monthly budget, and an override independently', () => {
@@ -101,18 +108,37 @@ describe('diffStates', () => {
     expect(d['weeklyArchive[2024-01-01].entries[e2]']).toEqual({ b: undefined, c: { id: 'e2', amount: 5 } });
     expect(d['weeklyArchive[2024-01-08]']).toEqual({ b: undefined, c: { weekStart: '2024-01-08', entries: [] } });
   });
+
+  it('keys loans and balanceReadings by item id for add and edit (Phase 2)', () => {
+    const b = baseState(); const c = clone(b);
+    c.loans.push({ id: 'loan2', name: 'Year 2 federal loan', type: 'federal', academicYear: 2026, rate: null, status: 'accepted', disbursements: [], feePct: null, notes: '' });
+    c.balanceReadings[0].spendable = 4650;
+    const d = diffStates(b, c);
+    expect(d['loans[loan2]']).toEqual({ b: undefined, c: c.loans[1] });
+    expect(d['balanceReadings[b1]']).toEqual({ b: b.balanceReadings[0], c: c.balanceReadings[0] });
+  });
+
+  it('flags loanReminderSnooze and refundPlaybookSeen scalar edits (Phase 2)', () => {
+    const b = baseState(); const c = clone(b);
+    c.loanReminderSnooze = { choice: 'never', at: '2026-10-01T00:00:00.000Z' };
+    c.refundPlaybookSeen = { term: '2027-spring', at: '2027-01-13T00:00:00.000Z' };
+    expect(diffStates(b, c)).toEqual({
+      loanReminderSnooze: { b: null, c: c.loanReminderSnooze },
+      refundPlaybookSeen: { b: null, c: c.refundPlaybookSeen },
+    });
+  });
 });
 
 // ── Round-trip: applyChanges(base, diff(base,cur)) reproduces cur ────────────
 describe('applyChanges round-trips every diff family', () => {
   const cases = {
-    'scalar edit': (c) => { c.surplusBank = 200; c.darkMode = true; },
+    'scalar edit': (c) => { c.darkMode = true; c.logo = 'https://x/logo.png'; },
     'identity/setup scalar edit': (c) => {
       c.preferredName = 'Sam'; c.avatar = { type: 'google', url: 'https://x/y.png' };
       c.program = { ...c.program, dual: 'masters' }; c.setupVersion = 2;
     },
     'archivedYears replace': (c) => { c.archivedYears = [{ id: 0, startDate: '2023-08-01', endDate: '2024-08-15' }]; },
-    'nested-map add + edit': (c) => { c.monthlyRollover['0-Sep'] = 25; c.monthlyRollover['0-Aug'] = 60; },
+    'nested-map add + edit': (c) => { c.monthDisabled['0-Sep'] = ['books']; c.monthDisabled['0-Aug'] = ['exams','books']; },
     'year field / monthly / override': (c) => {
       c.years[0].grant = 1200; c.years[0].monthly.food = 320; c.years[0].monthlyOverrides.Sep.food = 360;
     },
@@ -122,10 +148,25 @@ describe('applyChanges round-trips every diff family', () => {
     'weekly entry add': (c) => { c.weeklyArchive[0].entries.push({ id: 'e2', amount: 5 }); },
     'weekly entry edit': (c) => { c.weeklyArchive[0].entries[0].amount = 99; },
     'whole week add': (c) => { c.weeklyArchive.push({ weekStart: '2024-01-08', entries: [{ id: 'x', amount: 1 }] }); },
+    'loan append + edit': (c) => {
+      c.loans[0].rate = 0.0794;
+      c.loans.push({ id: 'loan2', name: 'Year 2 federal loan', type: 'federal', academicYear: 2026, rate: null, status: 'accepted', disbursements: [], feePct: null, notes: '' });
+    },
+    'balanceReading append + edit': (c) => {
+      c.balanceReadings[0].savings = 13000;
+      c.balanceReadings.push({ id: 'b2', date: '2026-11-01', spendable: 4650, savings: 13000 });
+    },
+    'loanReminderSnooze + refundPlaybookSeen scalar edit': (c) => {
+      c.loanReminderSnooze = { choice: 'never', at: '2026-10-01T00:00:00.000Z' };
+      c.refundPlaybookSeen = { term: '2027-spring', at: '2027-01-13T00:00:00.000Z' };
+    },
     'everything at once': (c) => {
-      c.surplusBank = 999; c.monthlyRollover['0-Sep'] = 25; c.years[0].monthly.food = 400;
+      c.darkMode = true; c.monthDisabled['0-Sep'] = ['books']; c.years[0].monthly.food = 400;
       c.categories.push({ id: 'gym', label: 'Gym' }); c.subscriptions = [];
       c.weeklyArchive[0].entries.push({ id: 'e2', amount: 5 });
+      c.loans.push({ id: 'loan2', name: 'Year 2 federal loan', type: 'federal', academicYear: 2026, rate: null, status: 'accepted', disbursements: [], feePct: null, notes: '' });
+      c.balanceReadings.push({ id: 'b2', date: '2026-11-01', spendable: 4650, savings: 13000 });
+      c.loanReminderSnooze = { choice: 'never', at: '2026-10-01T00:00:00.000Z' };
     },
   };
   for (const [name, mutate] of Object.entries(cases)) {
@@ -138,7 +179,7 @@ describe('applyChanges round-trips every diff family', () => {
 
   it('does not mutate the input state', () => {
     const b = baseState(); const snapshot = clone(b);
-    const c = clone(b); c.surplusBank = 500;
+    const c = clone(b); c.darkMode = true;
     applyChanges(b, diffStates(b, c));
     expect(b).toEqual(snapshot);
   });
@@ -162,30 +203,30 @@ describe('applyChanges round-trips every diff family', () => {
 describe('findConflicts', () => {
   it('reports a conflict when both sides changed the same key', () => {
     const b = baseState();
-    const local = clone(b); local.surplusBank = 300;
-    const server = clone(b); server.surplusBank = 400;
+    const local = clone(b); local.preferredName = 'Sam';
+    const server = clone(b); server.preferredName = 'Jamie';
     const { conflicts, mergeLocal, mergeServer } = findConflicts(diffStates(b, local), diffStates(b, server));
-    expect(conflicts).toEqual([{ key: 'surplusBank', local: 300, server: 400 }]);
+    expect(conflicts).toEqual([{ key: 'preferredName', local: 'Sam', server: 'Jamie' }]);
     expect(mergeLocal).toEqual({});
     expect(mergeServer).toEqual({});
   });
 
   it('auto-merges disjoint edits from each side', () => {
     const b = baseState();
-    const local = clone(b); local.surplusBank = 300;             // only local
-    const server = clone(b); server.years[0].grant = 1500;       // only server
+    const local = clone(b); local.preferredName = 'Sam';          // only local
+    const server = clone(b); server.years[0].grant = 1500;        // only server
     const { conflicts, mergeLocal, mergeServer } = findConflicts(diffStates(b, local), diffStates(b, server));
     expect(conflicts).toEqual([]);
-    expect(mergeLocal).toHaveProperty('surplusBank');
+    expect(mergeLocal).toHaveProperty('preferredName');
     expect(mergeServer).toHaveProperty('years[0].grant');
   });
 
   it('separates conflicting from non-conflicting keys in one pass', () => {
     const b = baseState();
-    const local = clone(b); local.surplusBank = 300; local.darkMode = true;
-    const server = clone(b); server.surplusBank = 400; server.years[0].grant = 1500;
+    const local = clone(b); local.preferredName = 'Sam'; local.darkMode = true;
+    const server = clone(b); server.preferredName = 'Jamie'; server.years[0].grant = 1500;
     const { conflicts, mergeLocal, mergeServer } = findConflicts(diffStates(b, local), diffStates(b, server));
-    expect(conflicts.map(c => c.key)).toEqual(['surplusBank']);
+    expect(conflicts.map(c => c.key)).toEqual(['preferredName']);
     expect(mergeLocal).toHaveProperty('darkMode');       // local-only survives
     expect(mergeServer).toHaveProperty('years[0].grant'); // server-only survives
   });
@@ -216,15 +257,50 @@ describe('two-device merges preserve disjoint edits to the newly-tracked fields'
     const removedYear = { ...local.years[0] };
     local.archivedYears = [removedYear];
     local.years = [];                                   // device A: soft-deleted (archived) the only year
-    const server = clone(base); server.surplusBank = 250; // device B: unrelated edit, already on the server
+    const server = clone(base); server.darkMode = true; // device B: unrelated edit, already on the server
     const { conflicts, mergeLocal } = findConflicts(diffStates(base, local), diffStates(base, server));
     expect(conflicts).toEqual([]);
     const merged = applyChanges(server, mergeLocal);
     // The authoritative "this year was removed" record — archivedYears — is
     // now tracked as a scalar and merges correctly: device A's removal wins.
     expect(merged.archivedYears).toEqual([removedYear]);
-    expect(merged.surplusBank).toBe(250);               // device B's edit survived too
+    expect(merged.darkMode).toBe(true);                 // device B's edit survived too
     expect(merged.years).toEqual([]);                   // the year itself is actually gone, not a ghost entry
+  });
+
+  // Loans/balanceReadings are id-keyed exactly like categories/subscriptions, so an
+  // edit on one device and a delete on the other race the same way those already do —
+  // this pins down which side wins so the behavior is deterministic and documented,
+  // not just "whatever applyChanges happens to do."
+  it('a loan edited on device A and deleted on device B: the merge is deterministic (edit loses to delete, since the base state no longer knows the loan existed once server-then-local is applied)', () => {
+    const base = baseState();
+    const local = clone(base); local.loans[0].rate = 0.0794;   // device A: edited the loan
+    const server = clone(base); server.loans = [];              // device B: deleted the loan (already on the server)
+    const { conflicts, mergeLocal } = findConflicts(diffStates(base, local), diffStates(base, server));
+    // Both sides touched loans[loan1] (edit vs. delete) — findConflicts treats any
+    // key present on both sides as a genuine conflict, same as any other field.
+    expect(conflicts).toEqual([{ key: 'loans[loan1]', local: local.loans[0], server: undefined }]);
+    expect(mergeLocal).toEqual({});
+    // Production behavior on a real conflict: the UI surfaces it for the user to
+    // pick a side (App.jsx conflict resolver) rather than silently choosing one —
+    // applying neither side's mergeLocal/mergeServer here reflects that the merge
+    // engine itself takes no action until the conflict is resolved.
+    const merged = applyChanges(server, mergeLocal);
+    expect(merged.loans).toEqual([]); // server's delete stands until the conflict is explicitly resolved
+  });
+
+  it('two devices add a balanceReading on the same date: both rows survive the merge (id-keyed, not date-keyed)', () => {
+    const base = baseState();
+    const local = clone(base);
+    local.balanceReadings.push({ id: 'b-phone', date: '2026-11-01', spendable: 4650, savings: 13000 });
+    const server = clone(base);
+    server.balanceReadings.push({ id: 'b-laptop', date: '2026-11-01', spendable: 4700, savings: 13000 });
+    const { conflicts, mergeLocal } = findConflicts(diffStates(base, local), diffStates(base, server));
+    expect(conflicts).toEqual([]); // different ids, same date — not a conflict, both survive
+    const merged = applyChanges(server, mergeLocal);
+    const nov1 = merged.balanceReadings.filter(r => r.date === '2026-11-01');
+    expect(nov1).toHaveLength(2);
+    expect(nov1.map(r => r.id).sort()).toEqual(['b-laptop', 'b-phone']);
   });
 });
 
@@ -243,6 +319,12 @@ describe('fmtConflictVal', () => {
   it('summarizes objects by name/label', () => {
     expect(fmtConflictVal('subscriptions[s1]', { name: 'Netflix', amount: 15 }, data)).toBe('Netflix — $15');
     expect(fmtConflictVal('stepGoals[step1]', { label: 'Step 1', targetAmount: 850 }, data)).toBe('Step 1 — $850');
+  });
+  it('summarizes a loan by name + total borrowed, and a balance reading by date + amounts', () => {
+    const loan = { name: 'Year 1 federal loan', disbursements: [{ amount: 20000 }, { amount: 20000 }] };
+    expect(fmtConflictVal('loans[loan1]', loan, data)).toBe('Year 1 federal loan — $40,000');
+    const reading = { date: '2026-10-01', spendable: 6400, savings: 12000 };
+    expect(fmtConflictVal('balanceReadings[b1]', reading, data)).toBe('2026-10-01 — $6,400 (+ $12,000 savings)');
   });
 });
 
@@ -264,6 +346,13 @@ describe('conflictLabel', () => {
     expect(conflictLabel('categories[food]', data)).toBe('Category: Food');
   });
   it('maps known top-level keys', () => {
-    expect(conflictLabel('surplusBank', data)).toBe('Surplus bank');
+    expect(conflictLabel('darkMode', data)).toBe('Dark mode');
+    expect(conflictLabel('loanReminderSnooze', data)).toBe('Loan reminder');
+    expect(conflictLabel('refundPlaybookSeen', data)).toBe('Refund playbook seen');
+  });
+  it('names loans and balance check-ins from data', () => {
+    const d2 = { ...data, loans: [{ id: 'loan1', name: 'Year 1 federal loan' }], balanceReadings: [{ id: 'b1', date: '2026-10-01' }] };
+    expect(conflictLabel('loans[loan1]', d2)).toBe('Loan: Year 1 federal loan');
+    expect(conflictLabel('balanceReadings[b1]', d2)).toBe('Balance check-in (2026-10-01)');
   });
 });

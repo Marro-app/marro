@@ -540,10 +540,10 @@ export function diffStates(base, cur) {
   // and safe — it only loses data if BOTH devices archive/restore in the same
   // sync window, which `findConflicts` will surface as a conflict rather than
   // silently dropping either side.
-  for (const k of ['darkMode','logo','surplusBank','preferredName','avatar','program','setupVersion','archivedYears']) {
+  for (const k of ['darkMode','logo','preferredName','avatar','program','setupVersion','archivedYears','loanReminderSnooze','refundPlaybookSeen']) {
     if (js(base[k]) !== js(cur[k])) ch[k] = {b:base[k], c:cur[k]};
   }
-  for (const k of ['monthlyRollover','monthDisabled']) {
+  for (const k of ['monthDisabled']) {
     const bk=base[k]||{}, ck=cur[k]||{};
     for (const sk of new Set([...Object.keys(bk),...Object.keys(ck)]))
       if (js(bk[sk])!==js(ck[sk])) ch[`${k}.${sk}`]={b:bk[sk],c:ck[sk]};
@@ -570,7 +570,7 @@ export function diffStates(base, cur) {
         if (js(bmo[c])!==js(cmo[c])) ch[`years[${i}].monthlyOverrides.${mn}.${c}`]={b:bmo[c],c:cmo[c]};
     }
   }
-  for (const k of ['categories','subscriptions','stepGoals','savingsGoals','savingsLog','currentWeekEntries']) {
+  for (const k of ['categories','subscriptions','stepGoals','savingsGoals','savingsLog','currentWeekEntries','loans','balanceReadings']) {
     const ba=base[k]||[], ca=cur[k]||[];
     const bById=Object.fromEntries(ba.map(x=>[x.id,x])), cById=Object.fromEntries(ca.map(x=>[x.id,x]));
     for (const id of new Set([...ba.map(x=>x.id),...ca.map(x=>x.id)]))
@@ -624,9 +624,9 @@ export function applyChanges(state, changes) {
       } else { s.years[idx][rest]=val; }
       continue;
     }
-    m=key.match(/^(monthlyRollover|monthDisabled)\.(.+)$/);
+    m=key.match(/^(monthDisabled)\.(.+)$/);
     if (m) { s[m[1]]=s[m[1]]||{}; if (val==null) delete s[m[1]][m[2]]; else s[m[1]][m[2]]=val; continue; }
-    m=key.match(/^(categories|subscriptions|stepGoals|savingsGoals|savingsLog|currentWeekEntries)\[(.+)\]$/);
+    m=key.match(/^(categories|subscriptions|stepGoals|savingsGoals|savingsLog|currentWeekEntries|loans|balanceReadings)\[(.+)\]$/);
     if (m) {
       const [,arrKey,id]=m; s[arrKey]=s[arrKey]||[];
       const idx=s[arrKey].findIndex(x=>x.id===id);
@@ -654,15 +654,20 @@ export function applyChanges(state, changes) {
   return s;
 }
 
-export const MONEY_KEYS=['monthly','budget','housing','amount','grant','tuition','health','income','allowance','target','saved','surplusBank','fee'];
+export const MONEY_KEYS=['monthly','budget','housing','amount','grant','tuition','health','income','allowance','target','saved','fee','spendable','savings'];
 export function fmtConflictVal(key, val, data) {
   if (val==null) return '(removed)';
   if (typeof val==='boolean') return val?'On':'Off';
   if (typeof val==='number') return MONEY_KEYS.some(mk=>key.toLowerCase().includes(mk))?`$${val.toLocaleString()}`:String(val);
   if (typeof val==='object') {
+    // Loan: no top-level `amount`, so total what was actually borrowed from its
+    // disbursement rows (mirrors the `name`+`amount` pattern above).
+    if (val.name&&val.disbursements) return val.name+` — $${val.disbursements.reduce((a,d)=>a+(Number(d.amount)||0),0).toLocaleString()}`;
     if (val.name) return val.name+(val.amount?` — $${val.amount}`:'');
     if (val.label) return val.label+(val.targetAmount?` — $${val.targetAmount}`:'');
     if (val.catId&&val.amount) { const cat=(data?.categories||[]).find(c=>c.id===val.catId); return `${cat?.label||val.catId}: $${val.amount}`; }
+    // Balance reading: {date, spendable, savings} — show the date plus both amounts.
+    if (val.date&&val.spendable!=null) return `${val.date} — $${val.spendable.toLocaleString()}${val.savings!=null?` (+ $${val.savings.toLocaleString()} savings)`:''}`;
     return JSON.stringify(val);
   }
   return String(val);
@@ -678,6 +683,8 @@ export function conflictLabel(key, data) {
   m=key.match(/^savingsGoals\[(.+)\]$/);                   if (m) { const g=(data?.savingsGoals||[]).find(g=>g.id===m[1]); return `Savings goal: ${g?.label||m[1]}`; }
   m=key.match(/^subscriptions\[(.+)\]$/);                  if (m) { const s=(data?.subscriptions||[]).find(s=>s.id===m[1]); return `Subscription: ${s?.name||m[1]}`; }
   m=key.match(/^categories\[(.+)\]$/);                     if (m) return `Category: ${catLabel(m[1])}`;
-  return ({darkMode:'Dark mode',logo:'App logo',surplusBank:'Surplus bank'})[key]||key;
+  m=key.match(/^loans\[(.+)\]$/);                          if (m) { const l=(data?.loans||[]).find(l=>l.id===m[1]); return `Loan: ${l?.name||m[1]}`; }
+  m=key.match(/^balanceReadings\[(.+)\]$/);                if (m) { const r=(data?.balanceReadings||[]).find(r=>r.id===m[1]); return `Balance check-in (${r?.date||m[1]})`; }
+  return ({darkMode:'Dark mode',logo:'App logo',loanReminderSnooze:'Loan reminder',refundPlaybookSeen:'Refund playbook seen'})[key]||key;
 }
 (function(){setInterval(()=>{const now=new Date();if(now.getDay()===0&&now.getHours()===23&&now.getMinutes()===59)window._triggerArchive&&window._triggerArchive()},60000)})();
