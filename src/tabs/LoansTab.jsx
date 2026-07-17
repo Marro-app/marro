@@ -7,7 +7,7 @@ import { useApp } from '../context/AppContext.js';
 import { radioProps } from '../lib/ui-helpers.js';
 import {
   effectiveRate, isRateEstimated, loanPrincipal, projectDebtAtGraduation, loanTypeKey,
-  estimateRefunds, computeRunway, loanReturnWindows, refundPlaybookTrigger, returnSavingsAtGraduation,
+  estimateRefunds, computeRunway, loanReturnWindows, refundNudgeState, returnSavingsAtGraduation,
 } from '../lib/loans.js';
 import { disbFallbackDate, DAYS_PER_MONTH, DEFAULT_SAVINGS_APY, HYSA_RATE_RANGE_COPY, FDIC_INSURANCE_CAP } from '../lib/constants.js';
 
@@ -486,29 +486,27 @@ const MONTH_MS = DAYS_PER_MONTH * 24 * 60 * 60 * 1000;
 // read that override too.
 const PLAYBOOK_APY = DEFAULT_SAVINGS_APY;
 
-function RefundPlaybook({ data, upd, moSpend }) {
+function RefundPlaybook({ data, upd, moSpend, refundNudgeConfirmed, setRefundNudgeConfirmed }) {
   const today = todayStr();
   const gradDate = data.years?.[data.years.length - 1]?.endDate || null;
   const readings = data.balanceReadings || [];
   const refunds = estimateRefunds(data.years || []);
   const seen = data.refundPlaybookSeen;
-  const [confirmedTerm, setConfirmedTerm] = useState(null); // "yes, my refund landed" — this session only until it writes refundPlaybookSeen
 
-  // The most recent refund whose expected date has passed and hasn't been
-  // shown yet for its term — the only candidate this render considers.
-  const candidate = [...refunds]
-    .filter((r) => r.date && r.date <= today && (!seen || seen.term !== r.term))
-    .sort((a, b) => (a.date < b.date ? 1 : -1))[0] || null;
+  // Shared with the header nudge (App.jsx) via refundNudgeState, so both
+  // surfaces agree on exactly the same candidate term and never disagree
+  // about whether the full card or just the "did it land?" nudge should show.
+  const { candidate, showPlaybook: show } = refundNudgeState({
+    years: data.years, readings, refundPlaybookSeen: seen, today, confirmedTerm: refundNudgeConfirmed,
+  });
 
   if (!candidate) return null;
-
-  const confirmed = confirmedTerm === candidate.term;
-  const show = refundPlaybookTrigger({ readings, nextRefund: candidate, refundPlaybookSeen: seen, today, confirmed });
 
   const dismiss = () => {
     const d = JSON.parse(JSON.stringify(data));
     d.refundPlaybookSeen = { term: candidate.term, at: new Date().toISOString() };
     upd(d);
+    setRefundNudgeConfirmed(null);
   };
 
   if (!show) {
@@ -520,7 +518,7 @@ function RefundPlaybook({ data, upd, moSpend }) {
       <Banner type="info">
         Did your {seasonWord} refund land? Update your balance below to see the full picture.
         <div style={{ marginTop: 8 }}>
-          <button type="button" onClick={() => setConfirmedTerm(candidate.term)}
+          <button type="button" onClick={() => setRefundNudgeConfirmed(candidate.term)}
             style={{ padding: '6px 14px', minHeight: 32, borderRadius: 8, border: `1px solid ${C.blue}`, background: 'transparent', color: C.blue, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
             Yes, it landed
           </button>
@@ -595,7 +593,7 @@ function RefundPlaybook({ data, upd, moSpend }) {
 }
 
 export function LoansTab() {
-  const { data, upd, moSpend } = useApp();
+  const { data, upd, moSpend, refundNudgeConfirmed, setRefundNudgeConfirmed } = useApp();
   const [moreOpenIds, setMoreOpenIds] = useState(() => new Set());
   const toggleMore = (id) => setMoreOpenIds((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -608,7 +606,7 @@ export function LoansTab() {
 
   return (
     <div role="tabpanel" id="tab-panel" aria-labelledby="tab-loans" tabIndex={0} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <RefundPlaybook data={data} upd={upd} moSpend={moSpend} />
+      <RefundPlaybook data={data} upd={upd} moSpend={moSpend} refundNudgeConfirmed={refundNudgeConfirmed} setRefundNudgeConfirmed={setRefundNudgeConfirmed} />
       <ReminderBanner data={data} upd={upd} />
       <ReturnWindowCard data={data} today={todayStr()} />
 

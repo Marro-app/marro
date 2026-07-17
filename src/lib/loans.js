@@ -602,6 +602,56 @@ export function returnSavingsAtGraduation(loans, window, gradDate, returnAmount)
   return Math.max(0, before - after);
 }
 
+// ── Cushion-source classification (A4) ────────────────────────────────────────
+
+/**
+ * "Surplus loan money isn't wealth" (walkthrough §5) — the Runway tile's
+ * `growing` state is a lie when the "growth" is just unspent LOAN money at
+ * ~8% interest, not real savings. This classifies where a growing cushion is
+ * actually coming from, so `runwayTileDisplay` can split the copy:
+ *   - `"loan"`: a return window is currently open (the clearest possible
+ *     evidence — literal surplus loan money, still returnable), OR a loan
+ *     disbursement landed within the most recent burn-measurement window and
+ *     that loan inflow was at least as large as the (pro-rated) non-loan
+ *     income over the same window.
+ *   - `"own"`: no counted loans at all, OR non-loan income makes up more than
+ *     a quarter of the student's combined annual inflow (loan + non-loan) —
+ *     the design's own >25% threshold.
+ *   - `"mixed"`: ambiguous — some loans exist and non-loan income doesn't
+ *     clearly dominate. Treated as loan-side (blue, not green) copy by the
+ *     caller, the conservative choice per the plan.
+ *
+ * `otherIncome` is the student's ANNUAL non-loan income figure (job, family
+ * gifts, etc. — whatever the caller already tracks as "other income" for the
+ * year); this function makes no assumption about where that number comes
+ * from beyond treating it as an annual rate for the window pro-ration below.
+ */
+export function classifyCushionSource({ readings, loans, otherIncome, today }) {
+  const allLoans = loans || [];
+  if (loanReturnWindows(allLoans, today).length > 0) return 'loan';
+
+  const counted = allLoans.filter((l) => l.status === 'accepted' || l.status === 'disbursed');
+  if (counted.length === 0) return 'own';
+
+  const sorted = normalizeReadings(readings, today);
+  if (sorted.length >= 2) {
+    const prev = sorted[sorted.length - 2];
+    const latest = sorted[sorted.length - 1];
+    const windowDays = Math.max(1, daysBetween(prev.date, latest.date));
+    const loanInflowInWindow = counted.reduce((sum, loan) => sum + (loan.disbursements || [])
+      .filter((d) => d.date && d.date > prev.date && d.date <= latest.date)
+      .reduce((a, d) => a + (Number(d.amount) || 0), 0), 0);
+    const nonLoanInWindow = (Number(otherIncome) || 0) * (windowDays / 365);
+    if (loanInflowInWindow > 0 && loanInflowInWindow >= nonLoanInWindow) return 'loan';
+  }
+
+  const loanInflowAnnual = counted.reduce((sum, loan) => sum + (loan.disbursements || []).reduce((a, d) => a + (Number(d.amount) || 0), 0), 0);
+  const otherIncomeAnnual = Number(otherIncome) || 0;
+  const combined = otherIncomeAnnual + loanInflowAnnual;
+  const nonLoanShare = combined > 0 ? otherIncomeAnnual / combined : 0;
+  return nonLoanShare > 0.25 ? 'own' : 'mixed';
+}
+
 // ── Refund Playbook trigger ──────────────────────────────────────────────────
 
 /**
@@ -629,4 +679,27 @@ export function refundPlaybookTrigger({ readings, nextRefund, refundPlaybookSeen
 
   const jump = (Number(latest.spendable) || 0) - (Number(before.spendable) || 0);
   return jump >= (Number(nextRefund.amount) || 0) * 0.5;
+}
+
+/**
+ * Single source of truth for "which refund cycle are we talking about right
+ * now, and should the UI show the full Refund Playbook card or just a light
+ * 'did it land?' nudge?" — shared by the Loans tab's Playbook card and the
+ * header nudge (walkthrough §7/§9) so the two surfaces can never disagree
+ * about the term or double-trigger on different candidates.
+ *
+ * `confirmedTerm` is whatever term the student most recently clicked "yes,
+ * it landed" for (from either surface) — it only counts as a confirmation
+ * for the CURRENT candidate, so confirming an old term never leaks forward.
+ */
+export function refundNudgeState({ years, readings, refundPlaybookSeen, today, confirmedTerm = null }) {
+  const refunds = estimateRefunds(years || []);
+  const candidate = [...refunds]
+    .filter((r) => r.date && r.date <= today && (!refundPlaybookSeen || refundPlaybookSeen.term !== r.term))
+    .sort((a, b) => (a.date < b.date ? 1 : -1))[0] || null;
+  if (!candidate) return { candidate: null, showPlaybook: false, showNudge: false };
+
+  const confirmed = confirmedTerm != null && confirmedTerm === candidate.term;
+  const showPlaybook = refundPlaybookTrigger({ readings, nextRefund: candidate, refundPlaybookSeen, today, confirmed });
+  return { candidate, showPlaybook, showNudge: !showPlaybook };
 }

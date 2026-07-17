@@ -3,7 +3,7 @@ import {
   FEDERAL_GRAD_UNSUB_RATES, FEDERAL_GRAD_PLUS_RATES, FEDERAL_ORIGINATION_FEE, FEDERAL_GRAD_PLUS_FEE, HRSA_RATE,
   effectiveRate, isRateEstimated, effectiveFeePct, loanPrincipal, accruedInterest, loanTypeKey,
   projectDebtAtGraduation, computeRunway, estimateRefunds, loanReturnWindows,
-  refundPlaybookTrigger, returnSavingsAtGraduation,
+  refundPlaybookTrigger, returnSavingsAtGraduation, classifyCushionSource,
 } from './loans.js';
 
 // A minimal, valid loan — override fields per test.
@@ -615,5 +615,44 @@ describe('returnSavingsAtGraduation', () => {
     );
     const otherRowAfter = after.byLoan.find((l) => l.loanId === 'l2');
     expect(otherRowAfter.total).toBeCloseTo(otherRowBefore.total, 6);
+  });
+});
+
+// ── classifyCushionSource (A4) ────────────────────────────────────────────────
+describe('classifyCushionSource', () => {
+  const today = '2027-01-15';
+
+  it('"own" — no counted loans at all', () => {
+    expect(classifyCushionSource({ readings: [], loans: [], otherIncome: 0, today })).toBe('own');
+    // an offered-but-not-accepted loan doesn't count as a real loan either
+    const offered = makeLoan({ status: 'offered' });
+    expect(classifyCushionSource({ readings: [], loans: [offered], otherIncome: 0, today })).toBe('own');
+  });
+
+  it('"loan" — an open 120-day return window is the clearest possible signal', () => {
+    const loan = makeLoan({ disbursements: [{ id: 'd1', date: '2026-12-01', amount: 10000 }] }); // well within 120 days of 2027-01-15
+    expect(classifyCushionSource({ readings: [], loans: [loan], otherIncome: 50000, today })).toBe('loan');
+  });
+
+  it('"loan" — a loan disbursement landed inside the burn-measurement window and dominates non-loan income there', () => {
+    const loan = makeLoan({ disbursements: [{ id: 'd1', date: '2025-09-10', amount: 8000 }] }); // window closed by "today" — isolates this from the return-window rule above
+    const readings = [
+      { id: 'r1', date: '2025-09-01', spendable: 3000, savings: 0 },
+      { id: 'r2', date: '2025-10-01', spendable: 10500, savings: 0 }, // balance jumped — the loan landing inside this window
+    ];
+    // otherIncome annualized is tiny relative to the $8,000 that landed in this ~30-day window
+    expect(classifyCushionSource({ readings, loans: [loan], otherIncome: 6000, today: '2025-10-05' })).toBe('loan');
+  });
+
+  it('"own" — non-loan income makes up more than a quarter of combined annual inflow (the design\'s >25% threshold)', () => {
+    const loan = makeLoan({ academicYear: 2024, disbursements: [{ id: 'd1', date: '2024-08-05', amount: 10000 }] }); // long-closed return window, no readings to trip the window-inflow rule
+    // loanInflowAnnual = 10000, otherIncome = 5000 → share = 5000/15000 = 33% > 25%
+    expect(classifyCushionSource({ readings: [], loans: [loan], otherIncome: 5000, today })).toBe('own');
+  });
+
+  it('"mixed" — ambiguous: loans exist, no open window, no window-inflow evidence, non-loan share ≤ 25%', () => {
+    const loan = makeLoan({ academicYear: 2024, disbursements: [{ id: 'd1', date: '2024-08-05', amount: 10000 }] });
+    // loanInflowAnnual = 10000, otherIncome = 1000 → share = 1000/11000 ≈ 9%, well under 25%
+    expect(classifyCushionSource({ readings: [], loans: [loan], otherIncome: 1000, today })).toBe('mixed');
   });
 });
