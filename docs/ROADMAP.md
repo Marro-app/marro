@@ -46,10 +46,23 @@
 **Done when:** ✓ fresh account → debt + runway on screen in <5 min; numbers hand-checked against a studentaid.gov example (`PRODUCT_DECISIONS.md` "Phase 2 commit 3").
 
 ### Phase 2 follow-ups (moved out of this phase, not forgotten)
-- **Phase 2.6 — Home-screen runway redesign.** Center Home on the runway countdown + an "upcoming big costs" list (Step fees, interview season), as originally scoped above — now that the header tiles have proven the underlying math live in production, redesigning Home around it is lower-risk. Replaces the Step savings-goal rings.
 - **Repayment simulator (post-residency monthly payment)** — moved to Phase 8, gated on the federal government finalizing the post-OBBBA repayment-plan rules. Research the actual rules first; never build loan policy from memory.
 - **Aid-letter scanner (Phase 4 AI)** — photograph an award letter, auto-fill loan amounts/dates/rate as a "Suggested" (unconfirmed) entry the student confirms. The Loans tab's offered/accepted/disbursed status field exists specifically so this can drop in without a data-model change.
 - **Known v1 limitations, documented not hidden** (full list in the Phase 2 plan's "Who this works for" section): no dedicated MD/PhD-style monthly-stipend mode (approximated via "other income"); international/DACA students use the Private loan type (covers the math, not cosigner nuances); quarter-system schools' refund timing shows as a wider estimate than semester schools.
+
+## Phase 2.6 — "Money Plan" (DESIGNED, not yet built)
+
+Builds directly on Phase 2's loan/debt/runway engine. Where Phase 2 answers "how long will my money last," Money Plan answers the next question a scared M2 asks: "so what should I actually *do* with this refund?" Supersedes the earlier one-line "Home-screen runway redesign" note above — that idea is now the fuller design below. Full design record: `PRODUCT_DECISIONS.md` "2026-07-13 — Phase 2.6 'Money Plan' design locked." **Package A (the per-type loan interest model, 5-type loan picker, persistent 120-day return card, and Runway tile's loan-vs-own-money split) has already shipped**, amended into the still-unmerged Phase 2 PR stack — see `PRODUCT_DECISIONS.md` "Phase 2.6 Package A" entries. Everything below is Package B: the still-unbuilt "Money Plan" tab itself.
+
+- **The picture.** One chart: the same refund shown two ways — flat in checking (earns nothing) vs. parked in savings with a fixed monthly "paycheck" auto-transferring into checking (earns interest on the declining balance as it draws down). The gap between the two lines is real, quantified, honestly small — no flat-balance overstatement.
+- **The read-out.** Plain-English paycheck number ("many students in your spot pay themselves about $X a month"), sourced from a real aid-office formula (refund ÷ months to next refund), never phrased as advice.
+- **Dated big costs.** Step 1/2, COMLEX Level 1/2-CE, ERAS, interviews, relocation — surfaced as year-aware "Suggested" cards a student confirms/edits/dismisses, each with a payment date (default: exam date − 4 months) distinct from the exam date itself, and an "already in my financial aid?" toggle so a school that bakes exam fees into cost-of-attendance never gets double-counted.
+- **Reserves, not jars.** A dated cost is a claim against the one real reported balance, never a pot the app pretends to hold — status shows as a word ("on track," "not there yet," "dipped in"), never a fill-up ring or progress bar. "Safe to spend" = checking + savings − reserves − upcoming costs.
+- **The return-window truth.** Surplus federal loan money can be returned within 120 days with interest and fees cancelled — quantified in real dollars saved at graduation, not just a vague tip.
+- **Emergency cushion is optional and adjustable**, never a gate — no upfront question, defaults to leaning on the school's own emergency aid, and a shortfall response points to that aid or a cost-of-attendance increase instead of a "you failed" state.
+- **v1 scope: dated costs + an optional emergency floor only** — free-form savings goals (e.g. "save for a laptop") are deferred to a fast-follow, not v1.
+
+**Done when:** a student with a fresh refund can see the checking-vs-parked picture, confirm their real upcoming big costs, and get an honest "safe to spend" number — all without the app ever claiming to hold money it can't see.
 
 <details>
 <summary>Original Phase 2 scope (2026-07-01 revision) — kept for history, superseded by the shipped scope above</summary>
