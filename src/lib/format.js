@@ -1,3 +1,5 @@
+import { USMLE_STEP_FEE_ESTIMATE } from './constants.js';
+
 export const BLANK_MONTHLY = {housing:0,food:0,transport:0,personal:0,books:0,exams:0,savings:0,social:0,subs:0};
 export const blankYearFields = () => ({ tuitionFees:0, healthIns:0, grant:0, otherIncome:0, housing:0, housingNote:"", livingAllowance:0, notes:"" });
 
@@ -34,7 +36,7 @@ export const MONTH_FULL = ["August","September","October","November","December",
 // Progressive setup: bump SETUP_VERSION whenever a NEW onboarding question is added.
 // New users answer everything in OnboardingFlow; existing users whose stored
 // setupVersion is behind get a focused popup for just the missing step(s).
-export const SETUP_VERSION = 1;
+export const SETUP_VERSION = 2; // v2: added the money step (Phase 2, walkthrough §0) — see onboarding.jsx SETUP_STEPS
 
 export const DEFAULT_STATE = {
   setupVersion: null,  // null = brand new (run onboarding); set to SETUP_VERSION when complete
@@ -52,8 +54,8 @@ export const DEFAULT_STATE = {
   program: { degree:"MD", dual:null, phd:{field:"",institution:""}, masters:{field:"",institution:""}, other:{field:"",institution:""} },
   darkMode: false,
   stepGoals: [
-    { id:"step1", label:"Step 1", targetAmount:850, targetDate:"2028-06-01", saved:0, monthlyContribution:50 },
-    { id:"step2", label:"Step 2 CK", targetAmount:850, targetDate:"2029-09-01", saved:0, monthlyContribution:50 },
+    { id:"step1", label:"Step 1", targetAmount:USMLE_STEP_FEE_ESTIMATE, targetDate:"2028-06-01", saved:0, monthlyContribution:50 },
+    { id:"step2", label:"Step 2 CK", targetAmount:USMLE_STEP_FEE_ESTIMATE, targetDate:"2029-09-01", saved:0, monthlyContribution:50 },
     { id:"step3", label:"Step 3", targetAmount:1000, targetDate:"2031-06-01", saved:0, monthlyContribution:0 },
   ],
   savingsGoals: [],

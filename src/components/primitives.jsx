@@ -293,8 +293,8 @@ export const InfoTip = ({text}) => {
 
 export const Divider = () => <div style={{height:1,background:C.border,margin:"10px 0"}}/>;
 
-export const MetricTile = ({label, value, sub, color, onClick}) => (
-  <div onClick={onClick} style={{
+export const MetricTile = ({label, value, sub, color, onClick, role, ariaLive}) => (
+  <div onClick={onClick} role={role} aria-live={ariaLive} style={{
     background:"rgba(255,255,255,0.07)",
     backdropFilter:"blur(40px) saturate(180%)",
     WebkitBackdropFilter:"blur(30px) saturate(160%)",

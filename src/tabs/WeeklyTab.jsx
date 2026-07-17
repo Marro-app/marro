@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { C, CHART_COLORS } from '../lib/theme.js';
 import { fmt, fmtS, fmtD, fmtA, fmtSA, fmtDay, fmtWeekLabel, todayStr, getMonday, getSunday, MONTH_NAMES, MONTH_FULL } from '../lib/format.js';
+import { WEEKS_PER_MONTH } from '../lib/constants.js';
 import { Card, SectionTitle, Banner, MetricTile, ProgressBar, Pill, EmptyState, XBtn, Modal } from '../components/primitives.jsx';
 import { CatIcon } from '../components/icons.jsx';
 import { DateField } from '../components/pickers.jsx';
@@ -266,7 +267,7 @@ export function WeeklyTab(){
 
           <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
             {[
-              {label:"Weekly plan",      val:fmt(viewBudget),             sub:lastWeekSurplus>0&&!viewWeek?`base ${fmt(weeklyBudget)} + ${fmt(lastWeekSurplus)} rollover`:"spendable ÷ 4.33", color:C.teal},
+              {label:"Weekly plan",      val:fmt(viewBudget),             sub:lastWeekSurplus>0&&!viewWeek?`base ${fmt(weeklyBudget)} + ${fmt(lastWeekSurplus)} rollover`:`spendable ÷ ${WEEKS_PER_MONTH}`, color:C.teal},
               {label:"Actually spent",  val:fmtA(viewTotal),             sub:viewWeek?"archived":"this week",      color:viewTotal>viewBudget?C.neg:C.text},
               {label:"Remaining",        val:fmtSA(viewBudget-viewTotal), sub:"this week",                          color:viewBudget-viewTotal>=0?C.green:C.neg},
               {label:"Entries",          val:String(viewEntries.length),  sub:"logged",                             color:C.gray},
@@ -326,7 +327,7 @@ export function WeeklyTab(){
                 const wkRef = viewWeek ? new Date(viewWeek+"T12:00:00") : new Date();
                 const wkMonthIdx = (wkRef.getMonth() - 7 + 12) % 12;
                 const moB = Number(getMonthValIdx(cat.id, wkMonthIdx))||0;
-                const wkB = moB / 4.333;
+                const wkB = moB / WEEKS_PER_MONTH;
                 const spent = viewEntries.filter(e=>e.catId===cat.id).reduce((a,e)=>a+Number(e.amount),0);
                 const over = spent > wkB;
                 return (
