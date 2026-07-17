@@ -22,11 +22,23 @@
 //     spending pace, compared against her spending plan and her expected
 //     financial-aid refund dates.
 
-// ── Federal rate table ───────────────────────────────────────────────────────
+import { DAYS_PER_MONTH, LOAN_RETURN_WINDOW_DAYS, disbFallbackDate } from './constants.js';
+
+// ── Federal rate tables ──────────────────────────────────────────────────────
 // Direct Unsubsidized (grad/professional) rates, set every July 1 for loans
 // first disbursed in that academic year. Keyed by the CALENDAR YEAR the
 // academic year *starts* in (e.g. 2025 → the 2025-26 rate). Source:
-// studentaid.gov "Interest Rates and Fees" (historical rate table).
+// studentaid.gov "Interest Rates and Fees" (historical rate table), verified
+// against savingforcollege.com's reproduction of the same table and an FSA
+// Partners electronic announcement for 2026-27, 2026-07-17.
+//
+// ⚠ CORRECTION (2026-07-17, Phase 2.6 Package A build): the 2024 entry was
+// previously 0.0653 — that is the UNDERGRADUATE rate for 2024-25, not the
+// grad/professional rate (verified 8.08% via FSA Partners electronic
+// announcement "Interest Rates for Direct Loans First Disbursed Between
+// July 1, 2024 and June 30, 2025"). This under-projected debt for anyone
+// holding a 2024-disbursed grad loan by ~1.55 points of accrued interest.
+// Fixed here; logged in docs/PRODUCT_DECISIONS.md.
 //
 // ⚠ MAINTENANCE: add the new year's rate here every July when the Dept. of
 // Education publishes it, and log the update in docs/PRODUCT_DECISIONS.md
@@ -34,20 +46,104 @@
 // whose academicYear isn't in this table falls back to the nearest known
 // year and is flagged as an estimate (see `isRateEstimated`).
 export const FEDERAL_GRAD_UNSUB_RATES = {
+  2013: 0.0541, // 2013-14
+  2014: 0.0621, // 2014-15
+  2015: 0.0584, // 2015-16
+  2016: 0.0531, // 2016-17
+  2017: 0.0600, // 2017-18
+  2018: 0.0660, // 2018-19
+  2019: 0.0608, // 2019-20
+  2020: 0.0430, // 2020-21
+  2021: 0.0528, // 2021-22
   2022: 0.0654, // 2022-23
   2023: 0.0705, // 2023-24
-  2024: 0.0653, // 2024-25
+  2024: 0.0808, // 2024-25 (corrected — see note above)
   2025: 0.0794, // 2025-26
   2026: 0.0807, // 2026-27
 };
 
-// The government's origination fee on Direct Unsubsidized loans, deducted
-// from the disbursement but still owed in full — i.e. it INFLATES what the
-// student owes rather than reducing it. Source: studentaid.gov fee schedule.
+// Direct PLUS (Grad PLUS / Parent PLUS — same rate) historical rates, same
+// source and verification pass as the table above.
+export const FEDERAL_GRAD_PLUS_RATES = {
+  2013: 0.0641,
+  2014: 0.0721,
+  2015: 0.0684,
+  2016: 0.0631,
+  2017: 0.0700,
+  2018: 0.0760,
+  2019: 0.0708,
+  2020: 0.0530,
+  2021: 0.0628,
+  2022: 0.0754,
+  2023: 0.0805,
+  2024: 0.0908,
+  2025: 0.0894,
+  2026: 0.0907,
+};
+
+// Direct Subsidized/Unsubsidized (undergraduate) historical rates — same
+// statutory rate for both sub and unsub at the undergrad level, same source.
+export const FEDERAL_UNDERGRAD_UNSUB_RATES = {
+  2013: 0.0386,
+  2014: 0.0466,
+  2015: 0.0429,
+  2016: 0.0376,
+  2017: 0.0445,
+  2018: 0.0505,
+  2019: 0.0453,
+  2020: 0.0275,
+  2021: 0.0373,
+  2022: 0.0499,
+  2023: 0.0550,
+  2024: 0.0653,
+  2025: 0.0639,
+  2026: 0.0652,
+};
+
+// Health-professions loans (HPSL/PCL) and Loans for Disadvantaged Students
+// (LDS) carry a statutory FIXED 5% rate, not a table — set by the Health
+// Resources & Services Administration (HRSA) program rules, unrelated to the
+// Dept. of Education's annual Direct Loan formula. Perkins Loans (program
+// ended 2017, still held by some borrowers) were also a fixed 5%.
+export const HRSA_RATE = 0.05;
+export const PERKINS_RATE = 0.05;
+
+// The government's origination fee on Direct Unsubsidized/Subsidized loans,
+// deducted from the disbursement but still owed in full — i.e. it INFLATES
+// what the student owes rather than reducing it. Source: studentaid.gov fee
+// schedule (current year; the fee drifts slightly year to year but this app
+// doesn't year-key it, matching the existing simplification).
 export const FEDERAL_ORIGINATION_FEE = 0.01057;
+// Direct PLUS loans carry a materially higher origination fee.
+export const FEDERAL_GRAD_PLUS_FEE = 0.04228;
+
+// ── Per-type loan interest/accrual profile ───────────────────────────────────
+// Founder decision #1 (2026-07-13): interest timing is per-TYPE, not a single
+// global switch. Most loans (Direct Unsub, Grad PLUS, private) accrue from
+// disbursement through school, grace, AND residency. Health-professions loans
+// (HPSL/PCL/LDS) are interest-free through school, a 12-month grace, AND
+// residency deferment — interest doesn't start until repayment. Direct
+// Subsidized (undergrad) is interest-free in school but resumes accruing in
+// residency forbearance. Verified 2026-07-13 (design doc appendix); stored
+// here verbatim.
+//
+// Only `accruesInSchool` bites for today's headline number (debt AT
+// GRADUATION) — the full profile (grace/residency flags) is stored now so a
+// future post-grad/residency projection drops in without another migration.
+export const LOAN_INTEREST_PROFILE = {
+  directUnsubGrad:      { accruesInSchool: true,  accruesInGrace: true,  graceMonths: 6,  accruesInResidency: true  },
+  gradPLUS:             { accruesInSchool: true,  accruesInGrace: true,  graceMonths: 6,  accruesInResidency: true  },
+  directUnsubUndergrad: { accruesInSchool: true,  accruesInGrace: true,  graceMonths: 6,  accruesInResidency: true  },
+  directSubUndergrad:   { accruesInSchool: false, accruesInGrace: false, graceMonths: 6,  accruesInResidency: true  }, // subsidy ends at residency forbearance
+  hpsl:                 { accruesInSchool: false, accruesInGrace: false, graceMonths: 12, accruesInResidency: false }, // interest-free THROUGH residency
+  pcl:                  { accruesInSchool: false, accruesInGrace: false, graceMonths: 12, accruesInResidency: false },
+  lds:                  { accruesInSchool: false, accruesInGrace: false, graceMonths: 12, accruesInResidency: false },
+  perkins:              { accruesInSchool: false, accruesInGrace: false, graceMonths: 9,  accruesInResidency: false },
+  private:              { accruesInSchool: true,  accruesInGrace: true,  graceMonths: 0,  accruesInResidency: true  },
+  otherUserRate:        { accruesInSchool: true,  accruesInGrace: true,  graceMonths: 6,  accruesInResidency: true  }, // conservative default; user can override via `rate`
+};
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const DAYS_PER_MONTH = 30.44; // average month length, used to normalize any measurement window into a monthly rate
 const GROWING_EPSILON = 1; // $/month burn at or below this reads as "not really spending down" rather than a near-infinite countdown
 
 // ── Small date helpers (ISO "YYYY-MM-DD" strings throughout this file) ──────
@@ -75,44 +171,88 @@ function isPlausibleDate(iso) {
   return !Number.isNaN(toDate(iso).getTime());
 }
 
+// ── Loan type resolution ─────────────────────────────────────────────────────
+
+// Rate tables keyed by the profile keys that consult a Dept.-of-Education
+// year table (as opposed to a fixed statutory rate or a student-entered one).
+const YEAR_TABLE_BY_KEY = {
+  directUnsubGrad: FEDERAL_GRAD_UNSUB_RATES,
+  gradPLUS: FEDERAL_GRAD_PLUS_RATES,
+  directUnsubUndergrad: FEDERAL_UNDERGRAD_UNSUB_RATES,
+  directSubUndergrad: FEDERAL_UNDERGRAD_UNSUB_RATES,
+};
+const FIXED_RATE_BY_KEY = { hpsl: HRSA_RATE, pcl: HRSA_RATE, lds: HRSA_RATE, perkins: PERKINS_RATE };
+
+/**
+ * Resolves a loan to its `LOAN_INTEREST_PROFILE` key. `subtype` always wins
+ * when set (the 5-first-class-type picker + "Other" writes this). A loan with
+ * no subtype (every loan that existed before this model, and any synced from
+ * an older client) falls back to today's IMPLICIT model: `type:"private"` →
+ * `"private"`, anything else → `"directUnsubGrad"` — this is what makes
+ * `subtype:null` bit-identical to pre-Package-A behavior; every math function
+ * below routes through this resolver rather than checking `type` directly.
+ */
+export function loanTypeKey(loan) {
+  if (loan.subtype) return loan.subtype;
+  if (loan.type === 'private') return 'private';
+  return 'directUnsubGrad';
+}
+
 // ── Loan rate & fee ───────────────────────────────────────────────────────────
 
 /**
  * The interest rate this loan actually accrues at, as a decimal (0.0807, not
- * 8.07). A student-entered rate always wins. Otherwise: federal loans look up
- * their academic year in the government's published table, clamping to the
- * nearest known year if the loan predates or postdates the table. Private
- * loans have no government table, so an unset rate reads as 0% (callers
- * should treat a missing private rate as needing the student's input — see
- * `isRateEstimated`, which is what actually flags this case as unreliable).
+ * 8.07). A student-entered rate always wins. Otherwise, resolved by
+ * `loanTypeKey`: HRSA/Perkins types use their fixed statutory rate; the three
+ * Direct Loan types look up their own year table (clamping to the nearest
+ * known year if the loan predates or postdates it); private/otherUserRate
+ * have no table, so an unset rate reads as 0% (callers should treat this as
+ * needing the student's input — see `isRateEstimated`).
  */
 export function effectiveRate(loan) {
   if (loan.rate != null) return loan.rate;
-  if (loan.type === 'private') return 0;
-  const years = Object.keys(FEDERAL_GRAD_UNSUB_RATES).map(Number);
+  const key = loanTypeKey(loan);
+  if (key in FIXED_RATE_BY_KEY) return FIXED_RATE_BY_KEY[key];
+  const table = YEAR_TABLE_BY_KEY[key];
+  if (!table) return 0; // private / otherUserRate — no table, needs the student's own rate
+  const years = Object.keys(table).map(Number);
   const minYear = Math.min(...years);
   const maxYear = Math.max(...years);
   const y = Math.max(minYear, Math.min(maxYear, loan.academicYear));
-  return FEDERAL_GRAD_UNSUB_RATES[y];
+  return table[y];
 }
 
 /**
  * True when the rate `effectiveRate` returned isn't a real, confirmed number
- * — either a private loan with no rate typed in yet, or a federal loan whose
- * academic year fell outside the published table (rare, but a pre-2022 loan
- * or a future year not yet published both land here). Drives the "estimate"
- * badge, never the math itself.
+ * — either a private/otherUserRate loan with no rate typed in yet, or a
+ * Direct Loan whose academic year fell outside its published table (rare,
+ * but a pre-2013 loan or a future year not yet published both land here).
+ * Fixed-rate types (HRSA/Perkins) are never an estimate — the rate is a
+ * known statutory fact. Drives the "estimate" badge, never the math itself.
  */
 export function isRateEstimated(loan) {
   if (loan.rate != null) return false;
-  if (loan.type === 'private') return true;
-  return !(loan.academicYear in FEDERAL_GRAD_UNSUB_RATES);
+  const key = loanTypeKey(loan);
+  if (key in FIXED_RATE_BY_KEY) return false;
+  const table = YEAR_TABLE_BY_KEY[key];
+  if (!table) return true; // private / otherUserRate
+  return !(loan.academicYear in table);
 }
 
-/** The origination fee this loan is charged, as a decimal. Explicit `feePct` always wins; otherwise federal loans default to the government's published fee and private loans default to 0 (most private lenders don't charge one; the student can enter one via `feePct` if theirs does). */
+/**
+ * The origination fee this loan is charged, as a decimal. Explicit `feePct`
+ * always wins. Otherwise resolved by `loanTypeKey`: Grad PLUS gets the
+ * (materially higher) PLUS fee, the three Direct Sub/Unsub types get the
+ * standard origination fee, and HRSA/Perkins/private/otherUserRate default
+ * to 0 (no origination fee on those; the student can enter one via `feePct`
+ * if theirs actually charges one).
+ */
 export function effectiveFeePct(loan) {
   if (loan.feePct != null) return loan.feePct;
-  return loan.type === 'federal' ? FEDERAL_ORIGINATION_FEE : 0;
+  const key = loanTypeKey(loan);
+  if (key === 'gradPLUS') return FEDERAL_GRAD_PLUS_FEE;
+  if (key === 'directUnsubGrad' || key === 'directUnsubUndergrad' || key === 'directSubUndergrad') return FEDERAL_ORIGINATION_FEE;
+  return 0;
 }
 
 // ── Principal & accrued interest ─────────────────────────────────────────────
@@ -149,12 +289,25 @@ export function loanPrincipal(loan) {
  * built specifically to avoid. Source: studentaid.gov / Nelnet & MOHELA
  * servicer interest formulas.
  *
+ * Per-type accrual (founder decision #1): a loan whose `LOAN_INTEREST_PROFILE`
+ * says `accruesInSchool:false` (Direct Sub undergrad; the HRSA family;
+ * Perkins) accrues NOTHING toward the graduation-horizon number — for those
+ * types, `asOf` never postdates the in-school/interest-free window in this
+ * model, so zero is the correct answer, not an approximation. This is the
+ * fix for the debt tile overstating an HPSL/PCL/LDS borrower's balance.
+ * `subtype:null` legacy loans resolve to `directUnsubGrad` (accrues), so this
+ * branch is a no-op for every loan that existed before this model.
+ *
  * A loan still in "offered" status hasn't actually disbursed money yet, so
  * it accrues nothing. A negative day count (interest asked for before the
  * money arrived) floors to 0 rather than going negative.
  */
 export function accruedInterest(loan, asOf) {
   if (loan.status === 'offered') return 0;
+  const key = loanTypeKey(loan);
+  const profile = LOAN_INTEREST_PROFILE[key] || LOAN_INTEREST_PROFILE.directUnsubGrad;
+  if (!profile.accruesInSchool) return 0;
+
   const rate = effectiveRate(loan);
 
   if (loan.asOfDate != null && loan.asOfBalance != null) {
@@ -173,20 +326,20 @@ export function accruedInterest(loan, asOf) {
 
 // Undated disbursement rows can't accrue interest (no start date to count
 // from), so before pricing a loan we fill in a reasonable default: the
-// school-year's typical fall/spring disbursement dates, alternating per row.
-// Anything filled this way flags the loan's total as an estimate — it's a
-// safety net for incomplete data, not a substitute for the real dates.
+// shared `DISBURSEMENT_FALLBACK_CYCLE` from constants.js (the same fallback
+// dates LoansTab.jsx uses when creating a new loan's rows — ⚠ these two call
+// sites used to disagree; see constants.js for the note). Anything filled
+// this way flags the loan's total as an estimate — it's a safety net for
+// incomplete data, not a substitute for the real dates.
 function fillMissingDisbursementDates(loan) {
   if (loan.asOfDate != null) return { loan, usedFallback: false };
   const disb = loan.disbursements || [];
   if (disb.length === 0) return { loan, usedFallback: true }; // nothing to price — treated as $0, flagged as an estimate rather than silently omitted
   let usedFallback = false;
-  const fallDate = `${loan.academicYear}-08-15`;
-  const springDate = `${loan.academicYear + 1}-01-15`;
   const filled = disb.map((d, i) => {
     if (d.date) return d;
     usedFallback = true;
-    return { ...d, date: i % 2 === 0 ? fallDate : springDate };
+    return { ...d, date: disbFallbackDate(loan.academicYear, i) };
   });
   return { loan: { ...loan, disbursements: filled }, usedFallback };
 }
@@ -209,7 +362,16 @@ export function projectDebtAtGraduation(loans, gradDate) {
 
   const byLoan = counted.map((loan) => {
     const { loan: filled, usedFallback } = fillMissingDisbursementDates(loan);
-    const loanIsEstimate = filled.type === 'private' || usedFallback || isRateEstimated(filled);
+    // A loan whose RESOLVED type key is "private"/"otherUserRate" has no
+    // government-verified formula behind it, so it's always an estimate even
+    // if the student typed in a confirmed rate (`isRateEstimated` alone
+    // wouldn't catch that case). Deliberately keyed off `loanTypeKey`, not
+    // the raw `type` field: HPSL/PCL/LDS store `type:"private"` for legacy
+    // math-fallback purposes only (§A2) but carry a known, federally-fixed
+    // statutory rate — they must NOT inherit "always an estimate" from that
+    // storage detail the way a genuine private loan does.
+    const key = loanTypeKey(filled);
+    const loanIsEstimate = key === 'private' || key === 'otherUserRate' || usedFallback || isRateEstimated(filled);
     if (loanIsEstimate) isEstimate = true;
     const principal = loanPrincipal(filled);
     const interest = accruedInterest(filled, gradDate);
@@ -393,12 +555,101 @@ export function loanReturnWindows(loans, today) {
   for (const loan of loans || []) {
     for (const d of loan.disbursements || []) {
       if (!d.date) continue;
-      const deadline = addDays(d.date, 120);
+      const deadline = addDays(d.date, LOAN_RETURN_WINDOW_DAYS);
       const daysLeft = daysBetween(today, deadline);
       if (daysLeft > 0) out.push({ loanId: loan.id, disbursementId: d.id, deadline, daysLeft, dateConfirmed: !!d.dateConfirmed });
     }
   }
   return out;
+}
+
+// ── Return-savings quantification (A3) ───────────────────────────────────────
+
+/**
+ * "Returning this money saves about $X by graduation" — quantifies the
+ * persistent Loans-tab return-window card (walkthrough §5) instead of
+ * leaving it a vague tip. Clones the loan that owns `window`'s disbursement,
+ * reduces THAT disbursement's amount by `returnAmount` (capped at the
+ * disbursement's own amount — can't return more than arrived), and diffs
+ * `projectDebtAtGraduation` with vs. without the reduction. The fee shrinks
+ * proportionally (it's charged on the disbursed amount), so the delta
+ * captures both the cancelled fee and the cancelled future interest — exactly
+ * what federal Return of Title IV actually cancels.
+ *
+ * Returns `0` (never negative, never a guess bigger than what's returnable)
+ * if the window's loan/disbursement can't be found or `returnAmount` isn't a
+ * positive number.
+ */
+export function returnSavingsAtGraduation(loans, window, gradDate, returnAmount) {
+  const amt = Number(returnAmount) || 0;
+  if (amt <= 0 || !window) return 0;
+  const loan = (loans || []).find((l) => l.id === window.loanId);
+  if (!loan) return 0;
+  const disb = (loan.disbursements || []).find((d) => d.id === window.disbursementId);
+  if (!disb) return 0;
+
+  const capped = Math.min(amt, Number(disb.amount) || 0);
+  if (capped <= 0) return 0;
+
+  const withReturn = {
+    ...loan,
+    disbursements: (loan.disbursements || []).map((d) => (d.id === disb.id ? { ...d, amount: (Number(d.amount) || 0) - capped } : d)),
+  };
+
+  const others = (loans || []).filter((l) => l.id !== loan.id);
+  const before = projectDebtAtGraduation([...others, loan], gradDate).total;
+  const after = projectDebtAtGraduation([...others, withReturn], gradDate).total;
+  return Math.max(0, before - after);
+}
+
+// ── Cushion-source classification (A4) ────────────────────────────────────────
+
+/**
+ * "Surplus loan money isn't wealth" (walkthrough §5) — the Runway tile's
+ * `growing` state is a lie when the "growth" is just unspent LOAN money at
+ * ~8% interest, not real savings. This classifies where a growing cushion is
+ * actually coming from, so `runwayTileDisplay` can split the copy:
+ *   - `"loan"`: a return window is currently open (the clearest possible
+ *     evidence — literal surplus loan money, still returnable), OR a loan
+ *     disbursement landed within the most recent burn-measurement window and
+ *     that loan inflow was at least as large as the (pro-rated) non-loan
+ *     income over the same window.
+ *   - `"own"`: no counted loans at all, OR non-loan income makes up more than
+ *     a quarter of the student's combined annual inflow (loan + non-loan) —
+ *     the design's own >25% threshold.
+ *   - `"mixed"`: ambiguous — some loans exist and non-loan income doesn't
+ *     clearly dominate. Treated as loan-side (blue, not green) copy by the
+ *     caller, the conservative choice per the plan.
+ *
+ * `otherIncome` is the student's ANNUAL non-loan income figure (job, family
+ * gifts, etc. — whatever the caller already tracks as "other income" for the
+ * year); this function makes no assumption about where that number comes
+ * from beyond treating it as an annual rate for the window pro-ration below.
+ */
+export function classifyCushionSource({ readings, loans, otherIncome, today }) {
+  const allLoans = loans || [];
+  if (loanReturnWindows(allLoans, today).length > 0) return 'loan';
+
+  const counted = allLoans.filter((l) => l.status === 'accepted' || l.status === 'disbursed');
+  if (counted.length === 0) return 'own';
+
+  const sorted = normalizeReadings(readings, today);
+  if (sorted.length >= 2) {
+    const prev = sorted[sorted.length - 2];
+    const latest = sorted[sorted.length - 1];
+    const windowDays = Math.max(1, daysBetween(prev.date, latest.date));
+    const loanInflowInWindow = counted.reduce((sum, loan) => sum + (loan.disbursements || [])
+      .filter((d) => d.date && d.date > prev.date && d.date <= latest.date)
+      .reduce((a, d) => a + (Number(d.amount) || 0), 0), 0);
+    const nonLoanInWindow = (Number(otherIncome) || 0) * (windowDays / 365);
+    if (loanInflowInWindow > 0 && loanInflowInWindow >= nonLoanInWindow) return 'loan';
+  }
+
+  const loanInflowAnnual = counted.reduce((sum, loan) => sum + (loan.disbursements || []).reduce((a, d) => a + (Number(d.amount) || 0), 0), 0);
+  const otherIncomeAnnual = Number(otherIncome) || 0;
+  const combined = otherIncomeAnnual + loanInflowAnnual;
+  const nonLoanShare = combined > 0 ? otherIncomeAnnual / combined : 0;
+  return nonLoanShare > 0.25 ? 'own' : 'mixed';
 }
 
 // ── Refund Playbook trigger ──────────────────────────────────────────────────

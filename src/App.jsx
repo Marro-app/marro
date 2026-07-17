@@ -5,7 +5,8 @@ import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
 import { fmt, fmtS, fmtD, fmtDay, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr } from './lib/format.js';
-import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState } from './lib/loans.js';
+import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState, classifyCushionSource } from './lib/loans.js';
+import { WEEKS_PER_MONTH, USMLE_STEP_FEE_ESTIMATE } from './lib/constants.js';
 import { BRANDS, BRAND_DOMAINS, getBrandDomain, getBrand } from './lib/brands.js';
 import { US_MED_SCHOOLS, degreeForSchool, DO_DUAL, dualOptionsForSchool } from './lib/schools.js';
 import { AV_PALETTE, avColor, AVATARS, AV_GROUPS } from './lib/avatars.js';
@@ -59,12 +60,18 @@ let markedSessionDecided = false;
 // announced, not just colored). Every sub-line carries its own meaning in
 // plain words, per the "no label ships that a confused M1 would need to
 // google" rule — never a bare number.
-function runwayTileDisplay(runway) {
+// `cushionSource` ("loan"|"own"|"mixed"|undefined, from `classifyCushionSource`)
+// only matters for the `growing` state — every other state is unaffected.
+// Founder decision: a "growing" balance built from unspent LOAN money isn't
+// real savings (it's borrowed cash sitting at ~8% interest), so that case
+// must NOT read as "Growing ✓" the way genuine non-loan income does.
+function runwayTileDisplay(runway, cushionSource) {
   switch (runway.state) {
     case 'unanchored':
       return { value: '—', sub: 'add your balance', color: C.gray };
     case 'growing':
-      return { value: 'Growing', sub: 'spending less than you bring in', color: C.green };
+      if (cushionSource === 'own') return { value: 'Building a cushion ✓', sub: 'spending less than you bring in', color: C.green };
+      return { value: 'Extra loan money', sub: 'you may be able to return some — see your Loans tab', color: C.blue };
     case 'through_graduation': {
       const sub = runway.savings > 0
         ? <>lasts through graduation<div style={{ marginTop: 2 }}>+{fmt(runway.savings)} set aside in savings</div></>
@@ -666,13 +673,17 @@ export function App() {
   const upcomingRefunds = estimateRefunds(data.years).filter(r=>r.date && r.date > today);
   const debtProjection = projectDebtAtGraduation(data.loans||[], gradDate);
   const runway = computeRunway({ readings: data.balanceReadings||[], plannedMonthlyBurn: moSpend, upcomingRefunds, gradDate, today });
+  // A4 (Phase 2.6 Package A): only meaningful for the tile's "growing" state
+  // — cheap to compute regardless, since classifyCushionSource is pure math
+  // over data already loaded here.
+  const cushionSource = classifyCushionSource({ readings: data.balanceReadings||[], loans: data.loans||[], otherIncome: annOther, today });
   const refundNudge = refundNudgeState({ years: data.years, readings: data.balanceReadings||[], refundPlaybookSeen: data.refundPlaybookSeen, today, confirmedTerm: refundNudgeConfirmed });
 
   // ── Weekly ────────────────────────────────────────────────────────────────
   const currentWeekStart = getMonday(new Date());
   const currentWeekEnd   = getSunday(currentWeekStart);
   const currentEntries   = data.currentWeekEntries||[];
-  const weeklyBudget     = moSpendable/4.333;
+  const weeklyBudget     = moSpendable/WEEKS_PER_MONTH;
   const archives         = [...(data.weeklyArchive||[])].sort((a,b)=>b.weekStart.localeCompare(a.weekStart));
 
   // Weekly rollover: check last week surplus
@@ -925,7 +936,7 @@ export function App() {
     const recs = [];
     const yrData = data.years.find(y=>y.id===ay)||data.years[0];
     if(!(yrData.monthly.savings||0)) recs.push(`Consider building an emergency fund (goal: ${fmt(moSpend*3)})`);
-    if(!(yrData.monthly.exams||0)) recs.push(`Set aside ${fmt(surplus)} for USMLE Step exams (~$850 each)`);
+    if(!(yrData.monthly.exams||0)) recs.push(`Set aside ${fmt(surplus)} for USMLE Step exams (~${fmt(USMLE_STEP_FEE_ESTIMATE)} each)`);
     if(subsMo < 50) recs.push(`Consider adding a study resource (UWorld, Amboss) for ${fmt(surplus)}/mo`);
     recs.push(`Add it to savings — even ${fmt(surplus)}/mo compounds significantly over your training`);
     return recs[0];
@@ -1312,7 +1323,7 @@ export function App() {
            than left as a bare flex:1 child) so it doesn't stretch to fill the whole row —
            caps at 320px like a normal card. ── */}
       <div style={{display:"flex",gap:10,marginBottom:SHOW_PHASE2_TILES?10:20,flexWrap:"wrap"}}>
-        {SHOW_PHASE2_TILES && (()=>{ const rt=runwayTileDisplay(runway); return (
+        {SHOW_PHASE2_TILES && (()=>{ const rt=runwayTileDisplay(runway, cushionSource); return (
           <MetricTile label="Runway" value={rt.value} sub={rt.sub} color={rt.color}
             role={rt.alert?"alert":undefined} ariaLive={rt.alert?"assertive":undefined}/>
         ); })()}
