@@ -425,6 +425,30 @@ describe('loanReturnWindows', () => {
     const [w] = loanReturnWindows(loans, '2026-08-10');
     expect(w.dateConfirmed).toBe(false);
   });
+
+  // ⚠ REGRESSION (2026-07-18 hotfix, break-testing finding C1): break-testing
+  // pinned the exact seeded scenario — a federal loan disbursed Aug 5 2025 +
+  // Jan 10 2025, plus an HPSL loan disbursed Aug 5 2025 — and reported the UI
+  // showing "138 days left" / "296 days left" on today=2026-07-18, which is
+  // impossible: every 120-day window on these dates closed by May/Dec 2025.
+  // `loanReturnWindows` itself was already correct (this pins that so it can
+  // never regress); the return card (`ReturnWindowCard`/`RefundPlaybook` in
+  // src/tabs/LoansTab.jsx) renders EXCLUSIVELY from this function's output —
+  // an empty array means no card at all, never a fallback/derived date.
+  it('pins the seeded break-testing scenario: Aug 5 2025 + Jan 10 2025 disbursements, today=2026-07-18 → no open windows at all', () => {
+    const federal = makeLoan({
+      id: 'ln_federal',
+      disbursements: [
+        { id: 'd1a', date: '2025-08-05', amount: 20500, dateConfirmed: true },
+        { id: 'd1b', date: '2025-01-10', amount: 20500, dateConfirmed: true },
+      ],
+    });
+    const hpsl = makeLoan({
+      id: 'ln_hpsl',
+      disbursements: [{ id: 'd2a', date: '2025-08-05', amount: 8500, dateConfirmed: true }],
+    });
+    expect(loanReturnWindows([federal, hpsl], '2026-07-18')).toEqual([]);
+  });
 });
 
 describe('refundPlaybookTrigger', () => {
@@ -565,23 +589,88 @@ describe('otherUserRate — behaves exactly like today\'s private path when the 
 });
 
 // ── returnSavingsAtGraduation (A3) ────────────────────────────────────────────
+// ⚠ FIX (2026-07-18 hotfix, break-testing finding C2): the pre-fix version of
+// this function returned the FULL drop in debt-at-graduation (returned
+// principal + fee + interest), which over-counted by including the returned
+// principal itself — giving back money you never spent isn't a "saving," it's
+// a wash. Real-world symptom: a $8,591 excess showed "saves ~$10,804" when
+// hand math said ~$2,200–$2,300 (~4.7x over). These tests hand-derive the
+// CORRECT figure (fee + interest only) independently of the implementation.
 describe('returnSavingsAtGraduation', () => {
   it('hand-check: returning $3,000 from a 2026-08-01 disbursement (8.07% + 1.057% fee) ~3.46yrs before graduation', () => {
     // Independently derived (not from the implementation): days(2026-08-01 → 2030-01-15) = 1263.
     // Reducing that disbursement by $3,000 shrinks the fee-grossed principal by
     // 3000 × 1.01057 = 3031.71, and the interest that would have accrued on
-    // that grossed slice by 3031.71 × .0807/365 × 1263 ≈ 846.59. The honest
-    // total "less owed at graduation" is the FULL delta the debt tile would
-    // show — principal AND interest — not just the marginal fee/interest
-    // cost, because returning the money means never owing that principal
-    // back at all: 3031.71 + 846.59 = 3878.30.
+    // that grossed slice by 3031.71 × .0807/365 × 1263 ≈ 846.59. The real
+    // "savings" is only the fee + interest that would have piled up on money
+    // the student never actually needed — NOT the returned principal itself
+    // (that part is a wash: they had the cash, now they don't). So the honest
+    // figure is (3031.71 + 846.59) − 3000 principal returned ≈ 878.30, not the
+    // full 3878.30 debt-reduction number.
     const loan = makeLoan({
       id: 'l1', academicYear: 2026, subtype: null, type: 'federal',
       disbursements: [{ id: 'd1', date: '2026-08-01', amount: 20000 }],
     });
     const window = { loanId: 'l1', disbursementId: 'd1' };
     const delta = returnSavingsAtGraduation([loan], window, '2030-01-15', 3000);
-    expect(Math.round(delta * 100) / 100).toBe(3878.30);
+    expect(Math.round(delta * 100) / 100).toBe(878.30);
+  });
+
+  it('hand-check against the break-testing repro: ~$8,591 excess on a 7.94%+1.057%-fee loan disbursed today saves ~$2,200-2,300 by graduation, not ~$10,804 (C2, ~4.7x overstated)', () => {
+    // Mirrors the exact production repro: a disbursement dated "today"
+    // (dateConfirmed=true, so its 120-day window is open), ~1,123 days before
+    // graduation, at the 2025-26 federal rate (7.94%) + standard fee (1.057%).
+    const today = '2026-07-18';
+    const gradDate = '2029-08-15'; // ~1123 days out, matching the repro's "~1,123 days to grad"
+    const loan = makeLoan({
+      id: 'l1', academicYear: 2025, subtype: 'directUnsubGrad', type: 'federal', rate: null, feePct: null,
+      disbursements: [{ id: 'd1', date: today, amount: 20000, dateConfirmed: true }],
+    });
+    const window = { loanId: 'l1', disbursementId: 'd1' };
+    const excess = 8591;
+    const saved = returnSavingsAtGraduation([loan], window, gradDate, excess);
+
+    // Independent hand calc: fee cancelled + interest cancelled on the excess,
+    // simple daily interest, NOT including the returned principal itself.
+    const rate = 0.0794, fee = 0.01057;
+    const days = Math.round((new Date(gradDate + 'T12:00:00') - new Date(today + 'T12:00:00')) / (24 * 60 * 60 * 1000));
+    const grossed = excess * (1 + fee);
+    const expected = (grossed - excess) + grossed * (rate / 365) * days; // fee + interest only
+
+    expect(saved).toBeCloseTo(expected, 6);
+    expect(saved).toBeGreaterThan(2000);
+    expect(saved).toBeLessThan(2600); // real "~$2,200-2,300" range, nowhere near the buggy ~$10,804
+  });
+
+  it('editing or adding an unrelated loan never changes another loan\'s "saves ~$Y" figure (C2 — was pooled/shared)', () => {
+    const federal = makeLoan({
+      id: 'ln_federal', academicYear: 2025, subtype: 'directUnsubGrad', type: 'federal',
+      disbursements: [
+        { id: 'd1a', date: '2025-08-05', amount: 20500, dateConfirmed: true },
+        { id: 'd1b', date: '2026-01-10', amount: 20500, dateConfirmed: true },
+      ],
+    });
+    const hpsl = makeLoan({
+      id: 'ln_hpsl', academicYear: 2025, subtype: 'hpsl', type: 'private', feePct: 0,
+      disbursements: [{ id: 'd2a', date: '2025-08-05', amount: 8500, dateConfirmed: true }],
+    });
+    const gradDate = '2029-05-15';
+    const window = { loanId: 'ln_federal', disbursementId: 'd1a' };
+
+    const baseline = returnSavingsAtGraduation([federal, hpsl], window, gradDate, 5000);
+
+    // Adding a brand-new unrelated loan must not move the federal loan's figure.
+    const thirdLoan = makeLoan({
+      id: 'ln_third', academicYear: 2026, subtype: 'gradPLUS', type: 'federal',
+      disbursements: [{ id: 'd3a', date: '2026-08-05', amount: 15000, dateConfirmed: true }],
+    });
+    const withThirdLoan = returnSavingsAtGraduation([federal, hpsl, thirdLoan], window, gradDate, 5000);
+    expect(withThirdLoan).toBeCloseTo(baseline, 6);
+
+    // Editing an unrelated loan's own rate/amount must not move it either.
+    const editedHpsl = { ...hpsl, disbursements: [{ ...hpsl.disbursements[0], amount: 99999 }] };
+    const withEditedOther = returnSavingsAtGraduation([federal, editedHpsl], window, gradDate, 5000);
+    expect(withEditedOther).toBeCloseTo(baseline, 6);
   });
 
   it('caps the return at the disbursement\'s own amount — can\'t return more than arrived', () => {
