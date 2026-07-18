@@ -66,7 +66,7 @@ export function CustomizeTab(){
               // 1. Monthly spendable — from this year's real grant/costs
               if(g>0){
                 notes.push({title:`Monthly spendable · ${yr.label}`,
-                  body:`Your grant this year is ${fmt(g)}. After ${fmt(tf)} tuition & fees${hi>0?` and ${fmt(hi)} health insurance`:""}, ${fmt(annDisburse)} is disbursed to you — about ${fmt(moSpendable)}/mo for rent, food, transport, and everything else.`});
+                  body:`Your grant this year is ${fmt(g)}. After ${fmt(tf)} tuition & fees${hi>0?` and ${fmt(hi)} health insurance`:""}, ${fmt(annDisburse)} is sent to you — about ${fmt(moSpendable)}/mo for rent, food, transport, and everything else.`});
               } else {
                 notes.push({title:"Monthly spendable",
                   body:"Add your grant and school costs in the Aid tab — Marro will then show exactly what you have to spend each month."});
