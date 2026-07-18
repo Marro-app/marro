@@ -93,8 +93,10 @@ export const THEMES = {
     danger:      "#964B2E",
     dangerLight: "rgba(176,90,56,0.12)",
     dangerMid:   "rgba(176,90,56,0.30)",
-    // Negative data — amber, darkened
-    neg:        "#9C6A00",
+    // Negative data — amber, darkened. Worst-case AA context for this token is
+    // text on negLight composited over the page bg (not the lighter card), so it
+    // must clear 4.5:1 there — #805700 gives 4.7:1; #9C6A00 only hit 3.5:1.
+    neg:        "#805700",
     negLight:   "rgba(156,106,0,0.10)",
     negMid:     "rgba(156,106,0,0.28)",
     // Positive — blue, darkened for AA text contrast on light cards
