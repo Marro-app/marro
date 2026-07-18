@@ -81,8 +81,12 @@ export function buildMockState() {
         rate: null, // resolved from the federal rate table for that academic year
         status: 'disbursed',
         disbursements: [
+          // Fall disbursement in the academic year's start calendar year, spring
+          // disbursement in the FOLLOWING calendar year (academic years span two
+          // calendar years, e.g. fall 2025 -> spring 2026) — a same-year date here
+          // previously made every 120-day return window look permanently closed.
           { id: 'db_mock_1a', amount: 20500, date: `${new Date().getFullYear() - 1}-08-05`, dateConfirmed: true },
-          { id: 'db_mock_1b', amount: 20500, date: `${new Date().getFullYear() - 1}-01-10`, dateConfirmed: true },
+          { id: 'db_mock_1b', amount: 20500, date: `${new Date().getFullYear()}-01-10`, dateConfirmed: true },
         ],
         feePct: null,
         notes: '',

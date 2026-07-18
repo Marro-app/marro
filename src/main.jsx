@@ -1,6 +1,7 @@
 import React, { Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { needsEagerSupabase, isRecoveryRedirect } from './lib/data.js';
+import { appStorage } from './lib/mockStorage.js';
 // Eager, statically-imported landing stylesheet — NOT because the landing
 // page itself needs to render eagerly (it's still lazy below), but because
 // this CSS is what actually styles AuthModal/EmailPasswordForm (.lp-input,
@@ -59,8 +60,11 @@ const BootFallback = () => (
 );
 
 // localStorage shim — the app talks to `window.storage` (async KV) for its local
-// cache; back it with localStorage. Set before render so the boot effect sees it.
-window.storage={get:async(key)=>{try{const v=localStorage.getItem(key);return v?{key,value:v}:null}catch{return null}},set:async(key,value)=>{try{localStorage.setItem(key,value);return{key,value}}catch{return null}},delete:async(key)=>{try{localStorage.removeItem(key);return{key,deleted:true}}catch{return null}},list:async(prefix)=>{try{return{keys:Object.keys(localStorage).filter(k=>!prefix||k.startsWith(prefix))}}catch{return{keys:[]}}}};
+// cache; back it with localStorage (or, in mock mode, an isolated in-memory
+// store — see lib/mockStorage.js — so mock sessions never touch a real user's
+// cached data and always start from a fresh seed on reload). Set before
+// render so the boot effect sees it.
+window.storage={get:async(key)=>{try{const v=appStorage.getItem(key);return v?{key,value:v}:null}catch{return null}},set:async(key,value)=>{try{appStorage.setItem(key,value);return{key,value}}catch{return null}},delete:async(key)=>{try{appStorage.removeItem(key);return{key,deleted:true}}catch{return null}},list:async(prefix)=>{try{const keys=appStorage===window.localStorage?Object.keys(localStorage):[];return{keys:keys.filter(k=>!prefix||k.startsWith(prefix))}}catch{return{keys:[]}}}};
 
 const CrashFallback = () => (
   <div role="alert" style={{
