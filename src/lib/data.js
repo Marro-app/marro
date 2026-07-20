@@ -1,3 +1,5 @@
+import { isMockModeActive } from './mockSession.js';
+
 export const SUPABASE_URL      = "https://rjowpekykqlounnaegwn.supabase.co";
 export const SUPABASE_ANON_KEY = "sb_publishable_Kp89EOIm88PDospinCz-eA_wDs09kjq"; // publishable key — safe in client (RLS-gated)
 
@@ -14,6 +16,17 @@ export const SUPABASE_ANON_KEY = "sb_publishable_Kp89EOIm88PDospinCz-eA_wDs09kjq
 let _sbPromise = null;
 export function getSupabase(){
   if(!_sbPromise){
+    // ── Dev-only test harness (FUTURE_WORK.md "Dev-mode test harness") ──
+    // In mock mode (dev build + localhost + ?mock=1 / VITE_MOCK_SESSION —
+    // see isMockModeActive) hand back an in-memory stub instead of the real
+    // client, so EVERY downstream caller (auth gate, sync, profile, logging)
+    // runs unmodified against fake data and never touches real Supabase. The
+    // stub module is dynamic-imported ONLY inside this DEV-gated branch, so it
+    // is dead/unreachable code that Vite strips from any production build.
+    if(import.meta.env.DEV && isMockModeActive()){
+      _sbPromise = import('./mockSupabaseStub.js').then(({createMockSupabaseStub}) => createMockSupabaseStub());
+      return _sbPromise;
+    }
     _sbPromise = import('@supabase/supabase-js').then(({createClient}) =>
       createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {auth:{flowType:"pkce"}})
     );
@@ -35,6 +48,10 @@ export function getSupabase(){
 // immediately with zero supabase-js bytes downloaded.
 export const SESSION_STORAGE_KEY = "sb-rjowpekykqlounnaegwn-auth-token";
 export function needsEagerSupabase(){
+  // Dev-only test harness: force the App path (not the landing page) so the
+  // mock session boots straight into the signed-in app. DEV-gated + opt-in
+  // (see isMockModeActive) → compiled out of any production build.
+  if(import.meta.env.DEV && isMockModeActive()) return true;
   try{
     if(localStorage.getItem(SESSION_STORAGE_KEY)) return true;
   }catch{ /* localStorage unavailable — fall through to URL check */ }

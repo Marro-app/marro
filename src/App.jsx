@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { C, applyTheme, THEMES } from './lib/theme.js';
 import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed, isAdmin, logEvent, exportUserData, exportUserDataExcel, deleteAccount, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY } from './lib/data.js';
+import { appStorage } from './lib/mockStorage.js';
 import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
@@ -127,7 +128,7 @@ export function App() {
   // (looks "stuck"/lingering even though the user already dismissed it).
   const AIDNOTE_DISMISSED_KEY = "marro_aidnote_dismissed";
   const [dismissed, setDismissed] = useState(() => {
-    try { return localStorage.getItem(AIDNOTE_DISMISSED_KEY) === "1" ? { aidnote: true } : {}; }
+    try { return appStorage.getItem(AIDNOTE_DISMISSED_KEY) === "1" ? { aidnote: true } : {}; }
     catch { return {}; }
   });
   const [syncStatus, setSyncStatus] = useState(null); // null|"syncing"|"synced"|"offline"|"conflict"
@@ -228,9 +229,9 @@ export function App() {
           logEvent('login', {});
         }
         if(evt==="SIGNED_OUT"){
-          localStorage.removeItem("marro_v8");
-          localStorage.removeItem(SYNC_BASE_KEY);
-          localStorage.removeItem("marro_uid");
+          appStorage.removeItem("marro_v8");
+          appStorage.removeItem(SYNC_BASE_KEY);
+          appStorage.removeItem("marro_uid");
           setData(null); setProfile(null); setReady(false); setSyncStatus(null);
         }
       });
@@ -269,12 +270,12 @@ export function App() {
         const uid = session.user.id;
         // Shared-device guard: if a different user's data is cached locally, drop it
         // before loading so the migration rule can't upload user A's data to user B.
-        const storedUid = localStorage.getItem("marro_uid");
+        const storedUid = appStorage.getItem("marro_uid");
         if(storedUid && storedUid !== uid){
-          localStorage.removeItem("marro_v8");
-          localStorage.removeItem(SYNC_BASE_KEY);
+          appStorage.removeItem("marro_v8");
+          appStorage.removeItem(SYNC_BASE_KEY);
         }
-        localStorage.setItem("marro_uid", uid);
+        appStorage.setItem("marro_uid", uid);
 
         let raw = null;
         // Supabase is the source of truth across devices.
@@ -283,7 +284,7 @@ export function App() {
         if(serverContent){
           raw = serverContent;
           // Store as the agreed-upon base for 3-way merge
-          localStorage.setItem(SYNC_BASE_KEY, raw);
+          appStorage.setItem(SYNC_BASE_KEY, raw);
           await window.storage.set("marro_v8", raw);
           setSyncStatus("synced");
         } else if(navigator.onLine){
@@ -292,7 +293,7 @@ export function App() {
           if(!r?.value) r = await window.storage.get("marro_v7");
           raw = r?.value || JSON.stringify(DEFAULT_STATE);
           const ok = await stateWrite(raw);
-          localStorage.setItem(SYNC_BASE_KEY, raw);
+          appStorage.setItem(SYNC_BASE_KEY, raw);
           await window.storage.set("marro_v8", raw);
           setSyncStatus(ok ? "synced" : "offline");
         } else {
@@ -308,8 +309,8 @@ export function App() {
         if(loaded.darkMode===undefined) loaded.darkMode=!window.matchMedia("(prefers-color-scheme: light)").matches;
         // One-time migration: before the theme system existed the toggle was inert and
         // darkMode:false still rendered dark — preserve that experience for legacy states.
-        if(raw && !localStorage.getItem("marro_theme_v2")) loaded.darkMode=true;
-        localStorage.setItem("marro_theme_v2","1");
+        if(raw && !appStorage.getItem("marro_theme_v2")) loaded.darkMode=true;
+        appStorage.setItem("marro_theme_v2","1");
         if(loaded.logo===undefined) loaded.logo=null;
         if(!loaded.stepGoals) loaded.stepGoals=JSON.parse(JSON.stringify(DEFAULT_STATE.stepGoals));
         if(loaded.stepGoals && !loaded.stepGoals.find(g=>g.id==="step3")) loaded.stepGoals.push({id:"step3",label:"Step 3",targetAmount:1000,targetDate:"2031-06-01",saved:0,monthlyContribution:0});
@@ -418,7 +419,7 @@ export function App() {
     clearTimeout(gistTimerRef.current);
     setSyncStatus("syncing");
     gistTimerRef.current = setTimeout(async()=>{
-      const baseRaw = localStorage.getItem(SYNC_BASE_KEY);
+      const baseRaw = appStorage.getItem(SYNC_BASE_KEY);
       const base = baseRaw ? JSON.parse(baseRaw) : null;
       if(base){
         const serverContent = await stateFetch();
@@ -438,14 +439,14 @@ export function App() {
             let merged=applyChanges(serverClean,mergeLocal);
             const mergedJson=JSON.stringify({...merged,_savedAt:Date.now()});
             const ok=await stateWrite(mergedJson);
-            if(ok){localStorage.setItem(SYNC_BASE_KEY,mergedJson);await window.storage.set("marro_v8",mergedJson);setData(merged);setSyncStatus("synced");}
+            if(ok){appStorage.setItem(SYNC_BASE_KEY,mergedJson);await window.storage.set("marro_v8",mergedJson);setData(merged);setSyncStatus("synced");}
             else setSyncStatus("offline");
             return;
           }
         }
       }
       const ok=await stateWrite(json);
-      if(ok){localStorage.setItem(SYNC_BASE_KEY,json);setSyncStatus("synced");}
+      if(ok){appStorage.setItem(SYNC_BASE_KEY,json);setSyncStatus("synced");}
       else setSyncStatus("offline");
     }, 2000);
   },[syncStatus]);
@@ -456,7 +457,7 @@ export function App() {
     merged=applyChanges(merged,resolvedChanges);
     const mergedJson=JSON.stringify({...merged,_savedAt:Date.now()});
     const ok=await stateWrite(mergedJson);
-    if(ok){localStorage.setItem(SYNC_BASE_KEY,mergedJson);await window.storage.set("marro_v8",mergedJson);setData(merged);setSyncStatus("synced");}
+    if(ok){appStorage.setItem(SYNC_BASE_KEY,mergedJson);await window.storage.set("marro_v8",mergedJson);setData(merged);setSyncStatus("synced");}
     else setSyncStatus("offline");
     setPendingConflict(null);
   },[]);
@@ -466,7 +467,7 @@ export function App() {
   useEffect(()=>{ syncStatusRef.current=syncStatus; },[syncStatus]);
   const checkAndPull = React.useCallback(async()=>{
     if(syncStatusRef.current==='conflict') return;
-    const baseRaw=localStorage.getItem(SYNC_BASE_KEY);
+    const baseRaw=appStorage.getItem(SYNC_BASE_KEY);
     const base=baseRaw?JSON.parse(baseRaw):null;
     if(!base) return;
     const serverContent=await stateFetch();
@@ -478,7 +479,7 @@ export function App() {
     const localCh=diffStates(baseClean,dataRef.current||{});
     if(Object.keys(localCh).length===0){
       const sJson=JSON.stringify(server);
-      localStorage.setItem(SYNC_BASE_KEY,sJson);
+      appStorage.setItem(SYNC_BASE_KEY,sJson);
       await window.storage.set("marro_v8",sJson);
       setData(serverClean);
       setSyncStatus("synced");
@@ -510,7 +511,7 @@ export function App() {
   const upd = d => { setData(d); save(d); };
   const dismiss = k => {
     setDismissed(p=>({...p,[k]:true}));
-    if(k==="aidnote"){ try{ localStorage.setItem(AIDNOTE_DISMISSED_KEY,"1"); }catch{ /* best-effort only */ } }
+    if(k==="aidnote"){ try{ appStorage.setItem(AIDNOTE_DISMISSED_KEY,"1"); }catch{ /* best-effort only */ } }
   };
 
   // Archive stale entries on load
@@ -1033,9 +1034,9 @@ export function App() {
               // Mirror the SIGNED_OUT cleanup below, then sign out (which also
               // triggers that handler) — belt-and-suspenders in case sign-out
               // is slow/offline after the account row is already gone server-side.
-              localStorage.removeItem("marro_v8");
-              localStorage.removeItem(SYNC_BASE_KEY);
-              localStorage.removeItem("marro_uid");
+              appStorage.removeItem("marro_v8");
+              appStorage.removeItem(SYNC_BASE_KEY);
+              appStorage.removeItem("marro_uid");
               const sb = await getSupabase();
               await sb.auth.signOut();
               setConfirmDeleteAccount(false);
