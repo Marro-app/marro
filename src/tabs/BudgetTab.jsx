@@ -27,6 +27,7 @@ export function BudgetTab(){
   const [showAddCat, setShowAddCat] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [showSubscriptions, setShowSubscriptions] = useState(false);
+  const [showHealthChecks, setShowHealthChecks] = useState(false);
   const [barHover, setBarHover] = useState(null);
   const barDim = i => barHover!=null && barHover!==i ? 0.35 : 1;
   const barMove = s => setBarHover(s && s.isTooltipActive && s.activeTooltipIndex!=null ? s.activeTooltipIndex : null);
@@ -168,7 +169,7 @@ export function BudgetTab(){
               </div>
               
               {[
-                {l:"Total aid disbursed to you", v:fmt(annDisburse)+"/yr",    c:C.teal},
+                {l:"Total aid sent to you",      v:fmt(annDisburse)+"/yr",    c:C.teal},
                 {l:"Other income",              v:fmt(annOther)+"/yr",       c:C.text},
                 {l:"Monthly spendable",         v:fmt(moSpendable)+"/mo",    c:C.teal,bold:true},
                 {l:"Monthly plan",              v:fmt(moSpend)+"/mo",        c:C.text},
@@ -180,7 +181,7 @@ export function BudgetTab(){
                 </div>
               ))}
               <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0 2px",fontSize:13,fontWeight:700}}>
-                <span>Planned surplus <span style={{fontSize:10,color:C.gray,fontWeight:400}}>if you stay on budget · through {MONTH_FULL[selMonth]}</span></span>
+                <span>Planned surplus <InfoTip text="What you'd have left if you stick to your budget — not your actual bank balance."/> <span style={{fontSize:10,color:C.gray,fontWeight:400}}>if you stay on budget · through {MONTH_FULL[selMonth]}</span></span>
                 <span style={{color:runningBalance>=0?C.teal:C.neg}}>{fmtS(runningBalance)}</span>
               </div>
               {moSurplus!==0 && (
@@ -220,25 +221,33 @@ export function BudgetTab(){
             </Card>
 
             <Card>
-              <SectionTitle>Health checks</SectionTitle>
-              {[
-                ["Housing ratio",    moSpendable>0?Math.round((yr.monthly.housing||0)/moSpendable*100)+"%":"—", (yr.monthly.housing||0)/moSpendable<0.6,(yr.monthly.housing||0)/moSpendable<0.75,"Target <60% of spendable"],
-                ["Monthly balance",  moSurplus>=0?"Positive":"Negative", moSurplus>=0, false, ""],
-                ["Savings",          (yr.monthly.savings||0)>0?fmt(yr.monthly.savings||0)+"/mo":"None", (yr.monthly.savings||0)>0, false, "Even $50/mo adds up"],
-                ["Exam fund",        (yr.monthly.exams||0)>0?fmt(yr.monthly.exams||0)+"/mo":"$0/mo", ay<=1||(yr.monthly.exams||0)>0, ay>1, `Steps cost ~${fmt(USMLE_STEP_FEE_ESTIMATE)} each`],
-              ].map(([label,val,ok,warn,tip])=>(
-                <div key={label} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
-                  <span style={{color:C.gray}}>{label}</span>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <Pill ok={ok} warn={!ok&&warn}>{val}</Pill>
-                    {tip && <span style={{fontSize:10,color:C.gray}}>{tip}</span>}
-                  </div>
+              <button type="button" onClick={()=>setShowHealthChecks(s=>!s)} aria-expanded={showHealthChecks} aria-controls="health-checks-panel"
+                style={{display:"flex",alignItems:"center",gap:8,width:"100%",minHeight:32,background:"none",border:"none",padding:0,marginBottom:showHealthChecks?14:0,cursor:"pointer",textAlign:"left",font:"inherit"}}>
+                <Icon name="chevron" size={12} style={{transform:showHealthChecks?"rotate(180deg)":"none",transition:"transform .15s",color:C.gray,flexShrink:0}}/>
+                <span style={{fontSize:13,fontWeight:600,color:C.text}}>Health checks</span>
+              </button>
+              {showHealthChecks && (
+                <div id="health-checks-panel">
+                  {[
+                    ["Housing ratio",    moSpendable>0?Math.round((yr.monthly.housing||0)/moSpendable*100)+"%":"—", (yr.monthly.housing||0)/moSpendable<0.6,(yr.monthly.housing||0)/moSpendable<0.75,"Target <60% of spendable"],
+                    ["Monthly balance",  moSurplus>=0?"Positive":"Negative", moSurplus>=0, false, ""],
+                    ["Savings",          (yr.monthly.savings||0)>0?fmt(yr.monthly.savings||0)+"/mo":"None", (yr.monthly.savings||0)>0, false, "Even $50/mo adds up"],
+                    ["Exam fund",        (yr.monthly.exams||0)>0?fmt(yr.monthly.exams||0)+"/mo":"$0/mo", ay<=1||(yr.monthly.exams||0)>0, ay>1, `Steps cost ~${fmt(USMLE_STEP_FEE_ESTIMATE)} each`],
+                  ].map(([label,val,ok,warn,tip])=>(
+                    <div key={label} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
+                      <span style={{color:C.gray}}>{label}</span>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <Pill ok={ok} warn={!ok&&warn}>{val}</Pill>
+                        {tip && <span style={{fontSize:10,color:C.gray}}>{tip}</span>}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </Card>
 
             <Card>
-              <SectionTitle sub="if you stay on budget">Planned surplus</SectionTitle>
+              <SectionTitle>Planned surplus <InfoTip text="What you'd have left if you stick to your budget — not your actual bank balance."/></SectionTitle>
               <div style={{fontSize:26,fontWeight:700,color:totalAccumulatedBalance>=0?C.teal:C.neg,margin:"6px 0",fontFamily:"'Newsreader',Georgia,serif"}}>{fmtS(totalAccumulatedBalance)}</div>
               <div style={{fontSize:11,color:C.gray,lineHeight:1.6}}>
                 {priorYearsCarryover!==0

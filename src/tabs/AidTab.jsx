@@ -1,17 +1,20 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { C } from '../lib/theme.js';
-import { fmt, fmtS, moTotal } from '../lib/format.js';
-import { Card, SectionTitle, XBtn, Pill, Banner, ScrollX } from '../components/primitives.jsx';
+import { fmt, fmtS, moTotal, todayStr } from '../lib/format.js';
+import { Card, SectionTitle, XBtn, Pill, Banner, ScrollX, InfoTip } from '../components/primitives.jsx';
+import { Icon } from '../components/icons.jsx';
 import { DateField } from '../components/pickers.jsx';
 import { useApp } from '../context/AppContext.js';
 import { useEscClose } from '../lib/hooks.js';
 
 // Aid & Detail — per-year grant/cost cards + the multi-year overview table.
-// No private state: reads everything shared via useApp(). The add-year and
+// No private state besides the collapse/expand set for the year cards (item 4,
+// mo/copy-clarity): everything else reads shared via useApp(). The add-year and
 // remove-year modals stay App-level chrome (triggered here via setShowAddYear /
 // setConfirmYearRemove).
 export function AidTab(){
-  const { data, subsMo, dismissed, dismiss, setYrF, upd,
+  const { data, subsMo, dismissed, dismiss, setYrF, upd, ay,
+          annGrant, annTuition, annHlth, annDisburse,
           setConfirmYearRemove, setShowAddYear, totDisburse, totSpend } = useApp();
 
   // "How your grant works" note — was stuck showing every reload (dismissal
@@ -30,65 +33,117 @@ export function AidTab(){
   };
   useEscClose(aidNoteOpen, closeAidNote);
 
+  // Year cards default collapsed to a summary row — except the year that
+  // actually contains today, so the student isn't stuck opening the right one
+  // every visit. Falls back to the active tab year, then the first year, if no
+  // year's date range covers today (e.g. dates not filled in yet). Computed
+  // once on mount (lazy initializer) — the user's own expand/collapse choices
+  // afterward are never overridden by a re-render.
+  const today = todayStr();
+  const [expandedYears, setExpandedYears] = useState(() => {
+    const current = data.years.find(y => y.startDate && y.endDate && today >= y.startDate && today <= y.endDate);
+    const fallback = data.years.find(y => y.id === ay) || data.years[0];
+    const initial = current || fallback;
+    return new Set(initial ? [initial.id] : []);
+  });
+  const toggleYear = (id) => setExpandedYears(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
   return (
     <div role="tabpanel" id="tab-panel" aria-labelledby="tab-aid" tabIndex={0} ref={panelRef} style={{display:"flex",flexDirection:"column",gap:16}}>
       {aidNoteOpen && (
         <div ref={aidNoteRef}>
           <Banner type="info" onClose={closeAidNote}>
-            <strong>How your total aid works:</strong> Your total aid (including health insurance) − tuition & fees − health insurance = disbursed to you for living costs.
+            <div style={{fontWeight:700,marginBottom:8}}>How your aid works</div>
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              <div style={{display:"flex",justifyContent:"space-between"}}>
+                <span>Total aid</span><strong style={{color:C.text}}>{fmt(annGrant)}</strong>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",color:C.textMid}}>
+                <span>− Tuition &amp; fees</span><span>{fmt(annTuition)}</span>
+              </div>
+              {annHlth>0 && (
+                <div style={{display:"flex",justifyContent:"space-between",color:C.textMid}}>
+                  <span>− Health insurance</span><span>{fmt(annHlth)}</span>
+                </div>
+              )}
+            </div>
+            <div style={{marginTop:8,padding:"8px 12px",background:C.tealLight,border:`1px solid ${C.tealMid}`,borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontWeight:700,color:C.teal}}>= You get</span>
+              <strong style={{color:C.teal}}>{fmt(annDisburse)} <span style={{fontWeight:500}}>for living costs</span></strong>
+            </div>
           </Banner>
         </div>
       )}
 
-      {/* Per-year cards */}
+      {/* Per-year cards — each collapses to a summary row (label, Total aid,
+          Sent to you, the surplus Pill); click/Enter/Space expands the full
+          field set. Real <button> for the toggle: native focus + keyboard
+          activation, no custom key handling needed. */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
         {data.years.map((y,i)=>{
           const g=Number(y.grant)||0,tf=Number(y.tuitionFees)||0,hi=Number(y.healthIns)||0;
           const rawGap=g-tf-hi; // unfloored — negative means costs exceed aid
           const disb=Math.max(g-tf-hi,0),oth=(Number(y.otherIncome)||0)*12;
           const moD=(disb+oth)/12,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
+          const expanded = expandedYears.has(y.id);
           return (
             <Card key={y.id}>
               {/* Pinned top-right so it never wraps down beside the pill */}
               {data.years.length>1 && <div style={{position:"absolute",top:12,right:12,zIndex:1}}><XBtn label="Remove year" onClick={()=>setConfirmYearRemove(y.id)} size={30}/></div>}
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,flexWrap:"wrap",gap:8,rowGap:10,paddingRight:data.years.length>1?34:0}}>
-                <div>
-                  <div style={{fontWeight:700,fontSize:14,color:C.text}}>{y.label}</div>
-                  <div style={{display:"flex",gap:6,marginTop:6,alignItems:"center",flexWrap:"wrap"}}>
+
+              <button type="button" onClick={()=>toggleYear(y.id)} aria-expanded={expanded} aria-controls={`aid-year-detail-${y.id}`}
+                style={{display:"flex",width:"100%",minHeight:44,justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",rowGap:6,background:"transparent",border:"none",padding:0,paddingRight:data.years.length>1?34:0,cursor:"pointer",textAlign:"left",font:"inherit",color:"inherit"}}>
+                <span style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+                  <Icon name="chevron" size={12} style={{transform:expanded?"rotate(180deg)":"none",transition:"transform .15s",color:C.gray,flexShrink:0}}/>
+                  <span style={{fontWeight:700,fontSize:14,color:C.text,whiteSpace:"nowrap"}}>{y.label}</span>
+                </span>
+                <span style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                  <span style={{fontSize:11.5,color:C.textMid,whiteSpace:"nowrap"}}>Total aid <strong style={{color:C.text}}>{fmt(g)}</strong></span>
+                  <span style={{fontSize:11.5,color:C.textMid,whiteSpace:"nowrap"}}>Sent to you <strong style={{color:C.teal}}>{fmt(disb)}</strong></span>
+                  <Pill ok={moS>=0} warn={moS<0}>{fmtS(moS)}/mo{moS<0?" short":" left over"}</Pill>
+                </span>
+              </button>
+
+              {expanded && (
+                <div id={`aid-year-detail-${y.id}`} style={{marginTop:14}}>
+                  <div style={{display:"flex",gap:6,marginBottom:10,alignItems:"center",flexWrap:"wrap"}}>
                     <DateField value={y.startDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].startDate=v;upd(d);}} ariaLabel="Year start date" style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
                     <span style={{fontSize:11,color:C.gray}}>→</span>
                     <DateField value={y.endDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].endDate=v;upd(d);}} ariaLabel="Year end date" style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
                   </div>
-                </div>
-                <Pill ok={moS>=0} warn={moS<0}>{fmtS(moS)}/mo</Pill>
-              </div>
-              {[
-                {label:"Total aid (annual)",   field:"grant",       note:"Includes health insurance. May include loans you'll repay — loan tracking is coming soon."},
-                {label:"Tuition & fees",            field:"tuitionFees", note:"paid directly to school"},
-                {label:"Health insurance",          field:"healthIns",   note:"school-covered, deducted from grant"},
-                {label:"Housing (monthly)",         field:null,          value:y.monthly.housing||0, note:"per month", isHousing:true},
-                {label:"Other income (monthly)",    field:"otherIncome", note:"tutoring, work, etc."},
-              ].map(({label,field,note,value,isHousing})=>(
-                <div key={label} style={{padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                    <span style={{fontSize:12,color:C.textMid}}>{label}</span>
-                    {isHousing
-                      ? <input type="number" value={y.monthly.housing||0} aria-label={`${label} — ${y.label||'Year '+(i+1)}`} onChange={e=>{const d=JSON.parse(JSON.stringify(data));d.years[i].monthly.housing=Number(e.target.value)||0;upd(d);}}
-                          style={{width:90,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 7px",background:C.bg,color:C.text}}/>
-                      : <input type="number" value={y[field]} aria-label={`${label} — ${y.label||'Year '+(i+1)}`} onChange={e=>setYrF(i,field,e.target.value)}
-                          style={{width:90,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 7px",background:C.bg,color:C.text}}/>
-                    }
+                  {[
+                    {label:"Total aid (annual)",   field:"grant",       note:"Includes health insurance. May include loans you'll repay — loan tracking is coming soon."},
+                    {label:"Tuition & fees",            field:"tuitionFees", note:"paid directly to school"},
+                    {label:"Health insurance",          field:"healthIns",   note:"school-covered, deducted from grant"},
+                    {label:"Housing (monthly)",         field:null,          value:y.monthly.housing||0, note:"per month", isHousing:true},
+                    {label:"Other income (monthly)",    field:"otherIncome", note:"tutoring, work, etc."},
+                  ].map(({label,field,note,value,isHousing})=>(
+                    <div key={label} style={{padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                        <span style={{fontSize:12,color:C.textMid}}>{label}</span>
+                        {isHousing
+                          ? <input type="number" value={y.monthly.housing||0} aria-label={`${label} — ${y.label||'Year '+(i+1)}`} onChange={e=>{const d=JSON.parse(JSON.stringify(data));d.years[i].monthly.housing=Number(e.target.value)||0;upd(d);}}
+                              style={{width:90,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 7px",background:C.bg,color:C.text}}/>
+                          : <input type="number" value={y[field]} aria-label={`${label} — ${y.label||'Year '+(i+1)}`} onChange={e=>setYrF(i,field,e.target.value)}
+                              style={{width:90,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 7px",background:C.bg,color:C.text}}/>
+                        }
+                      </div>
+                      <div style={{fontSize:10,color:C.gray,marginTop:1}}>{note}</div>
+                    </div>
+                  ))}
+                  <div style={{marginTop:12,padding:"10px 12px",background:C.tealLight,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.tealMid}`,borderRadius:8,fontSize:12}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3,alignItems:"center"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Sent to you/yr <InfoTip text="Aid left over after tuition and fees — the part that hits your bank account for living costs."/></span><strong style={{color:C.teal}}>{fmt(disb)}</strong></div>
+                    <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid}}>Monthly spendable</span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
                   </div>
-                  <div style={{fontSize:10,color:C.gray,marginTop:1}}>{note}</div>
-                </div>
-              ))}
-              <div style={{marginTop:12,padding:"10px 12px",background:C.tealLight,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.tealMid}`,borderRadius:8,fontSize:12}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{color:C.textMid}}>Disbursed/yr</span><strong style={{color:C.teal}}>{fmt(disb)}</strong></div>
-                <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid}}>Monthly spendable</span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
-              </div>
-              {rawGap<0 && (
-                <div role="alert" style={{marginTop:8,padding:"10px 12px",background:C.dangerLight,border:`1px solid ${C.dangerMid}`,borderRadius:8,fontSize:12,color:C.danger,fontWeight:600}}>
-                  Your costs exceed your aid by {fmt(Math.abs(rawGap))} this year.
+                  {rawGap<0 && (
+                    <div role="alert" style={{marginTop:8,padding:"10px 12px",background:C.dangerLight,border:`1px solid ${C.dangerMid}`,borderRadius:8,fontSize:12,color:C.danger,fontWeight:600}}>
+                      Your costs exceed your aid by {fmt(Math.abs(rawGap))} this year.
+                    </div>
+                  )}
                 </div>
               )}
             </Card>
@@ -102,13 +157,14 @@ export function AidTab(){
         </button>
       </div>
 
-      {/* 5-year table */}
+      {/* 5-year table — untouched (per scope: the overview table stays as-is
+          except the "Disbursed/yr" → "Sent to you/yr" header, same as item 1). */}
       <Card>
         <SectionTitle>{data.years.length}-year overview</SectionTitle>
         <ScrollX className="scrollx" style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead><tr>
-              {["Year","Total aid","School costs","Disbursed/yr","Spendable/mo","Budget/mo","Surplus/mo","Cumulative"].map(h=>
+              {["Year","Total aid","School costs","Sent to you/yr","Spendable/mo","Budget/mo","Surplus/mo","Cumulative"].map(h=>
                 <th key={h} style={{textAlign:"left",fontSize:10,color:C.gray,padding:"6px 8px",borderBottom:`1px solid ${C.border}`,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
               )}
             </tr></thead>
@@ -141,6 +197,11 @@ export function AidTab(){
         </ScrollX>
         <div style={{marginTop:10,padding:"8px 12px",background:totDisburse-totSpend>=0?C.tealLight:C.negLight,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${totDisburse-totSpend>=0?C.tealMid:C.negMid}`,borderRadius:8,fontSize:12,color:totDisburse-totSpend>=0?C.teal:C.neg,fontWeight:600}}>
           {data.years.length}-year net: {fmtS(totDisburse-totSpend)}
+          {totDisburse-totSpend<0 && (
+            <div style={{marginTop:6,fontSize:11.5,fontWeight:400,color:C.textMid,lineHeight:1.5}}>
+              Most med students borrow to bridge this — that&apos;s what the loans are for. Your aid office can help you plan it.
+            </div>
+          )}
         </div>
       </Card>
 

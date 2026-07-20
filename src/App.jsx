@@ -95,12 +95,12 @@ function runwayTileDisplay(runway, cushionSource) {
     case 'counting_down': {
       if (runway.basicallyOnTrack) return { value: fmt(runway.spendable), sub: "you're basically on track ✓", color: C.green };
       const sub = runway.savings > 0
-        ? <>lasts until ~{fmtDay(runway.runOutDate)}<div style={{ marginTop: 2 }}>+{fmt(runway.savings)} set aside in savings</div></>
-        : <>lasts until ~{fmtDay(runway.runOutDate)}</>;
+        ? <>how long your money lasts — until ~{fmtDay(runway.runOutDate)}<div style={{ marginTop: 2 }}>+{fmt(runway.savings)} set aside in savings</div></>
+        : <>how long your money lasts — until ~{fmtDay(runway.runOutDate)}</>;
       return { value: fmt(runway.spendable), sub, color: C.text };
     }
     case 'graduated':
-      return { value: '—', sub: 'all done — congrats! 🎓', color: C.teal };
+      return { value: '—', sub: 'all done — congrats!', color: C.teal };
     default:
       return { value: '—', sub: 'add your balance', color: C.gray };
   }

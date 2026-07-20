@@ -235,7 +235,7 @@ export function InviteGate({ C, onRedeemed, onBack }){
                       get the role="status" announcement below (same information,
                       two channels — never only one). */}
                   <p role="presentation" style={{...sub, margin:"0 0 18", padding:"10px 12px", borderRadius:10, background:C.greenLight, border:`1px solid ${C.greenMid}`, color:C.green, fontSize:13}}>
-                    🎉 Welcome to Marro — we&apos;ve entered your invite code from the email for you.
+                    Welcome to Marro — we&apos;ve entered your invite code from the email for you.
                   </p>
                 </>
               ) : (

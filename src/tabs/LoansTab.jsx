@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { C } from '../lib/theme.js';
 import { fmt, todayStr } from '../lib/format.js';
-import { Card, SectionTitle, XBtn, Banner, EmptyState, ChoiceGroup } from '../components/primitives.jsx';
+import { Card, SectionTitle, XBtn, Banner, EmptyState, ChoiceGroup, InfoTip } from '../components/primitives.jsx';
 import { DateField } from '../components/pickers.jsx';
 import { useApp } from '../context/AppContext.js';
 import { radioProps } from '../lib/ui-helpers.js';
@@ -248,7 +248,7 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
             {HPSL_FAMILY.has(loanTypeKey(loan)) || loanTypeKey(loan) === 'perkins' ? (
               <>Interest rate: <strong style={{ color: C.text }}>{(effectiveRate(loan) * 100).toFixed(2)}%</strong> (a fixed rate for this loan type)</>
             ) : (
-              <>Interest rate: <strong style={{ color: C.text }}>{(effectiveRate(loan) * 100).toFixed(2)}%</strong> (the federal rate for {loan.academicYear}–{String((loan.academicYear + 1) % 100).padStart(2, '0')} loans)</>
+              <>Interest rate: <strong style={{ color: C.text }}>{(effectiveRate(loan) * 100).toFixed(2)}%</strong> (the federal rate for {loan.academicYear}–{String((loan.academicYear + 1) % 100).padStart(2, '0')} loans) <InfoTip text="Set by the government for the school year you borrowed — same rate for everyone that year."/></>
             )}
           </div>
         ) : (
@@ -439,7 +439,6 @@ function ReturnWindowCard({ data, today }) {
         return (
           <Card key={`${w.loanId}_${w.disbursementId}`} style={{ borderLeft: `3px solid ${C.blue}` }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <span aria-hidden="true" style={{ fontSize: 18, lineHeight: 1 }}>⏳</span>
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700, fontSize: 13, color: C.text, marginBottom: 4 }}>
                   You can still return borrowed money you didn’t need — {w.dateConfirmed ? `${w.daysLeft} days left` : `roughly ${w.daysLeft} days left, confirm with your aid office`}
@@ -561,7 +560,7 @@ function RefundPlaybook({ data, upd, moSpend, refundNudgeConfirmed, setRefundNud
       <div style={{ position: 'absolute', top: 10, right: 10 }}>
         <XBtn label="Dismiss — I've seen this" onClick={dismiss} />
       </div>
-      <div id="playbook-heading" style={{ fontSize: 15, fontWeight: 700, color: C.text, paddingRight: 30 }}>📬 Your refund landed — a smart way to think about it</div>
+      <div id="playbook-heading" style={{ fontSize: 15, fontWeight: 700, color: C.text, paddingRight: 30 }}>Your refund landed — a smart way to think about it</div>
 
       <ol style={{ margin: '12px 0 0', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13, color: C.text, lineHeight: 1.55 }}>
         <li>
