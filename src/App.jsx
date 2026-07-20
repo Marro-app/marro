@@ -160,6 +160,16 @@ export function App() {
   const [iconPickOpen, setIconPickOpen] = useState(false);   // collapsed icon grid in add flows
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showCategories, setShowCategories] = useState(false); // settings → Categories modal (Phase 1: moved off the tabbar)
+  // Every settings-menu row closes the dropdown AND opens its modal in the
+  // same click handler (same React commit) — so by the time a Modal below
+  // tries to capture "what had focus before I opened," the menu row that was
+  // actually clicked has already been unmounted (the dropdown closed). Modal
+  // still restores focus to it on close, but .focus() on a detached element
+  // is a silent no-op, so focus fell through to <body>. The gear button
+  // itself stays mounted the whole time, so settings-launched modals refocus
+  // it explicitly on close instead of relying on Modal's generic restore.
+  const settingsBtnRef = React.useRef(null);
+  const refocusSettingsBtn = () => requestAnimationFrame(() => settingsBtnRef.current?.focus());
   const [showQuickAdd, setShowQuickAdd] = useState(false);      // header Quick add — one-off expense modal
 
   // Month selector (0=Aug, 11=Jul for academic year)
@@ -991,7 +1001,7 @@ export function App() {
       `}</style>
       {/* Modals */}
       {showQuickAdd && <QuickAddModal onClose={()=>setShowQuickAdd(false)}/>}
-      {showCategories && <Modal title="Categories" onClose={()=>setShowCategories(false)} width={480}><React.Suspense fallback={<div role="status" aria-live="polite" style={{padding:24,textAlign:"center",color:"var(--text-dim)",fontSize:14}}>Loading…</div>}><CustomizeTab/></React.Suspense></Modal>}
+      {showCategories && <Modal title="Categories" onClose={()=>{setShowCategories(false);refocusSettingsBtn();}} width={480}><React.Suspense fallback={<div role="status" aria-live="polite" style={{padding:24,textAlign:"center",color:"var(--text-dim)",fontSize:14}}>Loading…</div>}><CustomizeTab/></React.Suspense></Modal>}
       {renewDlg && <RenewalDialog sub={renewDlg} onClose={()=>setRenewDlg(null)} onConfirm={handleRenewal}/>}
       {confirmReset && <Modal title="Reset everything?" onClose={()=>setConfirmReset(false)} width={350}>
         <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>This replaces <strong>all</strong> of your budget, weekly entries, savings, and subscriptions with the starting defaults. This cannot be undone.</div>
@@ -1131,7 +1141,7 @@ export function App() {
             </button>
             {/* Settings menu */}
             <div style={{position:"relative"}}>
-              <button className="btn-pop" onClick={()=>setSettingsOpen(o=>!o)} aria-label="Settings" aria-haspopup="true" aria-expanded={settingsOpen} title="Settings" style={{width:32,height:32,borderRadius:8,border:`1px solid ${settingsOpen?C.sel:C.border}`,background:settingsOpen?C.selBg:"transparent",cursor:"pointer",color:C.textMid,display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .15s"}}>
+              <button ref={settingsBtnRef} className="btn-pop" onClick={()=>setSettingsOpen(o=>!o)} aria-label="Settings" aria-haspopup="true" aria-expanded={settingsOpen} title="Settings" style={{width:32,height:32,borderRadius:8,border:`1px solid ${settingsOpen?C.sel:C.border}`,background:settingsOpen?C.selBg:"transparent",cursor:"pointer",color:C.textMid,display:"inline-flex",alignItems:"center",justifyContent:"center",transition:"all .15s"}}>
                 <Icon name="settings" size={15}/>
               </button>
               {settingsOpen && <>
@@ -1249,9 +1259,9 @@ export function App() {
       {profile && !profile.school && <OnboardingFlow uid={session.user.id} user={session.user} data={data} upd={upd} onDone={(s,opts)=>{setProfile({school:s}); if(opts?.landOnLoans) setTab("loans");}}/>}
       {/* Existing users who finished onboarding but are behind on a newer setup question */}
       {profile && profile.school && (data.setupVersion||0) < SETUP_VERSION && <ProgressiveSetup data={data} upd={upd} setTab={setTab}/>}
-      {editSchool && <ProfileModal uid={session.user.id} onSaved={s=>{setProfile({school:s});setEditSchool(false);}} onClose={()=>setEditSchool(false)}/>}
-      {editProgram && <ProgramModal data={data} upd={upd} school={profile.school} onClose={()=>setEditProgram(false)}/>}
-      {editAvatar && <AvatarModal data={data} upd={upd} user={session.user} onClose={()=>setEditAvatar(false)}/>}
+      {editSchool && <ProfileModal uid={session.user.id} onSaved={s=>{setProfile({school:s});setEditSchool(false);refocusSettingsBtn();}} onClose={()=>{setEditSchool(false);refocusSettingsBtn();}}/>}
+      {editProgram && <ProgramModal data={data} upd={upd} school={profile.school} onClose={()=>{setEditProgram(false);refocusSettingsBtn();}}/>}
+      {editAvatar && <AvatarModal data={data} upd={upd} user={session.user} onClose={()=>{setEditAvatar(false);refocusSettingsBtn();}}/>}
       {inviteOpen && <InviteFriendsModal onClose={()=>setInviteOpen(false)}/>}
       {exportOpen && (
         <Modal title="Export my data" onClose={()=>{if(!exportingData) setExportOpen(false);}} width={400}>

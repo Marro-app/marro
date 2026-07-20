@@ -121,6 +121,21 @@ export const subMonthlyTotal = (subs=[]) => subs.filter(s=>s.active!==false).red
 },0);
 
 
+// Sanitizes a money <input type="number"> onChange value at the input layer.
+// Strips any leading minus (so a user literally can't type their way to a
+// negative dollar figure — a negative "Housing (monthly)" used to flip the
+// sign of the whole Monthly Plan tile) and, once given a `max`, clamps down
+// to it only after the value parses to a real number — so "12." or a lone
+// "-" mid-type pass through untouched instead of getting reformatted out
+// from under the user's cursor. Returns a string, ready to hold in state.
+export const MAX_QUICK_ADD_AMOUNT = 999999;
+export const sanitizeMoneyInput = (raw, max = Infinity) => {
+  const s = String(raw).replace(/^-+/, '');
+  const n = Number(s);
+  if (s !== '' && isFinite(n) && n > max) return String(max);
+  return s;
+};
+
 export const getYearMonthStr = (date) => {
   const d = new Date(date+"T12:00:00");
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");

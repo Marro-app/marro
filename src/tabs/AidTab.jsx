@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { C } from '../lib/theme.js';
-import { fmt, fmtS, moTotal, todayStr } from '../lib/format.js';
+import { fmt, fmtS, moTotal, todayStr, sanitizeMoneyInput } from '../lib/format.js';
 import { Card, SectionTitle, XBtn, Pill, Banner, ScrollX, InfoTip } from '../components/primitives.jsx';
 import { Icon } from '../components/icons.jsx';
 import { DateField } from '../components/pickers.jsx';
@@ -126,9 +126,9 @@ export function AidTab(){
                       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                         <span style={{fontSize:12,color:C.textMid}}>{label}</span>
                         {isHousing
-                          ? <input type="number" value={y.monthly.housing||0} aria-label={`${label} — ${y.label||'Year '+(i+1)}`} onChange={e=>{const d=JSON.parse(JSON.stringify(data));d.years[i].monthly.housing=Number(e.target.value)||0;upd(d);}}
+                          ? <input type="number" min="0" value={y.monthly.housing||0} aria-label={`${label} — ${y.label||'Year '+(i+1)}`} onChange={e=>{const d=JSON.parse(JSON.stringify(data));d.years[i].monthly.housing=Number(sanitizeMoneyInput(e.target.value))||0;upd(d);}}
                               style={{width:90,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 7px",background:C.bg,color:C.text}}/>
-                          : <input type="number" value={y[field]} aria-label={`${label} — ${y.label||'Year '+(i+1)}`} onChange={e=>setYrF(i,field,e.target.value)}
+                          : <input type="number" min="0" value={y[field]} aria-label={`${label} — ${y.label||'Year '+(i+1)}`} onChange={e=>setYrF(i,field,sanitizeMoneyInput(e.target.value))}
                               style={{width:90,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 7px",background:C.bg,color:C.text}}/>
                         }
                       </div>
