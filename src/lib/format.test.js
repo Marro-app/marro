@@ -3,7 +3,7 @@ import {
   fmt, fmtS, fmtD, fmtA, fmtSA, moTotal, subMonthlyTotal,
   generateYearConfigs, yr2, blankYearFields, BLANK_MONTHLY,
   getMonday, getSunday, fmtWeekLabel, daysUntil, getYearMonthStr, todayStr,
-  sanitizeMoneyInput, MAX_QUICK_ADD_AMOUNT,
+  sanitizeMoneyInput, MAX_QUICK_ADD_AMOUNT, fmtDayMaybeYear,
 } from './format.js';
 
 // ── Money input clamping ────────────────────────────────────────────────────
@@ -193,6 +193,27 @@ describe('getSunday', () => {
 describe('fmtWeekLabel', () => {
   it('renders a "start – end" range', () => {
     expect(fmtWeekLabel('2024-01-01')).toBe('Jan 1 – Jan 7');
+  });
+});
+
+// A projected date (runway run-out, next refund) landing next year read as
+// "this year" with a bare month/day — regression coverage for that.
+describe('fmtDayMaybeYear', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-19T09:30:00'));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('omits the year when the date is within the current calendar year', () => {
+    expect(fmtDayMaybeYear('2026-10-22')).toBe('Oct 22');
+  });
+  it('appends the year when the date falls in a future calendar year', () => {
+    expect(fmtDayMaybeYear('2027-04-22')).toBe('Apr 22, 2027');
+  });
+  it('returns empty string for falsy input', () => {
+    expect(fmtDayMaybeYear(null)).toBe('');
+    expect(fmtDayMaybeYear('')).toBe('');
   });
 });
 

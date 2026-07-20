@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { C } from '../lib/theme.js';
 import { fmt, todayStr, sanitizeMoneyInput } from '../lib/format.js';
 import { Card, SectionTitle, XBtn, Banner, EmptyState, ChoiceGroup, InfoTip } from '../components/primitives.jsx';
+import { Icon } from '../components/icons.jsx';
 import { DateField } from '../components/pickers.jsx';
 import { useApp } from '../context/AppContext.js';
 import { radioProps } from '../lib/ui-helpers.js';
@@ -53,7 +54,7 @@ const LOAN_TYPE_OPTIONS = [
   { key: 'directUnsubGrad', type: 'federal', label: 'Federal — Direct Unsubsidized (most common)' },
   { key: 'gradPLUS', type: 'federal', label: 'Federal — Grad PLUS' },
   { key: 'directUnsubUndergrad', type: 'federal', label: 'Federal — from college (undergrad)' },
-  { key: 'hpsl', type: 'private', label: 'School health-professions loan (HPSL / Primary Care / LDS — often 5%)' },
+  { key: 'hpsl', type: 'private', label: 'A loan from your school — often 5% (your paperwork may say HPSL, Primary Care, or LDS)' },
   { key: 'private', type: 'private', label: 'Private' },
   { key: 'otherUserRate', type: 'private', label: "Other / I'll enter my rate" },
 ];
@@ -86,12 +87,28 @@ function SegButton({ active, onClick, children, ariaLabel }) {
   );
 }
 
-function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
+function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore, expanded, onToggleExpand, graduationTotal, isCounted, autoFocusName }) {
   const [pctText, setPctText] = useState(loan.rate != null ? String(Math.round(loan.rate * 1000) / 10) : '');
   const annualTotal = (loan.disbursements || []).reduce((a, d) => a + (Number(d.amount) || 0), 0);
   const asOfMode = loan.asOfDate != null;
   const estimated = isRateEstimated(loan);
   const rateHigh = pctText !== '' && Number(pctText) > 20;
+
+  // Disclosure: at rest, a loan is one summary row (name · borrowed ·
+  // graduation total); this expands the full editor below it. Real <button>
+  // for native focus/keyboard activation. Focus moves INTO the form's first
+  // field on expand, and back to this toggle on collapse, so keyboard users
+  // never lose their place (same idiom as AidTab's year cards).
+  const toggleRef = useRef(null);
+  const nameRef = useRef(null);
+  const toggleExpand = () => {
+    const wasExpanded = expanded;
+    onToggleExpand();
+    requestAnimationFrame(() => { (wasExpanded ? toggleRef : nameRef).current?.focus(); });
+  };
+  // A freshly-added loan (via "+ Add loan") opens already expanded — focus
+  // straight into its name field so typing can start immediately.
+  useEffect(() => { if (autoFocusName) nameRef.current?.focus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const patch = (fn) => { const d = JSON.parse(JSON.stringify(data)); const l = d.loans[idx]; fn(l, d); upd(d); };
 
@@ -126,14 +143,29 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
 
   return (
     <Card style={{ position: 'relative' }}>
-      <div style={{ position: 'absolute', top: 12, right: 12 }}>
+      <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 1 }}>
         <XBtn label={`Delete loan ${loan.name || 'entry'}`} danger onClick={() => { const d = JSON.parse(JSON.stringify(data)); d.loans = d.loans.filter((l) => l.id !== loan.id); upd(d); }} />
       </div>
 
-      {/* ── Always visible: name, type, school year, amount ── */}
-      <div style={{ marginBottom: 12, paddingRight: 36 }}>
+      <button ref={toggleRef} type="button" onClick={toggleExpand} aria-expanded={expanded} aria-controls={`ln-form-${loan.id}`}
+        style={{ display: 'flex', width: '100%', minHeight: 44, alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', rowGap: 4, background: 'transparent', border: 'none', padding: 0, paddingRight: 34, cursor: 'pointer', textAlign: 'left', font: 'inherit', color: 'inherit' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <Icon name="chevron" size={12} style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform .15s', color: C.gray, flexShrink: 0 }} />
+          <span style={{ fontWeight: 700, fontSize: 14, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{loan.name || 'Untitled loan'}</span>
+        </span>
+        <span style={{ fontSize: 12, color: C.textMid, whiteSpace: 'nowrap' }}>
+          {fmt(annualTotal)} borrowed
+          {isCounted && graduationTotal != null && <> · <strong style={{ color: C.text }}>{fmt(graduationTotal)}</strong> at graduation</>}
+          {!isCounted && <> · not yet counted</>}
+        </span>
+      </button>
+
+      {expanded && <div id={`ln-form-${loan.id}`} style={{ marginTop: 14 }}>
+
+      {/* ── Name, type, school year, amount ── */}
+      <div style={{ marginBottom: 12 }}>
         <label style={labelStyle} htmlFor={`ln-name-${loan.id}`}>Name</label>
-        <input id={`ln-name-${loan.id}`} type="text" value={loan.name} placeholder="e.g. Year 1 federal loan"
+        <input ref={nameRef} id={`ln-name-${loan.id}`} type="text" value={loan.name} placeholder="e.g. Year 1 federal loan"
           aria-label="Loan name" onChange={(e) => patch((l) => { l.name = e.target.value; })}
           style={inputStyle({ width: '100%' })} />
       </div>
@@ -198,7 +230,9 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
             Don’t have your numbers? Log into studentaid.gov → Dashboard → click a loan for its exact amounts, dates, and rate. Private loans: check your lender’s site.
           </div>
 
-          <div style={{ fontSize: 11, color: C.textMid, marginBottom: 6, fontWeight: 600 }}>Money usually arrives in two parts — fall and spring:</div>
+          <div style={{ fontSize: 11, color: C.textMid, marginBottom: 6, fontWeight: 600 }}>
+            {(loan.disbursements || []).length >= 2 ? 'Money usually arrives in two parts — fall and spring:' : 'When the money arrives:'}
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
             {(loan.disbursements || []).map((d, i) => (
               <div key={d.id} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -295,6 +329,7 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
           </div>
         </div>
       )}
+      </div>}
     </Card>
   );
 }
@@ -598,13 +633,27 @@ export function LoansTab() {
   const { data, upd, moSpend, refundNudgeConfirmed, setRefundNudgeConfirmed } = useApp();
   const [moreOpenIds, setMoreOpenIds] = useState(() => new Set());
   const toggleMore = (id) => setMoreOpenIds((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  // Loan cards collapse to a summary row at rest — expand/collapse state
+  // lives here (not in the card) so "+ Add loan" can open the new card
+  // pre-expanded without the card needing to know it's new.
+  const [expandedIds, setExpandedIds] = useState(() => new Set());
+  const toggleExpand = (id) => setExpandedIds((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const [justAddedId, setJustAddedId] = useState(null);
 
   const loans = data.loans || [];
   const gradDate = data.years?.[data.years.length - 1]?.endDate || null;
   const proj = projectDebtAtGraduation(loans, gradDate);
   const counted = loans.filter((l) => l.status === 'accepted' || l.status === 'disbursed');
+  const graduationTotalsById = Object.fromEntries(proj.byLoan.map((row) => [row.loanId, row.total]));
 
-  const addLoan = () => { const d = JSON.parse(JSON.stringify(data)); d.loans = [...(d.loans || []), blankLoan()]; upd(d); };
+  const addLoan = () => {
+    const d = JSON.parse(JSON.stringify(data));
+    const nl = blankLoan();
+    d.loans = [...(d.loans || []), nl];
+    upd(d);
+    setExpandedIds((s) => new Set([...s, nl.id]));
+    setJustAddedId(nl.id);
+  };
 
   return (
     <div role="tabpanel" id="tab-panel" aria-labelledby="tab-loans" tabIndex={0} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -644,7 +693,11 @@ export function LoansTab() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 14 }}>
         {loans.map((loan, i) => (
           <LoanCard key={loan.id} loan={loan} idx={i} data={data} upd={upd}
-            moreOpen={moreOpenIds.has(loan.id)} toggleMore={() => toggleMore(loan.id)} />
+            moreOpen={moreOpenIds.has(loan.id)} toggleMore={() => toggleMore(loan.id)}
+            expanded={expandedIds.has(loan.id)} onToggleExpand={() => toggleExpand(loan.id)}
+            graduationTotal={graduationTotalsById[loan.id] ?? null}
+            isCounted={counted.some((l) => l.id === loan.id)}
+            autoFocusName={justAddedId === loan.id} />
         ))}
         <button type="button" aria-label="Add loan" onClick={addLoan}
           style={{ width: '100%', font: 'inherit', background: 'transparent', border: `2px dashed ${C.border}`, borderRadius: 12, minHeight: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', color: C.gray, transition: 'border-color 0.15s, color 0.15s' }}

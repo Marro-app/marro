@@ -5,7 +5,7 @@ import { appStorage } from './lib/mockStorage.js';
 import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
-import { fmt, fmtS, fmtD, fmtDay, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr } from './lib/format.js';
+import { fmt, fmtS, fmtD, fmtDayMaybeYear, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr } from './lib/format.js';
 import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState, classifyCushionSource } from './lib/loans.js';
 import { WEEKS_PER_MONTH, USMLE_STEP_FEE_ESTIMATE } from './lib/constants.js';
 import { BRANDS, BRAND_DOMAINS, getBrandDomain, getBrand } from './lib/brands.js';
@@ -86,7 +86,7 @@ function runwayTileDisplay(runway, cushionSource) {
       };
     case 'gap': {
       const sub = <>
-        <span>⚠ {runway.gapDays}d before your ~{fmtDay(runway.nextRefund.date)} refund</span>
+        <span>⚠ {runway.gapDays}d before your ~{fmtDayMaybeYear(runway.nextRefund.date)} refund</span>
         <div style={{ marginTop: 2 }}>trim ~{fmt(runway.trimPerMonthToClose)}/mo closes it</div>
         {runway.savings > 0 && <div style={{ marginTop: 2 }}>+{fmt(runway.savings)} set aside in savings if needed</div>}
       </>;
@@ -95,8 +95,8 @@ function runwayTileDisplay(runway, cushionSource) {
     case 'counting_down': {
       if (runway.basicallyOnTrack) return { value: fmt(runway.spendable), sub: "you're basically on track ✓", color: C.green };
       const sub = runway.savings > 0
-        ? <>how long your money lasts — until ~{fmtDay(runway.runOutDate)}<div style={{ marginTop: 2 }}>+{fmt(runway.savings)} set aside in savings</div></>
-        : <>how long your money lasts — until ~{fmtDay(runway.runOutDate)}</>;
+        ? <>how long your money lasts — until ~{fmtDayMaybeYear(runway.runOutDate)}<div style={{ marginTop: 2 }}>+{fmt(runway.savings)} set aside in savings</div></>
+        : <>how long your money lasts — until ~{fmtDayMaybeYear(runway.runOutDate)}</>;
       return { value: fmt(runway.spendable), sub, color: C.text };
     }
     case 'graduated':
