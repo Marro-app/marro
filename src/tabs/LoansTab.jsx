@@ -22,7 +22,9 @@ import { disbFallbackDate, DAYS_PER_MONTH, DEFAULT_SAVINGS_APY, HYSA_RATE_RANGE_
 // rate"), no bare offered/accepted/disbursed (→ plain-English status labels).
 // See docs/PRODUCT_DECISIONS.md "Phase 2 commit 4" for the read-through log.
 
-function splitEvenly(total, n) {
+// Exported so the "remove part preserves the loan total" fix (C3) is
+// hand-checkable in isolation — see loans.test.js.
+export function splitEvenly(total, n) {
   const cents = Math.round((Number(total) || 0) * 100);
   const base = Math.floor(cents / n);
   const remainder = cents - base * n;
@@ -107,9 +109,19 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
     const amounts = splitEvenly(l.disbursements.reduce((a, d) => a + (Number(d.amount) || 0), 0), n);
     l.disbursements = l.disbursements.map((d, i) => ({ ...d, amount: amounts[i] }));
   });
+  // ⚠ FIX (2026-07-18 hotfix, break-testing finding C3): removing a part used
+  // to just drop that row — and its dollar amount — from the loan entirely
+  // (a $41,000 loan silently became $27,333 with no warning). "Add another
+  // part" re-splits the loan's existing total across the new row count, so
+  // removing a part now mirrors that: the remaining rows are re-split so the
+  // loan's total borrowed is unchanged unless the student explicitly edits an
+  // amount afterward.
   const removePart = (i) => patch((l) => {
     if ((l.disbursements || []).length <= 1) return;
-    l.disbursements = l.disbursements.filter((_, di) => di !== i);
+    const total = l.disbursements.reduce((a, d) => a + (Number(d.amount) || 0), 0);
+    const remaining = l.disbursements.filter((_, di) => di !== i);
+    const amounts = splitEvenly(total, remaining.length);
+    l.disbursements = remaining.map((d, di) => ({ ...d, amount: amounts[di] }));
   });
 
   return (
@@ -508,23 +520,14 @@ function RefundPlaybook({ data, upd, moSpend, refundNudgeConfirmed, setRefundNud
     setRefundNudgeConfirmed(null);
   };
 
-  if (!show) {
-    // "Did your refund land?" nudge (walkthrough §9) — shown once the expected
-    // date has passed but nothing has auto-detected a balance jump yet. Confirming
-    // is itself the evidence the hardening rules require (never a bare guess).
-    const seasonWord = candidate.term.endsWith('-spring') ? 'spring' : candidate.term.endsWith('-fall') ? 'fall' : 'expected';
-    return (
-      <Banner type="info">
-        Did your {seasonWord} refund land? Update your balance below to see the full picture.
-        <div style={{ marginTop: 8 }}>
-          <button type="button" onClick={() => setRefundNudgeConfirmed(candidate.term)}
-            style={{ padding: '6px 14px', minHeight: 32, borderRadius: 8, border: `1px solid ${C.blue}`, background: 'transparent', color: C.blue, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-            Yes, it landed
-          </button>
-        </div>
-      </Banner>
-    );
-  }
+  // ⚠ FIX (2026-07-18 hotfix, break-testing finding H1): this used to render
+  // its own "Did your refund land?" banner here too — a second, NON-dismissible
+  // copy of the header's nudge (App.jsx, same `refundNudgeState` candidate),
+  // so the two stacked and only one had a working X. The header banner is the
+  // single source of truth for the nudge (it's dismissible and its "Yes, it
+  // landed" button already routes here via `setTab("loans")`); this component
+  // only ever renders the full Playbook card below, once `show` is true.
+  if (!show) return null;
 
   // ── Numbers this card shows — every one is computed, never guessed ──
   const sortedReadings = [...readings].filter((r) => r.date <= today).sort((a, b) => (a.date < b.date ? -1 : 1));
