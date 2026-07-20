@@ -579,6 +579,21 @@ export function loanReturnWindows(loans, today) {
  * Returns `0` (never negative, never a guess bigger than what's returnable)
  * if the window's loan/disbursement can't be found or `returnAmount` isn't a
  * positive number.
+ *
+ * ⚠ FIX (2026-07-18 hotfix, break-testing finding C2): computed strictly from
+ * THIS loan alone — `projectDebtAtGraduation` is only ever called with a
+ * single-loan array, so no other loan's principal/rate/dates can enter the
+ * math. (Previously this diffed `[...otherLoans, loan]` vs `[...otherLoans,
+ * withReturn]`; mathematically the other loans cancel out of that subtraction
+ * too, but it read as pooled and invited exactly this kind of bug — tightening
+ * to a single-loan computation removes the possibility entirely.)
+ *
+ * Also fixes the ~4.7x overstatement: `before - after` is the full drop in
+ * debt-at-graduation, which cancels the returned PRINCIPAL itself as well as
+ * the fee and interest on it. But giving back money you never spent isn't a
+ * "saving" — you had that cash and now you don't, a wash. Only the fee and
+ * interest that would otherwise have piled up on it is the real benefit, so
+ * the raw returned principal (`capped`) is subtracted back out.
  */
 export function returnSavingsAtGraduation(loans, window, gradDate, returnAmount) {
   const amt = Number(returnAmount) || 0;
@@ -596,10 +611,10 @@ export function returnSavingsAtGraduation(loans, window, gradDate, returnAmount)
     disbursements: (loan.disbursements || []).map((d) => (d.id === disb.id ? { ...d, amount: (Number(d.amount) || 0) - capped } : d)),
   };
 
-  const others = (loans || []).filter((l) => l.id !== loan.id);
-  const before = projectDebtAtGraduation([...others, loan], gradDate).total;
-  const after = projectDebtAtGraduation([...others, withReturn], gradDate).total;
-  return Math.max(0, before - after);
+  const before = projectDebtAtGraduation([loan], gradDate).total;
+  const after = projectDebtAtGraduation([withReturn], gradDate).total;
+  const debtReduction = before - after; // returned principal (fee-grossed) + fee + interest cancelled
+  return Math.max(0, debtReduction - capped);
 }
 
 // ── Cushion-source classification (A4) ────────────────────────────────────────
