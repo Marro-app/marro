@@ -464,7 +464,7 @@ function ReturnWindowCard({ data, today }) {
 
 function ReminderBanner({ data, upd }) {
   const [snoozedThisSession, setSnoozedThisSession] = useState(false);
-  if (data.loans.length > 0 || data.loanReminderSnooze != null || snoozedThisSession) return null;
+  if ((data.loans || []).length > 0 || data.loanReminderSnooze != null || snoozedThisSession) return null;
   return (
     <Banner type="info" onClose={() => setSnoozedThisSession(true)}>
       Add your loans so Marro can show what you’ll really owe at graduation — interest included.
