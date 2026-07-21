@@ -144,8 +144,27 @@ if (import.meta.env.PROD && import.meta.env.VITE_SENTRY_DSN) {
           dsn: import.meta.env.VITE_SENTRY_DSN,
           environment: import.meta.env.MODE,
           tracesSampleRate: 0.1,
+          // Crash-only replay: never record healthy sessions
+          // (replaysSessionSampleRate: 0), only the session that just
+          // crashed (replaysOnErrorSampleRate: 1.0) — keeps volume far
+          // under the free-tier 50-replays/month cap while still giving us
+          // a replay for every crash we'd want to debug.
           replaysSessionSampleRate: 0,
-          replaysOnErrorSampleRate: 0,
+          replaysOnErrorSampleRate: 1.0,
+          integrations: [
+            // privacy: mask all financial data — never send real amounts/PII
+            // to Sentry, per DATA_ETHICS. This is a financial app (loan
+            // balances, aid amounts, budgets, names, emails) — replay must
+            // only ever capture screen STRUCTURE/layout (which screen, what
+            // broke), never actual values. All three flags below are set
+            // explicitly (even where they match current defaults) so a
+            // future dev/SDK upgrade can't silently unmask real data.
+            Sentry.replayIntegration({
+              maskAllText: true,
+              maskAllInputs: true,
+              blockAllMedia: true,
+            }),
+          ],
         });
         // Sentry's own global handlers (window.onerror / unhandledrejection)
         // are installed by init() and keep working after this point — the
