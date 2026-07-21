@@ -138,12 +138,12 @@ export function BudgetTab(){
                     )}
                   </div>
                   {isAuto
-                    ? <span style={{fontSize:13,fontWeight:600,color:C.blue,minWidth:72,textAlign:"right"}}>{fmt(amt)}<span style={{fontSize:10,color:C.gray,fontWeight:400}}> auto</span></span>
+                    ? <span style={{fontSize:13,fontWeight:600,color:C.blue,minWidth:72,textAlign:"right",whiteSpace:"nowrap"}}>{fmt(amt)}<span style={{fontSize:10,color:C.gray,fontWeight:400}}>/mo · renews automatically</span></span>
                     : <input type="number" min="0" value={getMonthVal(cat.id)} onChange={e=>setMo(ay,cat.id,sanitizeMoneyInput(e.target.value))}
                         aria-label={`Monthly budget for ${cat.label}`}
                         style={{width:80,textAlign:"right",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",background:C.bg,color:C.text,fontWeight:600}}/>
                   }
-                  <span style={{fontSize:10,color:C.gray,width:28,textAlign:"right"}}>{pct}%</span>
+                  <span style={{fontSize:10,color:C.gray,whiteSpace:"nowrap",textAlign:"right"}}>{pct}% of plan</span>
                   {!isAuto && <XBtn label={"Remove "+cat.label} title={"Remove for "+MONTH_NAMES[selMonth]} onClick={()=>setConfirmRemove(cat.id)} size={28}/>}
                 </div>
               );
@@ -200,10 +200,6 @@ export function BudgetTab(){
                   <span style={{fontWeight:r.bold?700:500,color:r.c}}>{r.v}</span>
                 </div>
               ))}
-              <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0 2px",fontSize:13,fontWeight:700}}>
-                <span>Planned surplus <InfoTip text="What you'd have left if you stick to your budget — not your actual bank balance."/> <span style={{fontSize:10,color:C.gray,fontWeight:400}}>if you stay on budget · through {MONTH_FULL[selMonth]}</span></span>
-                <span style={{color:runningBalance>=0?C.teal:C.neg}}>{fmtS(runningBalance)}</span>
-              </div>
               {moSurplus!==0 && (
                 <div style={{marginTop:8,padding:"10px 12px",background:moSurplus>=0?C.greenLight:C.negLight,borderRadius:8,fontSize:12,color:moSurplus>=0?C.green:C.neg,fontWeight:500}}>
                   {moSurplus>=0
@@ -280,8 +276,9 @@ export function BudgetTab(){
             </Card>
 
             <Card>
-              <SectionTitle>Notes</SectionTitle>
-              <textarea value={yr.notes||""} onChange={e=>setYrF(ay,"notes",e.target.value)} placeholder="Reminders, upcoming costs..."
+              <SectionTitle>Notes for this year</SectionTitle>
+              <textarea value={yr.notes||""} onChange={e=>setYrF(ay,"notes",e.target.value)} placeholder="Anything you want to remember — reminders, upcoming costs..."
+                aria-label="Notes for this year — anything you want to remember"
                 style={{width:"100%",fontSize:12,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",resize:"vertical",minHeight:64,fontFamily:"inherit",color:C.text,background:C.bg,boxSizing:"border-box"}}/>
             </Card>
           </div>

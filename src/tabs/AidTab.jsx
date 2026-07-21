@@ -116,7 +116,7 @@ export function AidTab(){
                     <DateField value={y.endDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].endDate=v;upd(d);}} ariaLabel="Year end date" style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
                   </div>
                   {[
-                    {label:"Total aid (annual)",   field:"grant",       note:"Includes health insurance. May include loans you'll repay — loan tracking is coming soon."},
+                    {label:"Total aid (annual)",   field:"grant",       note:"Includes health insurance. May include loans you'll repay — add them on the Loans tab to see what you'll really owe."},
                     {label:"Tuition & fees",            field:"tuitionFees", note:"paid directly to school"},
                     {label:"Health insurance",          field:"healthIns",   note:"school-covered, deducted from grant"},
                     {label:"Housing (monthly)",         field:null,          value:y.monthly.housing||0, note:"per month", isHousing:true},
