@@ -242,6 +242,12 @@
      without growing the visible circle. */
   .infotip-btn { position: relative; appearance: none; -webkit-appearance: none; }
   .infotip-btn::after { content: ""; position: absolute; inset: -14px; }
+  /* Hit-slop for small standalone text/pill actions (e.g. "+ Add category") that
+     must stay visually low-emphasis for density but still meet Apple's 44x44pt
+     minimum. Same transparent-::after technique as .xbtn; ~-11px lifts a ~22px
+     control to a 44px hit box. Use only on standalone buttons, never inline links. */
+  .hit-slop { position: relative; }
+  .hit-slop::after { content: ""; position: absolute; inset: -11px; }
   @media (hover: hover) and (pointer: fine) {
     .xbtn:hover:not(:disabled) { background: var(--input-bg); color: var(--text); transform: scale(1.08); }
     .xbtn-danger:hover:not(:disabled) { color: var(--xbtn-danger, currentColor); }

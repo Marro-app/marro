@@ -103,9 +103,9 @@ html:has(.lp)::-webkit-scrollbar-thumb:hover{background:rgba(246,239,221,.45)}
    Motion's scroll-linked .lp-glow-drift is active (data-motion on
    .lp-drift), that one drives opacity instead — hide this one so the two
    don't stack and double the glow intensity. */
-.lp-stagewrap::before{content:'';position:absolute;inset:-22%;border-radius:50%;background:radial-gradient(circle, rgba(221,165,40,.09) 0%, rgba(221,165,40,.03) 42%, transparent 65%);z-index:-1}
+.lp-stagewrap::before{content:'';position:absolute;inset:-26%;border-radius:50%;background:radial-gradient(circle, rgba(221,165,40,.13) 0%, rgba(221,165,40,.05) 44%, transparent 68%);z-index:-1}
 .lp-stagewrap:has(.lp-drift[data-motion])::before{display:none}
-.lp-glow-drift{position:absolute;inset:-22%;border-radius:50%;z-index:-1;pointer-events:none;background:radial-gradient(circle, rgba(221,165,40,.09) 0%, rgba(221,165,40,.03) 42%, transparent 65%)}
+.lp-glow-drift{position:absolute;inset:-26%;border-radius:50%;z-index:-1;pointer-events:none;background:radial-gradient(circle, rgba(221,165,40,.13) 0%, rgba(221,165,40,.05) 44%, transparent 68%)}
 /* Feature 7 (calm pacing arc): scene-scoped glow tone. Lives as its own
    layer (not touching .lp-glow-drift, which Motion writes `opacity` on
    directly via a MotionValue — a CSS opacity rule on that same element would
@@ -271,6 +271,23 @@ html:has(.lp)::-webkit-scrollbar-thumb:hover{background:rgba(246,239,221,.45)}
 .lp-pt .lp-cta,.lp-static-main .lp-cta{margin-top:28px;display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}
 .lp-static-main .lp-cta{justify-content:center}
 .lp-pt .lp-note,.lp-static-main .lp-note{font-size:14px;font-weight:600;color:var(--lp-gold)}
+
+/* Hero first-paint entrance (desktop theater scene 1 only). Each headline word
+   rises + fades in, staggered 70ms, then body + CTA follow. Crisp ease-out
+   (their approved --lp-ease curve), all under 300ms per word, transform+opacity
+   only (GPU) — matches MOTION_SYSTEM rules. Landing is an intentional brand
+   moment (the "no page-load choreography" rule governs in-app UI, not the
+   marketing hero). Reduced-motion never reaches here, but guarded anyway. */
+.lp-hero-h1{margin:0}
+.lp-hw{display:inline-block;animation:lpHeroWord .6s var(--lp-ease) both;animation-delay:calc(var(--lp-hw-i) * 70ms + 120ms)}
+.lp-hero-in{animation:lpHeroFade .7s var(--lp-ease) both}
+.lp-pt .lp-body.lp-hero-in{animation-delay:560ms}
+.lp-pt .lp-cta.lp-hero-in{animation-delay:660ms}
+@keyframes lpHeroWord{from{opacity:0;transform:translateY(0.5em)}to{opacity:1;transform:translateY(0)}}
+@keyframes lpHeroFade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@media (prefers-reduced-motion:reduce){
+  .lp-hw,.lp-hero-in{animation:none}
+}
 .lp-cta-signin{background:none;border:none;font:inherit;font-size:13.5px;color:var(--lp-cream63);padding:8px 0;min-height:44px;display:inline-flex;align-items:center;cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--lp-border)}
 .lp-cta-signin:hover{color:var(--lp-cream)}
 .lp-cta-signin:focus-visible{outline:2px solid var(--lp-cream);outline-offset:3px;border-radius:4px}

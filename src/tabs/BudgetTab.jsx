@@ -153,7 +153,7 @@ export function BudgetTab(){
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:13,fontWeight:700}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <span>Total</span>
-<button className="btn-pop" onClick={()=>setShowAddCat(true)} style={{padding:"3px 10px",borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",fontSize:11,color:C.gray,fontWeight:500,display:"flex",alignItems:"center",gap:4}}>
+<button className="btn-pop hit-slop" onClick={()=>setShowAddCat(true)} style={{padding:"3px 10px",borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",fontSize:11,color:C.gray,fontWeight:500,display:"flex",alignItems:"center",gap:4}}>
                   <span style={{fontSize:13,lineHeight:1}}>+</span> Add category
                 </button>
               </div>

@@ -102,15 +102,37 @@ function GetStarted({ GetStartedCTA }){
   );
 }
 
+// Hero headline (scene 1) rendered as staggered word spans for the desktop
+// theater's first-paint entrance (each word rises + fades in, 70ms apart, on
+// their approved ease-out). Used ONLY here in the visible fixed layer — the SR
+// article and the reduced-motion StaticDocument keep the plain {HEAD.s1} so the
+// motion is purely decorative and never affects the accessible trees. The
+// theater itself never renders under prefers-reduced-motion (LandingPage.jsx
+// routes to StaticLanding), and .lp-hw animation is additionally CSS-guarded off
+// under reduce. Words match HEAD.s1 verbatim — copy is not reworded.
+const S1_WORDS = ['Your', 'aid', 'package,', 'turned', 'into'];
+function HeroHeadline(){
+  return (
+    <h1 className="lp-hero-h1">
+      {S1_WORDS.map((w, i) => (
+        <React.Fragment key={i}>
+          <span className="lp-hw" style={{ '--lp-hw-i': i }}>{w}</span>{' '}
+        </React.Fragment>
+      ))}
+      <em className="lp-serif lp-acc lp-hw" style={{ '--lp-hw-i': S1_WORDS.length }}>a plan.</em>
+    </h1>
+  );
+}
+
 // ============ 1. FIXED-BAND LAYER CONTENT (visible, interactive) ============
 // One entry per scene index (0-7). `scene` drives the s4 loglist choreography.
 export function FixedLayerContent({ index, scene, GetStartedCTA }){
   switch(index){
     case 0: return (
       <>
-        <h1>{HEAD.s1}</h1>
-        <p className="lp-body">{BODY.s1}</p>
-        <div className="lp-cta">
+        <HeroHeadline />
+        <p className="lp-body lp-hero-in">{BODY.s1}</p>
+        <div className="lp-cta lp-hero-in">
           <GetStartedCTA note="Free for medical students." />
         </div>
       </>

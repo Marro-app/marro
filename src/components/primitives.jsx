@@ -147,7 +147,7 @@ export const Banner = ({children, type="info", onClose}) => {
   return (
     <div style={{background:s.bg, border:`1px solid ${s.border}`, borderRadius:8, padding:"10px 14px", marginBottom:10, fontSize:12, color:s.color, display:"flex", gap:10, alignItems:"flex-start", backdropFilter:"blur(20px)", WebkitBackdropFilter:"blur(20px)"}}>
       <div style={{flex:1, lineHeight:1.6}}>{children}</div>
-      {onClose && <button className="txt-act" aria-label="Dismiss" onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",fontSize:18,color:s.color,lineHeight:1,padding:0,flexShrink:0,opacity:0.7}}><Icon name="close" size={13}/></button>}
+      {onClose && <button className="xbtn" aria-label="Dismiss" onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",color:s.color,lineHeight:1,padding:0,flexShrink:0,opacity:0.7,display:"inline-flex",alignItems:"center",justifyContent:"center",width:28,height:28}}><Icon name="close" size={13}/></button>}
     </div>
   );
 };
@@ -317,8 +317,8 @@ export const MetricTile = ({label, value, sub, color, onClick, role, ariaLive}) 
   }}>
     <div style={{position:"absolute",left:"8%",right:"8%",top:0,height:1,background:"linear-gradient(90deg,transparent,rgba(255,255,255,0.40),transparent)",pointerEvents:"none"}}/>
     <div style={{fontSize:10,color:C.gray,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}}>{label}</div>
-    <div style={{fontSize:21,fontWeight:700,color:color||C.text,letterSpacing:"-0.02em",fontFamily:"'Newsreader',Georgia,serif"}}>{value}</div>
-    {sub && <div style={{fontSize:11,color:C.gray,marginTop:3}}>{sub}</div>}
+    <div style={{fontSize:24,fontWeight:700,color:color||C.text,letterSpacing:"-0.02em",lineHeight:1.15,fontFamily:"'Newsreader',Georgia,serif",fontVariantNumeric:"tabular-nums lining-nums"}}>{value}</div>
+    {sub && <div style={{fontSize:11,color:C.gray,marginTop:4}}>{sub}</div>}
   </div>
 );
 
