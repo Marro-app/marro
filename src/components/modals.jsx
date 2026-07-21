@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { C } from '../lib/theme.js';
-import { fmt, fmtA, fmtD, fmtDay, fmtWeekLabel, daysUntil, subMonthlyTotal, todayStr } from '../lib/format.js';
+import { fmt, fmtA, fmtD, fmtDay, fmtWeekLabel, daysUntil, subMonthlyTotal, todayStr, sanitizeMoneyInput, MAX_QUICK_ADD_AMOUNT } from '../lib/format.js';
 import { conflictLabel, fmtConflictVal, MONEY_KEYS } from '../lib/data.js';
 import { Icon, BrandIcon } from './icons.jsx';
 import { Pill, Card, Modal, Banner } from './primitives.jsx';
@@ -80,6 +80,12 @@ export function QuickAddModal({onClose}) {
   const [date, setDate]   = useState(todayStr());
   const [note, setNote]   = useState("");
   const [notice, setNotice] = useState(null);
+  const [amtCapped, setAmtCapped] = useState(false);
+  const onAmtChange = v => {
+    const n = Number(v);
+    setAmtCapped(v!=="" && isFinite(n) && n>MAX_QUICK_ADD_AMOUNT);
+    setAmt(sanitizeMoneyInput(v, MAX_QUICK_ADD_AMOUNT));
+  };
   const canSave = catId && parseFloat(amt)>0;
   const save = () => {
     if(!canSave) return;
@@ -104,8 +110,9 @@ export function QuickAddModal({onClose}) {
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           <div>
             <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Amount ($)</div>
-            <input type="number" placeholder="0.00" value={amt} onChange={e=>setAmt(e.target.value)} aria-label="Amount"
+            <input type="number" min="0" placeholder="0.00" value={amt} onChange={e=>onAmtChange(e.target.value)} aria-label="Amount"
               style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
+            {amtCapped && <div style={{fontSize:10.5,color:C.gray,marginTop:3}}>Capped at {fmt(MAX_QUICK_ADD_AMOUNT)}.</div>}
           </div>
           <div>
             <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Date</div>

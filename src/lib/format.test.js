@@ -3,7 +3,32 @@ import {
   fmt, fmtS, fmtD, fmtA, fmtSA, moTotal, subMonthlyTotal,
   generateYearConfigs, yr2, blankYearFields, BLANK_MONTHLY,
   getMonday, getSunday, fmtWeekLabel, daysUntil, getYearMonthStr, todayStr,
+  sanitizeMoneyInput, MAX_QUICK_ADD_AMOUNT,
 } from './format.js';
+
+// ── Money input clamping ────────────────────────────────────────────────────
+describe('sanitizeMoneyInput', () => {
+  it('strips a leading minus so a value can never go negative', () => {
+    expect(sanitizeMoneyInput('-500')).toBe('500');
+    expect(sanitizeMoneyInput('--50')).toBe('50');
+  });
+  it('leaves a lone "-" or an in-progress decimal untouched (mid-type)', () => {
+    expect(sanitizeMoneyInput('-')).toBe('');
+    expect(sanitizeMoneyInput('12.')).toBe('12.');
+  });
+  it('passes non-negative values through unchanged when under max', () => {
+    expect(sanitizeMoneyInput('1200')).toBe('1200');
+    expect(sanitizeMoneyInput('0')).toBe('0');
+    expect(sanitizeMoneyInput('')).toBe('');
+  });
+  it('clamps down to max once the value parses to a real number over it', () => {
+    expect(sanitizeMoneyInput('999999999', MAX_QUICK_ADD_AMOUNT)).toBe(String(MAX_QUICK_ADD_AMOUNT));
+    expect(sanitizeMoneyInput('999999', MAX_QUICK_ADD_AMOUNT)).toBe('999999');
+  });
+  it('has no max by default', () => {
+    expect(sanitizeMoneyInput('123456789')).toBe('123456789');
+  });
+});
 
 // ── Money formatting ─────────────────────────────────────────────────────────
 describe('fmt (whole-dollar, absolute)', () => {

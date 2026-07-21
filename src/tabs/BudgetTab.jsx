@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { C, CHART_COLORS, tipProps } from '../lib/theme.js';
-import { fmt, fmtS, MONTH_NAMES, MONTH_FULL } from '../lib/format.js';
+import { fmt, fmtS, MONTH_NAMES, MONTH_FULL, sanitizeMoneyInput } from '../lib/format.js';
 import { USMLE_STEP_FEE_ESTIMATE } from '../lib/constants.js';
 import { Card, SectionTitle, Divider, InfoTip, Pill, XBtn, Modal } from '../components/primitives.jsx';
 import { Icon, CatIcon, CatIconPicker } from '../components/icons.jsx';
@@ -31,6 +31,10 @@ export function BudgetTab(){
   const [barHover, setBarHover] = useState(null);
   const barDim = i => barHover!=null && barHover!==i ? 0.35 : 1;
   const barMove = s => setBarHover(s && s.isTooltipActive && s.activeTooltipIndex!=null ? s.activeTooltipIndex : null);
+  // Visible, reorderable categories for this month — shared by the plan list
+  // and its drag/keyboard reorder logic (both mouse-drag drop targets and
+  // ArrowUp/ArrowDown need the same ordered, filtered list).
+  const reorderableCats = cats.filter(c=>!c.locked && !disabledCats.includes(c.id));
 
   // Plan vs actual — the one chart Phase 1 keeps on Home (ported from the hidden Charts tab)
   const budgetVsActual = MONTH_NAMES.map((m,mi)=>{
@@ -94,19 +98,35 @@ export function BudgetTab(){
               <div style={{fontWeight:700,fontSize:14,color:C.text}}>{fmt(yr.monthly.housing||0)}<span style={{fontSize:11,fontWeight:400,color:C.gray}}>/mo</span></div>
             </div>
 
-            {cats.filter(c=>!c.locked && !disabledCats.includes(c.id)).map((cat,i)=>{
+            {reorderableCats.map((cat,i)=>{
               const isAuto = cat.autoCalc===true;
               const isDisabled = disabledCats.includes(cat.id);
               const amt = isDisabled ? 0 : getMonthVal(cat.id);
               const pct = moSpend>0?Math.round(amt/moSpend*100):0;
+              const moveCat = dir => {
+                const idx = reorderableCats.findIndex(c=>c.id===cat.id);
+                const target = reorderableCats[idx+dir];
+                if(target) reorderCats(cat.id, target.id);
+              };
               return (
-                <div key={cat.id} draggable={!isAuto}
-                  onDragStart={()=>setDragCat(cat.id)}
-                  onDragEnd={()=>{setDragCat(null);setDragOverCat(null);}}
+                <div key={cat.id}
                   onDragOver={e=>{e.preventDefault();if(dragCat&&dragCat!==cat.id)setDragOverCat(cat.id);}}
                   onDrop={e=>{e.preventDefault();if(dragCat)reorderCats(dragCat,cat.id);setDragCat(null);setDragOverCat(null);}}
-                  style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`,opacity:dragCat===cat.id?0.4:1,borderTop:dragOverCat===cat.id?`2px solid ${C.sel}`:"2px solid transparent",cursor:isAuto?"default":"grab",background:dragOverCat===cat.id?C.bgDark:"transparent"}}>
-                  {!isAuto && <span style={{color:C.gray,fontSize:12,cursor:"grab",userSelect:"none"}} title="Drag to reorder">⠿</span>}
+                  style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`,opacity:dragCat===cat.id?0.4:1,borderTop:dragOverCat===cat.id?`2px solid ${C.sel}`:"2px solid transparent",background:dragOverCat===cat.id?C.bgDark:"transparent"}}>
+                  {!isAuto && (
+                    <button type="button" className="xbtn" draggable
+                      onDragStart={()=>setDragCat(cat.id)}
+                      onDragEnd={()=>{setDragCat(null);setDragOverCat(null);}}
+                      onKeyDown={e=>{
+                        if(e.key==="ArrowUp"){e.preventDefault();moveCat(-1);}
+                        else if(e.key==="ArrowDown"){e.preventDefault();moveCat(1);}
+                      }}
+                      aria-label={`Reorder ${cat.label}: use arrow keys`}
+                      title="Drag to reorder, or use arrow keys"
+                      style={{width:24,height:24,borderRadius:6,border:"none",background:"transparent",color:C.gray,fontSize:12,cursor:"grab",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,padding:0}}>
+                      <span aria-hidden="true">⠿</span>
+                    </button>
+                  )}
                   <CatIcon name={cat.icon||cat.id} color={CHART_COLORS[i%CHART_COLORS.length]}/>
                   <div style={{flex:1,minWidth:0}}>
                     <span style={{fontSize:13,color:C.text}}>{cat.id==="subs"?"Fixed monthly costs":cat.label}</span>
@@ -119,7 +139,7 @@ export function BudgetTab(){
                   </div>
                   {isAuto
                     ? <span style={{fontSize:13,fontWeight:600,color:C.blue,minWidth:72,textAlign:"right"}}>{fmt(amt)}<span style={{fontSize:10,color:C.gray,fontWeight:400}}> auto</span></span>
-                    : <input type="number" value={getMonthVal(cat.id)} onChange={e=>setMo(ay,cat.id,e.target.value)}
+                    : <input type="number" min="0" value={getMonthVal(cat.id)} onChange={e=>setMo(ay,cat.id,sanitizeMoneyInput(e.target.value))}
                         aria-label={`Monthly budget for ${cat.label}`}
                         style={{width:80,textAlign:"right",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",background:C.bg,color:C.text,fontWeight:600}}/>
                   }

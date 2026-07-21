@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { C } from '../lib/theme.js';
-import { fmt, todayStr } from '../lib/format.js';
+import { fmt, todayStr, sanitizeMoneyInput } from '../lib/format.js';
 import { Card, SectionTitle, XBtn, Banner, EmptyState, ChoiceGroup, InfoTip } from '../components/primitives.jsx';
 import { DateField } from '../components/pickers.jsx';
 import { useApp } from '../context/AppContext.js';
@@ -96,7 +96,7 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
   const patch = (fn) => { const d = JSON.parse(JSON.stringify(data)); const l = d.loans[idx]; fn(l, d); upd(d); };
 
   const setAnnual = (v) => {
-    const total = Number(v) || 0;
+    const total = Math.max(0, Number(v) || 0);
     patch((l) => {
       const n = Math.max(1, (l.disbursements || []).length || 2);
       const amounts = splitEvenly(total, n);
@@ -192,7 +192,7 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
             <label style={labelStyle} htmlFor={`ln-amt-${loan.id}`}>Amount you borrowed that year — <strong style={{ color: C.text }}>the original amount, not today’s balance</strong></label>
             <input id={`ln-amt-${loan.id}`} type="number" min="0" value={annualTotal || ''} placeholder="$0"
               aria-label="Amount you borrowed that year — the original amount, not today's balance"
-              onChange={(e) => setAnnual(e.target.value)} style={inputStyle({ width: 160 })} />
+              onChange={(e) => setAnnual(sanitizeMoneyInput(e.target.value))} style={inputStyle({ width: 160 })} />
           </div>
           <div style={{ fontSize: 11, color: C.gray, marginBottom: 10, lineHeight: 1.5 }}>
             Don’t have your numbers? Log into studentaid.gov → Dashboard → click a loan for its exact amounts, dates, and rate. Private loans: check your lender’s site.
@@ -203,7 +203,7 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
             {(loan.disbursements || []).map((d, i) => (
               <div key={d.id} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <input type="number" min="0" value={d.amount || ''} aria-label={`Part ${i + 1} amount`}
-                  onChange={(e) => patch((l) => { l.disbursements[i].amount = Number(e.target.value) || 0; })}
+                  onChange={(e) => patch((l) => { l.disbursements[i].amount = Number(sanitizeMoneyInput(e.target.value)) || 0; })}
                   style={inputStyle({ width: 100 })} />
                 <DateField value={d.date || ''} ariaLabel={`Part ${i + 1} — about when the money arrives`}
                   onChange={(v) => patch((l) => { l.disbursements[i].date = v; l.disbursements[i].dateConfirmed = true; })}
@@ -224,7 +224,7 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
           <div style={{ flex: '1 1 140px' }}>
             <label style={labelStyle} htmlFor={`ln-asof-bal-${loan.id}`}>Balance as of the date below</label>
             <input id={`ln-asof-bal-${loan.id}`} type="number" min="0" value={loan.asOfBalance || ''} aria-label="Balance as of the date below"
-              onChange={(e) => patch((l) => { l.asOfBalance = Number(e.target.value) || 0; })} style={inputStyle({ width: '100%' })} />
+              onChange={(e) => patch((l) => { l.asOfBalance = Number(sanitizeMoneyInput(e.target.value)) || 0; })} style={inputStyle({ width: '100%' })} />
           </div>
           <div style={{ flex: '1 1 120px' }}>
             <span style={labelStyle}>As of</span>
@@ -348,14 +348,14 @@ function BalanceCheckin({ data, upd }) {
           <label style={labelStyle} htmlFor="bal-spendable">Available to spend</label>
           <input id="bal-spendable" type="number" min="0" value={spendable} placeholder="$0" required
             aria-label="Available to spend, across all accounts you spend from"
-            onChange={(e) => { setSpendable(e.target.value); setConfirming(false); }}
+            onChange={(e) => { setSpendable(sanitizeMoneyInput(e.target.value)); setConfirming(false); }}
             style={inputStyle({ width: 130 })} />
         </div>
         <div>
           <label style={labelStyle} htmlFor="bal-savings">Set aside in savings (optional)</label>
           <input id="bal-savings" type="number" min="0" value={savings} placeholder="$0"
             aria-label="Set aside in savings, optional"
-            onChange={(e) => setSavings(e.target.value)} style={inputStyle({ width: 130 })} />
+            onChange={(e) => setSavings(sanitizeMoneyInput(e.target.value))} style={inputStyle({ width: 130 })} />
         </div>
         <button type="submit" className="btn-pop" style={{ padding: '8px 18px', minHeight: 36, borderRadius: 8, border: `1px solid ${C.teal}`, background: C.teal, color: C.bg, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
           Save

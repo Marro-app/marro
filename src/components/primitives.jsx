@@ -222,15 +222,25 @@ const modalStack = [];
 // unaffected (dismissible defaults to true = current behavior).
 export const Modal = ({title, onClose, children, width=440, panelClassName="mm", scrimBg, dismissible=true}) => {
   const panelRef = React.useRef(null);
+  // Captured via a lazy useState initializer, which runs synchronously during
+  // THIS render — i.e. before commit, before React applies any child's
+  // `autoFocus`. Capturing it in the mount effect below instead (as before)
+  // ran too late: autoFocus had already moved focus onto e.g. a <select> by
+  // the time the effect fired, so "restore focus on close" restored focus to
+  // the modal's own field instead of the trigger that opened it, dropping
+  // focus to <body> on close.
+  const [prevFocus] = useState(() => document.activeElement);
   useEffect(()=>{
     const token = {};
     modalStack.push(token);
     const isTopmost = () => modalStack[modalStack.length - 1] === token;
 
     const panel = panelRef.current;
-    const prevFocus = document.activeElement;
     const focusables = () => panel ? [...panel.querySelectorAll('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])')].filter(el=>!el.disabled) : [];
-    (focusables()[0] || panel)?.focus();
+    // Only force focus onto the first focusable (or the panel) if nothing
+    // inside the panel already has it — an autoFocus field (e.g. Quick Add's
+    // category select) should win, not get stomped by this app-wide default.
+    if(!panel || !panel.contains(document.activeElement)) (focusables()[0] || panel)?.focus();
     const onKey = (e) => {
       if(!isTopmost()) return; // a nested modal is open on top of this one — let IT handle the key
       if(e.key==="Escape"){ e.stopPropagation(); if(!dismissible) return; onClose && onClose(); } // topmost modal owns Escape even when non-dismissible (swallow, don't leak)
