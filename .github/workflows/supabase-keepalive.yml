@@ -1,0 +1,71 @@
+# ───────────────────────────────────────────────────────────────────────────
+# Supabase keepalive — $0 STOPGAP, remove once the project is on Supabase Pro
+# ───────────────────────────────────────────────────────────────────────────
+# WHY THIS EXISTS
+#   Marro's Supabase project (free tier, ref rjowpekykqlounnaegwn) auto-pauses
+#   after 7 days with no activity. It has already paused once in production,
+#   which kills auth + all user data for the live app at joinmarro.com. This
+#   workflow makes a real REST request against the project on a schedule so
+#   Supabase always sees recent activity and never reaches the 7-day pause
+#   window.
+#
+# THIS IS A BAND-AID, NOT A FIX
+#   - It can fail silently: GitHub Actions doesn't email on scheduled-run
+#     failures the way it does for other triggers in every configuration —
+#     check the Actions tab periodically (or watch this workflow) to confirm
+#     it's still green.
+#   - GitHub disables scheduled workflows automatically after 60 days with no
+#     repository activity at all — an idle repo can un-arm this without warning.
+#   - GitHub's scheduled triggers are best-effort and can be delayed, which is
+#     why this runs every 3 days (well under the 7-day pause window) for margin.
+#   - REMOVE this workflow once the founders upgrade the project to Supabase
+#     Pro (Pro projects don't auto-pause) — it will no longer be needed.
+#
+# WHAT IT PINGS
+#   A lightweight GET against the `allowed_emails` table via PostgREST. RLS
+#   denies read access to the anon/publishable key (see supabase/allowed_emails.sql),
+#   so the response body is always an empty array — that's expected and fine.
+#   The query still executes against the database, which is what counts as
+#   activity for the pause timer. What matters here is the HTTP status: a 200
+#   means the request reached and was processed by the project.
+#
+# CREDENTIALS
+#   SUPABASE_URL and SUPABASE_ANON_KEY below are the same publishable values
+#   already hardcoded client-side in src/lib/data.js and shipped in every
+#   browser bundle — they are NOT secrets (security is enforced by RLS, not by
+#   key secrecy; see CLAUDE.md rule 4). Do not put the service-role key here.
+
+name: Supabase Keepalive
+
+on:
+  schedule:
+    # Every 3 days at 06:00 UTC. Comfortably inside the 7-day pause window,
+    # leaving margin for GitHub's scheduled-trigger delays.
+    - cron: "0 6 */3 * *"
+  workflow_dispatch: {}
+
+env:
+  # Publishable (anon) key — public by design, safe to commit. See comment above.
+  SUPABASE_URL: https://rjowpekykqlounnaegwn.supabase.co
+  SUPABASE_ANON_KEY: sb_publishable_Kp89EOIm88PDospinCz-eA_wDs09kjq
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API to reset the inactivity/pause timer
+        run: |
+          status=$(curl -s -o /tmp/keepalive_response.json -w "%{http_code}" \
+            "$SUPABASE_URL/rest/v1/allowed_emails?select=email&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY")
+
+          echo "HTTP status: $status"
+          cat /tmp/keepalive_response.json
+
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "::error::Supabase keepalive ping failed with HTTP $status — project may be paused or unreachable. Check the Supabase dashboard."
+            exit 1
+          fi
+
+          echo "Keepalive ping succeeded (HTTP $status)."
