@@ -64,45 +64,45 @@ let markedSessionDecided = false;
 // `cushionSource` ("loan"|"own"|"mixed"|undefined, from `classifyCushionSource`)
 // only matters for the `growing` state — every other state is unaffected.
 // Founder decision: a "growing" balance built from unspent LOAN money isn't
-// real savings (it's borrowed cash sitting at ~8% interest), so that case
+// real savings (it's borrowed cash sitting at about 8% interest), so that case
 // must NOT read as "Growing ✓" the way genuine non-loan income does.
 function runwayTileDisplay(runway, cushionSource) {
   switch (runway.state) {
     case 'unanchored':
-      return { value: '—', sub: 'add your balance', color: C.gray };
+      return { value: '—', sub: 'add your balance to see this', color: C.gray };
     case 'growing':
-      if (cushionSource === 'own') return { value: 'Building a cushion ✓', sub: 'spending less than you bring in', color: C.green };
+      if (cushionSource === 'own') return { value: 'Saving more than you spend ✓', sub: 'your balance grows a little each month', color: C.green };
       return { value: 'Extra loan money', sub: 'you may be able to return some — see your Loans tab', color: C.blue };
     case 'through_graduation': {
       const sub = runway.savings > 0
-        ? <>lasts through graduation<div style={{ marginTop: 2 }}>+{fmt(runway.savings)} set aside in savings</div></>
-        : 'lasts through graduation';
+        ? <>your money lasts through graduation<div style={{ marginTop: 2 }}>plus {fmt(runway.savings)} in savings</div></>
+        : 'your money lasts through graduation';
       return { value: 'On track ✓', sub, color: C.green };
     }
     case 'overdrawn':
       return {
         value: '$0', color: C.amber, alert: true,
-        sub: runway.coveredBySavings ? 'overdrawn — your savings covers it' : 'overdrawn — no savings cushion yet',
+        sub: runway.coveredBySavings ? 'overdrawn — your savings covers it' : 'overdrawn — no savings to fall back on yet',
       };
     case 'gap': {
       const sub = <>
-        <span>⚠ {runway.gapDays}d before your ~{fmtDay(runway.nextRefund.date)} refund</span>
-        <div style={{ marginTop: 2 }}>trim ~{fmt(runway.trimPerMonthToClose)}/mo closes it</div>
-        {runway.savings > 0 && <div style={{ marginTop: 2 }}>+{fmt(runway.savings)} set aside in savings if needed</div>}
+        <span>⚠ you run out {runway.gapDays} days before your next refund (around {fmtDay(runway.nextRefund.date)})</span>
+        <div style={{ marginTop: 2 }}>cutting about {fmt(runway.trimPerMonthToClose)}/mo would close the gap</div>
+        {runway.savings > 0 && <div style={{ marginTop: 2 }}>plus {fmt(runway.savings)} in savings if you need it</div>}
       </>;
       return { value: fmt(runway.spendable), sub, color: C.amber, alert: true };
     }
     case 'counting_down': {
       if (runway.basicallyOnTrack) return { value: fmt(runway.spendable), sub: "you're basically on track ✓", color: C.green };
       const sub = runway.savings > 0
-        ? <>how long your money lasts — until ~{fmtDay(runway.runOutDate)}<div style={{ marginTop: 2 }}>+{fmt(runway.savings)} set aside in savings</div></>
-        : <>how long your money lasts — until ~{fmtDay(runway.runOutDate)}</>;
+        ? <>your money lasts until around {fmtDay(runway.runOutDate)}<div style={{ marginTop: 2 }}>plus {fmt(runway.savings)} in savings</div></>
+        : <>your money lasts until around {fmtDay(runway.runOutDate)}</>;
       return { value: fmt(runway.spendable), sub, color: C.text };
     }
     case 'graduated':
       return { value: '—', sub: 'all done — congrats!', color: C.teal };
     default:
-      return { value: '—', sub: 'add your balance', color: C.gray };
+      return { value: '—', sub: 'add your balance to see this', color: C.gray };
   }
 }
 
@@ -947,7 +947,7 @@ export function App() {
     const recs = [];
     const yrData = data.years.find(y=>y.id===ay)||data.years[0];
     if(!(yrData.monthly.savings||0)) recs.push(`Consider building an emergency fund (goal: ${fmt(moSpend*3)})`);
-    if(!(yrData.monthly.exams||0)) recs.push(`Set aside ${fmt(surplus)} for USMLE Step exams (~${fmt(USMLE_STEP_FEE_ESTIMATE)} each)`);
+    if(!(yrData.monthly.exams||0)) recs.push(`Set aside ${fmt(surplus)} for USMLE Step exams (about ${fmt(USMLE_STEP_FEE_ESTIMATE)} each)`);
     if(subsMo < 50) recs.push(`Consider adding a study resource (UWorld, Amboss) for ${fmt(surplus)}/mo`);
     recs.push(`Add it to savings — even ${fmt(surplus)}/mo compounds significantly over your training`);
     return recs[0];
@@ -1003,11 +1003,21 @@ export function App() {
       {showQuickAdd && <QuickAddModal onClose={()=>setShowQuickAdd(false)}/>}
       {showCategories && <Modal title="Categories" onClose={()=>{setShowCategories(false);refocusSettingsBtn();}} width={480}><React.Suspense fallback={<div role="status" aria-live="polite" style={{padding:24,textAlign:"center",color:"var(--text-dim)",fontSize:14}}>Loading…</div>}><CustomizeTab/></React.Suspense></Modal>}
       {renewDlg && <RenewalDialog sub={renewDlg} onClose={()=>setRenewDlg(null)} onConfirm={handleRenewal}/>}
-      {confirmReset && <Modal title="Reset everything?" onClose={()=>setConfirmReset(false)} width={350}>
-        <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>This replaces <strong>all</strong> of your budget, weekly entries, savings, and subscriptions with the starting defaults. This cannot be undone.</div>
+      {confirmReset && <Modal title="Reset your financial data?" onClose={()=>setConfirmReset(false)} width={350}>
+        <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>This clears your budget, weekly entries, savings, subscriptions, loans, and account balances, and starts you fresh with the default setup. It keeps your name and photo. This cannot be undone.</div>
         <div style={{display:"flex",gap:8}}>
           <button className="btn-fill" onClick={()=>setConfirmReset(false)} style={{flex:1.4,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.creamSoft,color:C.text,cursor:"pointer"}}>Cancel</button>
-          <button className="btn-fill" onClick={()=>{upd(JSON.parse(JSON.stringify(DEFAULT_STATE)));setConfirmReset(false);}} style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:`1px solid ${C.dangerMid}`,borderRadius:8,background:C.dangerLight,color:C.danger,cursor:"pointer"}}>Reset everything</button>
+          <button className="btn-fill" onClick={()=>{
+            // Founder decision: wipe all FINANCIAL data but keep who the user is.
+            // Start from defaults, then restore identity/preference fields and pin
+            // setupVersion to the current SETUP_VERSION so onboarding does NOT re-trigger.
+            const fresh=JSON.parse(JSON.stringify(DEFAULT_STATE));
+            fresh.preferredName=data.preferredName;
+            fresh.avatar=data.avatar;
+            fresh.darkMode=data.darkMode;
+            fresh.setupVersion=SETUP_VERSION;
+            upd(fresh);setConfirmReset(false);
+          }} style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:`1px solid ${C.dangerMid}`,borderRadius:8,background:C.dangerLight,color:C.danger,cursor:"pointer"}}>Reset data</button>
         </div>
       </Modal>}
       {confirmDeleteAccount && <Modal title="Delete your account?" onClose={()=>{if(!deletingAccount)setConfirmDeleteAccount(false);}} width={380}>
@@ -1323,7 +1333,7 @@ export function App() {
         }}>
           {data.years.map(y=><YrBtn key={y.id} yr={y} active={ay===y.id} onClick={()=>setAy(y.id)}/>)}
         </ChoiceGroup>
-        <span style={{fontSize:11,color:C.gray,whiteSpace:"nowrap"}}>{yrRangeLabel(data.years.find(y=>y.id===ay))}</span>
+        {(()=>{const r=yrRangeLabel(data.years.find(y=>y.id===ay));return r?<span style={{fontSize:11,color:C.gray}}>Selected year runs {r}</span>:null;})()}
       </div>
 
       {/* ── Top metrics — Runway & Debt go live behind featureFlags.SHOW_PHASE2_TILES
