@@ -326,6 +326,14 @@ export function App() {
         if(loaded.stepGoals && !loaded.stepGoals.find(g=>g.id==="step3")) loaded.stepGoals.push({id:"step3",label:"Step 3",targetAmount:1000,targetDate:"2031-06-01",saved:0,monthlyContribution:0});
         if(!loaded.savingsGoals) loaded.savingsGoals=[];
         if(!loaded.savingsLog) loaded.savingsLog=[];
+        // Backfill the remaining top-level array fields so they are ALWAYS arrays,
+        // not just guarded at each read. A saved blob predating any of these fields
+        // (e.g. loans, added later) would otherwise leave them undefined — the exact
+        // shape that crashed the Loans tab (ReminderBanner read data.loans.length).
+        // Array.isArray also repairs a field corrupted to a non-array value.
+        for(const k of ["loans","balanceReadings","weeklyArchive","currentWeekEntries","subscriptions"]){
+          if(!Array.isArray(loaded[k])) loaded[k]=[];
+        }
         // Defensive: a row missing categories would crash render (cats.forEach) — reseed defaults.
         if(!Array.isArray(loaded.categories) || !loaded.categories.length) loaded.categories = JSON.parse(JSON.stringify(DEFAULT_CATS));
         // Grandfather existing users: a saved state without setupVersion predates
