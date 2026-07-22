@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marro — mockup v2: Growth Rings landing</title>
+<style>
+@font-face{font-family:'Inter';src:url('fonts/inter-var.woff2') format('woff2');font-weight:100 900;font-display:swap}
+@font-face{font-family:'Newsreader';src:url('fonts/newsreader-var.woff2') format('woff2');font-weight:200 800;font-display:swap}
+:root{
+  --bg:#101210; --stage:#14150F; --cream:#F6EFDD; --cream63:rgba(246,239,221,.63);
+  --cream40:rgba(246,239,221,.40); --gold:#DDA528; --blue:#82AEDB;
+  --border:rgba(246,239,221,.12); --glass:rgba(246,239,221,.045);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--cream);font-family:Inter,system-ui,sans-serif;font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+.serif{font-family:Newsreader,Georgia,serif}
+main{position:relative;z-index:1}
+section{padding:120px 24px;max-width:1080px;margin:0 auto}
+
+/* ring armature — rotates almost imperceptibly with scroll */
+#armature{position:fixed;inset:0;z-index:0;pointer-events:none;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#armature svg{width:150vmax;height:150vmax;opacity:.05}
+
+/* nav */
+nav{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:14px 28px;background:rgba(16,18,16,.55);backdrop-filter:blur(20px) saturate(160%);-webkit-backdrop-filter:blur(20px) saturate(160%);border-bottom:1px solid rgba(246,239,221,.06)}
+.navbrand{display:flex;align-items:center;gap:10px;font-family:Newsreader,Georgia,serif;font-weight:600;font-size:21px;letter-spacing:-.5px;text-decoration:none}
+.navbrand .dot{color:var(--gold)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:48px;padding:12px 24px;border-radius:12px;font-size:15px;font-weight:600;font-family:Inter,sans-serif;cursor:pointer;text-decoration:none;transition:transform .15s ease,background .15s ease}
+.btn:focus-visible{outline:2px solid var(--cream);outline-offset:3px}
+.btn:active{transform:scale(.98)}
+.btn-fill{background:var(--cream);color:#14150F;border:none}
+.btn-fill:hover{background:#fff8e6}
+.btn-ghost{background:transparent;color:var(--cream);border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--glass)}
+
+/* hero */
+.hero{min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding-top:96px;background:radial-gradient(ellipse 90% 60% at 50% 30%,#14150F 0%,#101210 75%)}
+.hero-rings{width:132px;height:132px;margin-bottom:36px}
+.hero h1{font-family:Newsreader,Georgia,serif;font-weight:550;font-size:clamp(2.6rem,6.5vw,4.8rem);letter-spacing:-.02em;line-height:1.05;max-width:15ch}
+.hero h1 em{font-style:italic;font-weight:500;padding-bottom:4px;line-height:1.1;display:inline-block}
+.hero p{margin-top:22px;font-size:clamp(1.05rem,2vw,1.25rem);color:var(--cream63);max-width:42ch}
+.hero-cta{margin-top:36px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;justify-content:center}
+
+/* reveal (IntersectionObserver fallback layer) */
+.rv{opacity:0;transform:translateY(28px);transition:opacity .7s cubic-bezier(.16,1,.3,1),transform .7s cubic-bezier(.16,1,.3,1)}
+.rv.in{opacity:1;transform:none}
+
+/* ============ THE TURN — pinned scroll sequence ============ */
+.turn-wrap{position:relative;height:260vh}
+.turn-sticky{position:sticky;top:0;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:96px 24px 48px}
+.turn-stage{position:relative;margin-top:48px;width:min(460px,88vw);aspect-ratio:1.35;display:grid;place-items:center}
+.turn-ring{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.turn-ring circle{stroke-dasharray:1;stroke-dashoffset:1}
+.aidstate,.planstate{grid-area:1/1;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.aidstate .lbl{font-size:14px;color:var(--cream63)}
+.aidstate .fig{font-size:clamp(24px,5vw,34px);font-weight:500;margin-top:8px;letter-spacing:-.01em}
+.planstate{opacity:0}
+.planstate .card{padding:30px 40px;border-radius:22px;background:var(--glass);border:1px solid var(--border);backdrop-filter:blur(30px) saturate(170%);-webkit-backdrop-filter:blur(30px) saturate(170%);box-shadow:0 24px 60px rgba(0,0,0,.35)}
+.planstate .lbl{font-size:13px;color:var(--cream63)}
+.planstate .money{font-family:Newsreader,Georgia,serif;font-size:clamp(38px,7vw,54px);font-weight:550;letter-spacing:-.02em;line-height:1.15}
+.planstate .money span{font-size:20px;color:var(--cream63);font-weight:400}
+.mock-note{margin-top:18px;font-size:12px;color:var(--cream40)}
+
+/* section headers */
+h2{font-family:Newsreader,Georgia,serif;font-weight:550;font-size:clamp(1.9rem,4vw,2.8rem);letter-spacing:-.015em;line-height:1.15;max-width:22ch}
+.sub{margin-top:14px;color:var(--cream63);max-width:52ch;font-size:17px}
+
+/* living cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:24px;margin-top:52px}
+.card{border-radius:22px;background:var(--glass);border:1px solid var(--border);backdrop-filter:blur(30px) saturate(170%);-webkit-backdrop-filter:blur(30px) saturate(170%);padding:28px;box-shadow:0 18px 50px rgba(0,0,0,.3)}
+.card h3{font-size:16px;font-weight:600;margin-bottom:18px}
+.logrow{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid rgba(246,239,221,.07);font-size:14.5px}
+.logrow:last-child{border-bottom:none}
+.logrow .amt{font-family:Newsreader,Georgia,serif;font-size:17px}
+.logrow .cat{color:var(--cream63);font-size:12.5px;margin-top:2px}
+.golddot{width:8px;height:8px;border-radius:50%;background:var(--gold);display:inline-block;margin-right:10px;flex-shrink:0}
+.chartlegend{display:flex;gap:18px;font-size:12.5px;color:var(--cream63);margin-top:14px}
+.chartlegend i{display:inline-block;width:16px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
+#actualline{stroke-dasharray:520;stroke-dashoffset:520}
+
+/* timeline */
+.timeline-wrap{margin-top:56px;overflow-x:auto;padding-bottom:12px;scrollbar-width:thin;scrollbar-color:rgba(246,239,221,.22) transparent}
+.timeline-wrap::-webkit-scrollbar{height:6px}
+.timeline-wrap::-webkit-scrollbar-track{background:transparent}
+.timeline-wrap::-webkit-scrollbar-thumb{background:rgba(246,239,221,.22);border-radius:3px}
+.timeline{min-width:760px;position:relative;height:150px}
+.timeline .track{position:absolute;top:74px;left:0;right:0;height:2px;background:rgba(246,239,221,.18);border-radius:2px;transform-origin:left;transform:scaleX(0);transition:transform 1.1s cubic-bezier(.16,1,.3,1)}
+.timeline.in .track{transform:scaleX(1)}
+.mile{position:absolute;top:0;width:150px;text-align:center;transform:translateX(-50%);opacity:0;transition:opacity .5s ease}
+.timeline.in .mile{opacity:1}
+.timeline.in .mile:nth-child(2){transition-delay:.25s}
+.timeline.in .mile:nth-child(3){transition-delay:.45s}
+.timeline.in .mile:nth-child(4){transition-delay:.65s}
+.timeline.in .mile:nth-child(5){transition-delay:.85s}
+.mile .md{width:14px;height:14px;border-radius:50%;background:var(--gold);margin:67px auto 0;border:3px solid var(--bg)}
+.mile .mt{font-size:13.5px;font-weight:600;margin-top:12px}
+.mile .mc{font-family:Newsreader,Georgia,serif;font-size:15px;color:var(--cream63);margin-top:2px}
+.mile .yr{font-size:12px;color:var(--cream40);position:absolute;top:34px;left:0;right:0}
+
+/* founder */
+.founder{max-width:640px}
+.founder blockquote{font-family:Newsreader,Georgia,serif;font-size:clamp(1.25rem,2.6vw,1.7rem);font-weight:450;line-height:1.5;letter-spacing:-.01em}
+.founder .sig{margin-top:28px;display:flex;align-items:center;gap:14px}
+.founder .sig svg{flex-shrink:0}
+.founder .sig .nm{font-weight:600;font-size:15px}
+.founder .sig .rl{color:var(--cream63);font-size:13.5px}
+
+/* privacy */
+.privacy{text-align:center;display:flex;flex-direction:column;align-items:center}
+.privacy svg{width:88px;height:88px;margin-bottom:28px}
+.privacy .sub{margin-left:auto;margin-right:auto}
+.privacy a{color:var(--cream63)}
+
+/* close */
+.close{min-height:88dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;background:radial-gradient(ellipse 80% 55% at 50% 55%,#14150F 0%,#101210 78%)}
+.close .rings{width:110px;height:110px;margin-bottom:32px}
+.close .core-pop{transform-origin:center;transform-box:fill-box}
+footer{display:flex;align-items:center;justify-content:center;gap:10px;padding:28px;font-size:13px;color:var(--cream40);position:relative;z-index:1;flex-wrap:wrap;text-align:center}
+footer a{color:var(--cream63);text-decoration:none;border-bottom:1px solid var(--border)}
+
+/* comet dash draw on hero rings (load-in) */
+.comet-anim circle{stroke-dasharray:1;stroke-dashoffset:1}
+.comet-anim .r1{animation:draw 1.1s cubic-bezier(.4,0,.2,1) .15s forwards}
+.comet-anim .r2{animation:draw 1.1s cubic-bezier(.4,0,.2,1) .55s forwards}
+.comet-anim .r3{animation:draw 1.1s cubic-bezier(.4,0,.2,1) .95s forwards}
+.comet-anim .core{opacity:0;animation:pop .5s cubic-bezier(.34,1.56,.64,1) 1.9s forwards}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes pop{from{opacity:0;transform:scale(.3)}to{opacity:1;transform:scale(1)}}
+
+/* ====== scroll-driven animation (Chromium/Safari 26+; graceful without) ====== */
+@media (prefers-reduced-motion: no-preference){
+  @supports (animation-timeline: scroll()){
+    /* armature slowly rotates over the whole page */
+    #armature svg{animation:armSpin linear both;animation-timeline:scroll(root)}
+    /* hero rings grow + hand off to armature as you leave the hero */
+    .hero-rings{animation:heroGrow linear both;animation-timeline:scroll(root);animation-range:0 90vh}
+    /* THE TURN: driven by the tall wrapper's progress */
+    .turn-wrap{view-timeline-name:--turn;view-timeline-axis:block}
+    .turn-ring circle{animation:draw2 linear both;animation-timeline:--turn;animation-range:contain 5% contain 45%}
+    .aidstate{animation:aidOut linear both;animation-timeline:--turn;animation-range:contain 40% contain 52%}
+    .planstate{animation:planIn linear both;animation-timeline:--turn;animation-range:contain 54% contain 72%}
+    /* chart line draws as it enters */
+    #actualline{animation:chartDraw linear both;animation-timeline:view();animation-range:entry 30% cover 55%}
+  }
+}
+@keyframes armSpin{to{transform:rotate(28deg)}}
+@keyframes heroGrow{to{transform:scale(2.6);opacity:0}}
+@keyframes draw2{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
+@keyframes aidOut{to{opacity:0;transform:scale(.92)}}
+@keyframes planIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+@keyframes chartDraw{to{stroke-dashoffset:0}}
+
+@media (prefers-reduced-motion:reduce){
+  .rv{opacity:1;transform:none;transition:none}
+  .comet-anim circle{animation:none;stroke-dashoffset:0}
+  .comet-anim .core{animation:none;opacity:1}
+  .turn-wrap{height:auto}
+  .turn-sticky{position:static}
+  .turn-ring circle{stroke-dashoffset:0}
+  .planstate{opacity:1;position:static;margin-top:24px}
+  .aidstate{position:static}
+  .turn-stage{display:flex;flex-direction:column;aspect-ratio:auto;gap:8px}
+  #actualline{stroke-dashoffset:0}
+  .timeline .track{transform:scaleX(1);transition:none}
+  .mile{opacity:1;transition:none}
+}
+/* if scroll-driven animations unsupported (this mockup only): show end states */
+@supports not (animation-timeline: scroll()){
+  .turn-wrap{height:auto}
+  .turn-sticky{position:static}
+  .turn-ring circle{stroke-dashoffset:0}
+  .planstate{opacity:1}
+  .aidstate{opacity:.25}
+  #actualline{stroke-dashoffset:0}
+}
+</style>
+</head>
+<body>
+
+<div id="armature" aria-hidden="true">
+  <svg viewBox="0 0 512 512"><g transform="translate(256,256)" fill="none" stroke="#F6EFDD" stroke-width="10">
+    <circle r="172"/><circle r="118"/><circle r="64" opacity="0.72"/>
+  </g></svg>
+</div>
+
+<nav aria-label="Main">
+  <a class="navbrand" href="#">
+    <svg width="26" height="26" viewBox="0 0 512 512" aria-hidden="true"><g transform="translate(256,256)" fill="none" stroke="#F6EFDD" stroke-width="26"><circle r="172"/><circle r="118"/><circle r="64" opacity="0.72"/><circle r="26" fill="#DDA528" stroke="none"/></g></svg>
+    <span>Marro<span class="dot">.</span></span>
+  </a>
+  <a class="btn btn-ghost" style="min-height:40px;padding:8px 18px" href="#signin">Continue with Google</a>
+</nav>
+
+<main>
+
+<!-- 1 · HERO -->
+<header class="hero">
+  <svg class="hero-rings comet-anim" viewBox="0 0 512 512" aria-hidden="true">
+    <g transform="translate(256,256)" fill="none" stroke="#F6EFDD" stroke-width="20">
+      <circle class="r3" r="172" pathLength="1"/>
+      <circle class="r2" r="118" pathLength="1"/>
+      <circle class="r1" r="64" opacity="0.72" pathLength="1"/>
+      <circle class="core" r="22" fill="#DDA528" stroke="none"/>
+    </g>
+  </svg>
+  <h1>Your aid package, turned into <em>a plan.</em></h1>
+  <p>Enter your aid and school costs once. Marro shows what you actually have to live on, every month.</p>
+  <div class="hero-cta">
+    <a class="btn btn-fill" href="#signin" id="signin">
+      <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.5l6.7-6.7C35.6 2.4 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.8 6.1C12.3 13.2 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.6 5.9c4.4-4.1 7-10.1 7-17.6z"/><path fill="#FBBC05" d="M10.4 28.7a14.5 14.5 0 0 1 0-9.4l-7.8-6.1a24 24 0 0 0 0 21.6l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.5-5.6l-7.6-5.9c-2.1 1.4-4.8 2.3-7.9 2.3-6.3 0-11.7-3.7-13.6-8.9l-7.8 6.1C6.5 42.6 14.6 48 24 48z"/></svg>
+      Continue with Google
+    </a>
+    <span style="font-size:13.5px;color:var(--cream63)">Free for medical students.</span>
+  </div>
+</header>
+
+<!-- 2 · THE TURN (pinned scroll sequence) -->
+<section class="turn-wrap" aria-label="How Marro turns aid into a budget" style="padding:0;max-width:none">
+  <div class="turn-sticky">
+    <div style="max-width:720px">
+      <h2 style="margin:0 auto">Enter it once. See your month.</h2>
+      <p class="sub" style="margin-left:auto;margin-right:auto">Type in your aid and school costs. Marro does the math and hands you one number: what you have to live on each month.</p>
+    </div>
+    <div class="turn-stage">
+      <svg class="turn-ring" viewBox="0 0 460 340" aria-hidden="true">
+        <ellipse cx="230" cy="170" rx="196" ry="136" fill="none" stroke="#DDA528" stroke-width="2" pathLength="1" transform="rotate(-8 230 170)" stroke-linecap="round"/>
+      </svg>
+      <div class="aidstate">
+        <div class="lbl">Your aid letter says</div>
+        <div class="fig">Cost of attendance: $XX,XXX</div>
+      </div>
+      <div class="planstate">
+        <div class="card">
+          <div class="lbl">Marro says</div>
+          <div class="money serif">$X,XXX <span>/ month to live on</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="mock-note">(Mockup placeholder figures. The real page shows a worked example, clearly labeled.)</div>
+  </div>
+</section>
+
+<!-- 3 · LIVING WITH IT -->
+<section aria-label="Daily use">
+  <div class="rv">
+    <h2>Log it in seconds. See where you stand.</h2>
+    <p class="sub">Quick expense entry, and one chart showing your plan against what you actually spent. That is the whole habit.</p>
+  </div>
+  <div class="cards">
+    <div class="card rv">
+      <h3>This week</h3>
+      <div class="logrow"><div><span class="golddot"></span>Groceries<div class="cat" style="margin-left:18px">Food</div></div><div class="amt serif">$62.40</div></div>
+      <div class="logrow"><div><span class="golddot" style="background:var(--blue)"></span>Gas<div class="cat" style="margin-left:18px">Transport</div></div><div class="amt serif">$38.50</div></div>
+      <div class="logrow"><div><span class="golddot" style="background:rgba(246,239,221,.5)"></span>Coffee with study group<div class="cat" style="margin-left:18px">Life</div></div><div class="amt serif">$6.75</div></div>
+    </div>
+    <div class="card rv" style="transition-delay:.08s">
+      <h3>Plan vs. actual</h3>
+      <svg viewBox="0 0 340 150" style="width:100%;height:auto" role="img" aria-label="Chart comparing planned budget line with actual spending line">
+        <line x1="0" y1="120" x2="340" y2="120" stroke="rgba(246,239,221,.12)"/>
+        <path d="M0 118 L340 30" stroke="rgba(246,239,221,.45)" stroke-width="2" stroke-dasharray="5 6" fill="none"/>
+        <path id="actualline" d="M0 118 C60 108 90 96 140 84 C200 70 240 66 300 44 L340 38" stroke="#DDA528" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+        <circle cx="300" cy="44" r="4.5" fill="#DDA528"/>
+      </svg>
+      <div class="chartlegend">
+        <span><i style="background:rgba(246,239,221,.45)"></i>Planned</span>
+        <span><i style="background:#DDA528"></i>Actual</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 · MILESTONES -->
+<section aria-label="Medical school milestones">
+  <div class="rv">
+    <h2>Board exams. Interview season. Marro sees them coming.</h2>
+    <p class="sub">Med school has expensive milestones on a known calendar. Plan for them before they land on a credit card.</p>
+  </div>
+  <div class="timeline-wrap" tabindex="0" aria-label="Timeline of medical school costs, scrollable">
+    <div class="timeline" id="tl">
+      <div class="track"></div>
+      <div class="mile" style="left:9%"><div class="yr">Year 1</div><div class="md" style="background:rgba(246,239,221,.4)"></div><div class="mt">Disbursement</div><div class="mc serif">your plan begins</div></div>
+      <div class="mile" style="left:33%"><div class="yr">Year 2</div><div class="md"></div><div class="mt">Step 1</div><div class="mc serif">exam fees</div></div>
+      <div class="mile" style="left:57%"><div class="yr">Year 3</div><div class="md"></div><div class="mt">Step 2 CK</div><div class="mc serif">exam fees</div></div>
+      <div class="mile" style="left:81%"><div class="yr">Year 4</div><div class="md"></div><div class="mt">Interview season</div><div class="mc serif">travel + hotels</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 · FOUNDER -->
+<section class="founder" aria-label="From the founder">
+  <div class="rv">
+    <h2 style="font-size:clamp(1.5rem,3vw,2rem)">Made between lectures.</h2>
+    <blockquote style="margin-top:24px">[Founder note, in your own words: why you built Marro. Two or three specific sentences. Drafted together before launch.]</blockquote>
+    <div class="sig">
+      <svg width="40" height="40" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="120" fill="#14150F"/><g transform="translate(256,256)" fill="none" stroke="#F6EFDD" stroke-width="26"><circle r="172"/><circle r="118"/><circle r="64" opacity="0.72"/><circle r="26" fill="#DDA528" stroke="none"/></g></svg>
+      <div>
+        <div class="nm">Mohamad Hijazi</div>
+        <div class="rl">MD student, Weill Cornell Medicine</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 · PRIVACY -->
+<section class="privacy" aria-label="Privacy">
+  <div class="rv" style="display:flex;flex-direction:column;align-items:center">
+    <svg viewBox="0 0 120 120" aria-hidden="true">
+      <g transform="translate(60,60)" fill="none" stroke="#F6EFDD" stroke-width="4">
+        <circle r="52" opacity=".35"/><circle r="36" opacity=".55"/><circle r="20"/>
+        <circle r="7" fill="#DDA528" stroke="none"/>
+      </g>
+    </svg>
+    <h2 style="margin:0 auto">Your numbers stay yours.</h2>
+    <p class="sub">We never sell your personal info. Your budget is private to your account. Details in our <a href="#">Privacy Policy</a>.</p>
+  </div>
+</section>
+
+<!-- 7 · CLOSE -->
+<section class="close" aria-label="Get started">
+  <div class="rv" style="display:flex;flex-direction:column;align-items:center">
+    <svg class="rings" viewBox="0 0 512 512" aria-hidden="true">
+      <g transform="translate(256,256)" fill="none" stroke="#F6EFDD" stroke-width="20">
+        <circle r="172"/><circle r="118"/><circle r="64" opacity="0.72"/><circle class="core-pop" r="22" fill="#DDA528" stroke="none"/>
+      </g>
+    </svg>
+    <h2 style="margin:0 auto">Free for medical students.</h2>
+    <p class="sub" style="margin-left:auto;margin-right:auto">Sign in with Google. Setup takes a few minutes.</p>
+    <a class="btn btn-fill" style="margin-top:32px" href="#signin">
+      <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.5l6.7-6.7C35.6 2.4 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.8 6.1C12.3 13.2 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.6 5.9c4.4-4.1 7-10.1 7-17.6z"/><path fill="#FBBC05" d="M10.4 28.7a14.5 14.5 0 0 1 0-9.4l-7.8-6.1a24 24 0 0 0 0 21.6l7.8-6.1z"/><path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.5-5.6l-7.6-5.9c-2.1 1.4-4.8 2.3-7.9 2.3-6.3 0-11.7-3.7-13.6-8.9l-7.8 6.1C6.5 42.6 14.6 48 24 48z"/></svg>
+      Continue with Google
+    </a>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <a href="#">Privacy Policy</a><span>·</span><a href="#">Terms of Service</a><span>·</span><span>Made for U.S. MD and DO students, at any school.</span>
+</footer>
+
+<script>
+const io = new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.25});
+document.querySelectorAll('.rv, .timeline').forEach(el=>io.observe(el));
+if(matchMedia('(prefers-reduced-motion: reduce)').matches){document.querySelectorAll('.rv, .timeline').forEach(el=>el.classList.add('in'))}
+</script>
+</body>
+</html>

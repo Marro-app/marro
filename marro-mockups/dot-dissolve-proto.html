@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marro — dot dissolve scroll prototype</title>
+<!--
+  STANDALONE PROTOTYPE — dot-dissolve scroll transition, for review only.
+  Not wired into the real landing. Copy ported verbatim from src/landing/scenes.jsx.
+
+  How it works:
+  - Real text lives in the DOM (selectable, screen-reader readable). One fixed,
+    aria-hidden <canvas> draws the decorative particle layer on top.
+  - Particle targets are sampled from the ACTUAL rendered glyphs: each word of a
+    [data-p] element is measured with a Range, redrawn onto an offscreen canvas
+    at the exact same rect/font, then alpha-sampled on a grid. No hand-placed dots.
+  - Scroll is divided into segments per section: first ~52% of each segment is a
+    "hold" (section fully formed, canvas idle), the rest scrubs the dissolve →
+    cloud → reconstruct transition between adjacent sections.
+  - prefers-reduced-motion: no canvas, no theater — a plain stacked readable page.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0C0E0C;
+    --cream:#FBF6E8;
+    --cream63:rgba(251,246,232,.63);
+    --cream40:rgba(251,246,232,.40);
+    --gold:#DDA528;
+    --blue:#82AEDB;
+    --clay:#E08A6B;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:auto}
+  body{
+    background:
+      radial-gradient(1100px 720px at 50% 44%, rgba(221,165,40,.055), transparent 62%),
+      var(--bg);
+    color:var(--cream);
+    font-family:'Inter',system-ui,-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    line-height:1.5;
+  }
+  a{color:var(--cream)}
+  ::selection{background:rgba(221,165,40,.35)}
+
+  .brand{
+    position:fixed;top:22px;left:24px;z-index:30;display:flex;align-items:center;gap:10px;
+    font-weight:600;font-size:15px;letter-spacing:.02em;color:var(--cream);text-decoration:none;
+  }
+  .brand:focus-visible{outline:2px solid var(--gold);outline-offset:4px;border-radius:6px}
+
+  /* ---------- section content ---------- */
+  .inner{max-width:680px;margin:0 auto;padding:0 28px;text-align:center}
+  h1,h2{
+    font-family:'Newsreader',Georgia,serif;font-weight:500;line-height:1.14;
+    letter-spacing:-0.01em;text-wrap:balance;
+  }
+  h1{font-size:clamp(2.1rem,5.6vw,3.6rem)}
+  h2{font-size:clamp(1.85rem,5vw,3.1rem)}
+  .acc{font-style:italic;color:var(--gold);font-weight:400}
+  .body{
+    font-size:clamp(.98rem,1.6vw,1.12rem);color:var(--cream63);
+    max-width:34em;margin:18px auto 0;
+  }
+  .fig{
+    font-family:'Newsreader',Georgia,serif;font-weight:400;
+    font-size:clamp(3rem,10vw,5.4rem);line-height:1.05;letter-spacing:-0.015em;
+    margin-top:30px;
+  }
+  .fig .unit{font-size:.34em;color:var(--cream63);letter-spacing:0}
+  .figlabel{margin-top:8px;font-size:.85rem;color:var(--cream40);letter-spacing:.04em}
+  .mock-note{margin-top:14px;font-size:.75rem;color:var(--cream40)}
+  .cta{margin-top:30px;display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;
+    min-height:48px;padding:12px 28px;border-radius:999px;
+    background:var(--gold);color:#14150F;font-weight:600;font-size:.95rem;
+    text-decoration:none;border:none;
+  }
+  .btn:focus-visible{outline:2px solid var(--cream);outline-offset:3px}
+  .note{font-size:.85rem;color:var(--cream63)}
+  blockquote{
+    font-family:'Newsreader',Georgia,serif;font-style:italic;font-weight:400;
+    font-size:clamp(1.15rem,2.4vw,1.5rem);color:var(--cream);line-height:1.45;
+    max-width:26em;margin:26px auto 0;
+  }
+  .sig{margin-top:26px;display:flex;align-items:center;justify-content:center;gap:12px;text-align:left}
+  .sig .nm{font-size:.9rem;font-weight:500}
+  .sig .rl{font-size:.78rem;color:var(--cream40)}
+  .footer{margin-top:34px;font-size:.78rem;color:var(--cream40);display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .footer a{color:var(--cream40)}
+  .footer a:focus-visible{outline:2px solid var(--gold);outline-offset:3px}
+
+  /* ---------- default layout = plain stacked document (no-JS + reduced motion) ---------- */
+  .stage{position:relative}
+  .layer{min-height:60vh;display:flex;align-items:center;justify-content:center;padding:14vh 0}
+  #spacer,#fx{display:none}
+  .hint{display:none}
+  .sr-article{
+    position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);
+    clip-path:inset(50%);white-space:nowrap;
+  }
+
+  /* ---------- theater mode: JS present AND motion allowed ---------- */
+  @media (prefers-reduced-motion: no-preference){
+    html.js .stage{position:fixed;inset:0;z-index:2}
+    html.js .layer{
+      position:absolute;inset:0;min-height:0;padding:0;
+      display:flex;align-items:center;justify-content:center;
+      opacity:0;visibility:hidden;
+    }
+    html.js .layer .inner{will-change:transform,opacity}
+    html.js #spacer{display:block}
+    html.js #fx{
+      display:block;position:fixed;inset:0;z-index:6;pointer-events:none;
+    }
+    html.js .hint{
+      display:block;position:fixed;left:50%;bottom:26px;transform:translateX(-50%);
+      z-index:8;font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;
+      color:var(--cream40);transition:opacity .8s ease;pointer-events:none;
+    }
+    html.js .hint::after{
+      content:"";display:block;width:1px;height:26px;margin:8px auto 0;
+      background:linear-gradient(var(--cream40),transparent);
+      animation:hintdrop 2.2s ease-in-out infinite;
+    }
+    @keyframes hintdrop{0%{transform:scaleY(.2);transform-origin:top}55%{transform:scaleY(1)}100%{transform:scaleY(.2);transform-origin:bottom;opacity:0}}
+  }
+</style>
+</head>
+<body>
+
+<a class="brand" href="#s1" aria-label="Marro — back to top">
+  <svg width="26" height="26" viewBox="0 0 512 512" aria-hidden="true"><g transform="translate(256,256)" fill="none" stroke="#F6EFDD" stroke-width="30"><circle r="200"/><circle r="136"/><circle r="76" opacity="0.72"/><circle r="30" fill="#DDA528" stroke="none"/></g></svg>
+  Marro
+</a>
+
+<!-- Decorative particle layer (single canvas, aria-hidden) -->
+<canvas id="fx" aria-hidden="true"></canvas>
+
+<!-- Visually-hidden linear article: full story for screen readers while the
+     theater shows/hides layers visually (mirrors the production approach). -->
+<article class="sr-article">
+  <h2>Your aid package, turned into a plan.</h2>
+  <p>Enter your aid and school costs once. Marro shows what you actually have to live on, every month.</p>
+  <p>Free for medical students.</p>
+  <h2>It starts with one intimidating number.</h2>
+  <p>Your aid letter is a wall of figures written for the financial aid office, not for you. Type it into Marro once.</p>
+  <p>Your aid letter says: cost of attendance $125,950 per year. Example numbers.</p>
+  <h2>Marro hands you back one that matters.</h2>
+  <p>The math happens once: aid in, school costs out, and what remains becomes your monthly number. No spreadsheet required.</p>
+  <p>Marro says: $2,150 per month to live on.</p>
+  <h2>Always know where you stand.</h2>
+  <p>One glance: your plan against what you actually spent. Ahead, behind, or right on track.</p>
+  <p>Spent so far: 61% of plan, $1,310 of $2,150.</p>
+  <h2>By us. For us.</h2>
+  <p>The aid office gives you a number. Nobody tells you what to do with it. I built Marro because I needed that answer myself.</p>
+  <p>The med student behind Marro. MD program.</p>
+  <h2>Your numbers stay yours.</h2>
+  <p>We never sell your personal info. Your budget is private to your account. Details in our Privacy Policy.</p>
+  <p>Free for medical students. Made for MD and DO students, at any school.</p>
+</article>
+
+<div class="stage" id="stage">
+
+  <section class="layer" id="s1" aria-label="Marro">
+    <div class="inner">
+      <h1 data-p>Your aid package, turned into <em class="acc">a plan.</em></h1>
+      <p class="body">Enter your aid and school costs once. Marro shows what you actually have to live on, every month.</p>
+      <div class="cta">
+        <a class="btn" href="https://joinmarro.com">Get started</a>
+        <span class="note">Free for medical students.</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="layer" id="s2" aria-label="Start with your aid letter">
+    <div class="inner">
+      <h2 data-p>It starts with <em class="acc">one intimidating number.</em></h2>
+      <div class="fig" data-p data-fig>$125,950<span class="unit"> / year</span></div>
+      <p class="figlabel">cost of attendance</p>
+      <p class="body">Your aid letter is a wall of figures written for the financial aid office, not for you. Type it into Marro once.</p>
+      <p class="mock-note">Example numbers.</p>
+    </div>
+  </section>
+
+  <section class="layer" id="s3" aria-label="Marro turns it into a monthly budget">
+    <div class="inner">
+      <h2 data-p>Marro hands you back <em class="acc">one that matters.</em></h2>
+      <div class="fig" data-p data-fig style="color:var(--gold)">$2,150<span class="unit" style="color:var(--cream63)"> / month</span></div>
+      <p class="figlabel">to live on</p>
+      <p class="body">The math happens once: aid in, school costs out, and what remains becomes your monthly number. No spreadsheet required.</p>
+    </div>
+  </section>
+
+  <section class="layer" id="s4" aria-label="Plan versus actual">
+    <div class="inner">
+      <h2 data-p>Always know <em class="acc">where you stand.</em></h2>
+      <div class="fig" data-p data-fig>61<span class="unit">%</span></div>
+      <p class="figlabel">of plan — $1,310 of $2,150 spent so far</p>
+      <p class="body">One glance: your plan against what you actually spent. Ahead, behind, or right on track.</p>
+    </div>
+  </section>
+
+  <section class="layer" id="s5" aria-label="From the founder">
+    <div class="inner">
+      <h2 data-p>By us. <em class="acc">For us.</em></h2>
+      <blockquote>The aid office gives you a number. Nobody tells you what to do with it. I built Marro because I needed that answer myself.</blockquote>
+      <div class="sig">
+        <svg width="40" height="40" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="120" fill="#14150F"/><g transform="translate(256,256)" fill="none" stroke="#F6EFDD" stroke-width="26"><circle r="172"/><circle r="118"/><circle r="64" opacity="0.72"/><circle r="26" fill="#DDA528" stroke="none"/></g></svg>
+        <div><div class="nm">The med student behind Marro</div><div class="rl">MD program</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="layer" id="s6" aria-label="Get started">
+    <div class="inner">
+      <h2 data-p>Your numbers <em class="acc">stay yours.</em></h2>
+      <p class="body">We never sell your personal info. Your budget is private to your account. Details in our <a href="https://joinmarro.com/privacy.html" style="color:var(--cream63)">Privacy Policy</a>.</p>
+      <h2 style="margin-top:26px;font-size:clamp(1.4rem,3.4vw,2.1rem)"><em class="acc">Free</em> for medical students.</h2>
+      <div class="cta"><a class="btn" href="https://joinmarro.com">Get started</a></div>
+      <div class="footer">
+        <a href="https://joinmarro.com/privacy.html">Privacy Policy</a><span>·</span>
+        <a href="https://joinmarro.com/terms.html">Terms of Service</a><span>·</span>
+        <span>Made for MD and DO students, at any school.</span>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div id="spacer" aria-hidden="true"></div>
+<p class="hint" id="hint">Scroll</p>
+
+<script>
+(function(){
+  'use strict';
+  var reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  if (reduced.matches) return;               // static readable page, no theater
+  document.documentElement.classList.add('js');
+
+  /* ------------------------------ config ------------------------------ */
+  var SEG_VH   = 1.7;    // scroll segment per section, in viewport heights
+  var HOLD     = 0.52;   // fraction of a segment where the section is still
+  var CAP      = 1000;   // max particles per section shape (perf budget)
+  var STEP     = 4;      // glyph sampling grid, CSS px
+  var STAGGER  = 0.30;   // per-particle start offset spread
+  var COLORS   = ['#DDA528','#FBF6E8','#82AEDB','#E08A6B']; // gold cream blue clay
+
+  var layers = Array.prototype.slice.call(document.querySelectorAll('.layer'));
+  var N = layers.length;
+  var canvas = document.getElementById('fx');
+  var ctx = canvas.getContext('2d');
+  var spacer = document.getElementById('spacer');
+  var hint = document.getElementById('hint');
+  var vw = 0, vh = 0, dpr = 1, cx = 0, cy = 0;
+
+  var targets = null;        // per-section point arrays [{x,y,k}]
+  var trans = [];            // cached transition particle sets, keyed by index
+  var canvasDirty = false;   // whether the canvas has pixels needing a clear
+
+  function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+  function smooth(v){ v=clamp(v,0,1); return v*v*(3-2*v); }
+  function easeC(v){ return v<.5 ? 4*v*v*v : 1-Math.pow(-2*v+2,3)/2; }
+  function g(sp){ return (Math.random()+Math.random()-1)*sp; } // soft gaussian-ish
+
+  /* --------------------------- dot sprites ---------------------------- */
+  // Pre-rendered soft round dots (drawImage is cheaper than per-dot arcs).
+  var SPR = 12, sprites = COLORS.map(function(col){
+    var c = document.createElement('canvas'); c.width = c.height = SPR*2;
+    var x = c.getContext('2d');
+    var grad = x.createRadialGradient(SPR,SPR,0,SPR,SPR,SPR);
+    grad.addColorStop(0,col); grad.addColorStop(.55,col); grad.addColorStop(1,col+'00');
+    x.fillStyle = grad; x.fillRect(0,0,SPR*2,SPR*2);
+    return c;
+  });
+
+  function pickColor(isFig){
+    var r = Math.random();
+    if (isFig){ // figures get occasional blue/clay data dots
+      if (r < .06) return 2;
+      if (r < .11) return 3;
+      return r < .82 ? 0 : 1;
+    }
+    return r < .74 ? 0 : 1; // headings: mostly gold, some cream
+  }
+
+  /* --------------------- sample glyphs → point targets --------------------- */
+  // Draw each word of every [data-p] element onto an offscreen canvas at the
+  // exact rect the browser laid it out at (Range measurement), then alpha-
+  // sample on a grid. Guarantees particles match the real text pixel-for-pixel.
+  var off = document.createElement('canvas');
+  var offCtx = off.getContext('2d', { willReadFrequently:true });
+
+  function sampleLayer(layer){
+    offCtx.clearRect(0,0,vw,vh);
+    var figRegions = [];
+    var els = layer.querySelectorAll('[data-p]');
+    for (var e=0; e<els.length; e++){
+      var el = els[e], isFig = el.hasAttribute('data-fig');
+      if (isFig){ var r0 = el.getBoundingClientRect(); figRegions.push(r0); }
+      var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      var node;
+      while ((node = walker.nextNode())){
+        var st = getComputedStyle(node.parentElement);
+        offCtx.font = st.fontStyle+' '+st.fontWeight+' '+st.fontSize+' '+st.fontFamily;
+        offCtx.fillStyle = '#fff';
+        offCtx.textBaseline = 'middle';
+        var text = node.textContent, re = /\S+/g, m;
+        while ((m = re.exec(text))){
+          var rng = document.createRange();
+          rng.setStart(node, m.index); rng.setEnd(node, m.index + m[0].length);
+          var rect = rng.getBoundingClientRect();
+          offCtx.fillText(m[0], rect.left, rect.top + rect.height/2);
+        }
+      }
+    }
+    var img = offCtx.getImageData(0,0,vw,vh).data;
+    var pts = [], x, y;
+    for (y=0; y<vh; y+=STEP){
+      for (x=0; x<vw; x+=STEP){
+        if (img[(y*vw+x)*4+3] > 110){
+          var inFig = false;
+          for (var f=0; f<figRegions.length; f++){
+            var fr = figRegions[f];
+            if (x>=fr.left && x<=fr.right && y>=fr.top && y<=fr.bottom){ inFig=true; break; }
+          }
+          pts.push({ x:x+g(1.6), y:y+g(1.6), k:pickColor(inFig) });
+        }
+      }
+    }
+    // shuffle + cap
+    for (var i=pts.length-1; i>0; i--){
+      var j = (Math.random()*(i+1))|0, t = pts[i]; pts[i]=pts[j]; pts[j]=t;
+    }
+    if (pts.length > CAP) pts.length = CAP;
+    return pts;
+  }
+
+  function buildTargets(){
+    targets = layers.map(sampleLayer);
+    trans = [];
+  }
+
+  /* -------------------- pair points into a transition -------------------- */
+  function getTransition(k){
+    if (trans[k]) return trans[k];
+    var A = targets[k], B = targets[k+1];
+    var n = Math.max(A.length, B.length), parts = new Array(n);
+    for (var i=0; i<n; i++){
+      var hasA = i < A.length, hasB = i < B.length;
+      var ax = hasA ? A[i].x : cx + g(50), ay = hasA ? A[i].y : cy + g(50);
+      var bx = hasB ? B[i].x : cx + g(26), by = hasB ? B[i].y : cy + g(26);
+      // curved path: control point pulled toward the central core + scatter
+      var mx = (ax+bx)/2, my = (ay+by)/2;
+      var pull = 0.40 + Math.random()*0.30;
+      parts[i] = {
+        ax:ax, ay:ay, bx:bx, by:by,
+        cx: mx + (cx-mx)*pull + g(vw*0.14),
+        cy: my + (cy-my)*pull + g(vh*0.12),
+        k: hasB ? B[i].k : A[i].k,
+        s: Math.random(),            // stagger seed
+        ph: Math.random()*6.283,     // wiggle phase
+        die: !hasB, born: !hasA
+      };
+    }
+    trans[k] = parts;
+    return parts;
+  }
+
+  /* ------------------------------ drawing ------------------------------ */
+  function drawTransition(k, t, now){
+    ctx.clearRect(0,0,vw,vh);
+    canvasDirty = true;
+    var parts = getTransition(k);
+    // global alpha ramp: particles appear as text releases, vanish as text lands
+    var gA = Math.min(smooth(t/0.13), smooth((1-t)/0.13));
+    var bell = 4*t*(1-t);
+
+    // breathing core glow — the gold heart of the logo
+    var glow = ctx.createRadialGradient(cx,cy,0,cx,cy,150+bell*70);
+    glow.addColorStop(0,'rgba(221,165,40,'+(0.11*bell).toFixed(3)+')');
+    glow.addColorStop(1,'rgba(221,165,40,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(cx-260, cy-260, 520, 520);
+    ctx.globalAlpha = bell*0.85;
+    ctx.drawImage(sprites[0], cx-SPR*0.75, cy-SPR*0.75, SPR*1.5, SPR*1.5);
+
+    var wob = now*0.0016;
+    for (var i=0; i<parts.length; i++){
+      var p = parts[i];
+      var u = clamp((t - p.s*STAGGER) / (1 - STAGGER), 0, 1);
+      var e = easeC(u), inv = 1-e;
+      var x = inv*inv*p.ax + 2*inv*e*p.cx + e*e*p.bx;
+      var y = inv*inv*p.ay + 2*inv*e*p.cy + e*e*p.by;
+      var loose = e*(1-e)*4;                      // loosest mid-flight
+      x += Math.sin(p.ph + wob)*loose*5;
+      y += Math.cos(p.ph*1.31 + wob*0.83)*loose*4;
+      var a = gA;
+      if (p.die)  a *= inv;
+      if (p.born) a *= e;
+      if (a < 0.02) continue;
+      ctx.globalAlpha = a;
+      var sz = 3.4 + loose*2.6;
+      ctx.drawImage(sprites[p.k], x-sz/2, y-sz/2, sz, sz);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /* --------------------------- layer opacity --------------------------- */
+  function setLayer(i, op, ty){
+    var L = layers[i];
+    if (L._op === op && L._ty === ty) return;
+    L._op = op; L._ty = ty;
+    L.style.opacity = op;
+    L.style.visibility = op <= 0.001 ? 'hidden' : 'visible';
+    L.firstElementChild.style.transform = 'translateY(' + ty + 'px)';
+  }
+
+  /* ------------------------------ main loop ------------------------------ */
+  var ready = false, fontsLoaded = false;
+  function frame(now){
+    requestAnimationFrame(frame);
+    if (!vh || !vw){                      // viewport wasn't measurable at init
+      size();
+      if (!vh || !vw) return;
+    }
+    if (!ready && fontsLoaded){ buildTargets(); ready = true; }
+    var segPx = SEG_VH * vh;
+    var p = clamp(window.scrollY / segPx, 0, N-1);
+    var i = Math.min(Math.floor(p), N-2);
+    var f = p - i;
+
+    if (hint && window.scrollY > 40){ hint.style.opacity = 0; hint = null; }
+
+    var t = f <= HOLD ? 0 : (f - HOLD) / (1 - HOLD);   // 0 = held, (0..1] = transitioning
+    if (p >= N-1) { i = N-2; t = 1; }
+
+    for (var s=0; s<N; s++){
+      if (s === i){
+        setLayer(s, 1 - smooth(t/0.16), 0);
+      } else if (s === i+1){
+        var inO = smooth((t-0.84)/0.16);
+        setLayer(s, inO, (1-inO)*10);
+      } else {
+        setLayer(s, 0, 0);
+      }
+    }
+
+    if (t > 0 && t < 1 && ready){
+      drawTransition(i, t, now);
+    } else if (canvasDirty){
+      ctx.clearRect(0,0,vw,vh);
+      canvasDirty = false;
+    }
+  }
+
+  /* ------------------------------ sizing ------------------------------ */
+  function size(){
+    vw = window.innerWidth || document.documentElement.clientWidth;
+    vh = window.innerHeight || document.documentElement.clientHeight;
+    if (!vw || !vh){ vw = vh = 0; return; }
+    cx = vw/2; cy = vh/2;
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = vw*dpr; canvas.height = vh*dpr;
+    canvas.style.width = vw+'px'; canvas.style.height = vh+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    off.width = vw; off.height = vh;
+  }
+
+  var resizeTimer;
+  window.addEventListener('resize', function(){
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function(){ size(); if (ready) buildTargets(); }, 250);
+  });
+
+  spacer.style.height = ((N-1)*SEG_VH*100 + 100) + 'vh';  // vh units: needs no JS measurement
+  size();
+  (function retrySize(n){                 // some embedded viewports report 0 briefly at load
+    if (vw && vh) return;
+    size();
+    if ((!vw || !vh) && n > 0) setTimeout(function(){ retrySize(n-1); }, 100);
+  })(30);
+  requestAnimationFrame(frame);   // theater runs immediately; particles join once fonts land
+  document.fonts.ready.then(function(){ fontsLoaded = true; });
+})();
+</script>
+</body>
+</html>

@@ -9,8 +9,8 @@ import { useApp } from '../context/AppContext.js';
 // editable (not just decorative). Decorative-only — the parent button carries
 // the accessible label.
 const EditBadge = () => (
-  <span aria-hidden="true" style={{position:"absolute",right:-4,bottom:-4,width:15,height:15,borderRadius:8,background:C.teal,color:C.bg,display:"inline-flex",alignItems:"center",justifyContent:"center",border:`1.5px solid ${C.bg}`}}>
-    <svg width="8" height="8" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M13.5 4.5l2 2M4 16l1-3 8.5-8.5 2 2L7 15z"/></svg>
+  <span aria-hidden="true" style={{position:"absolute",right:-5,bottom:-5,width:19,height:19,borderRadius:10,background:C.teal,color:C.bg,display:"inline-flex",alignItems:"center",justifyContent:"center",border:`2px solid ${C.bg}`}}>
+    <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M13.5 4.5l2 2M4 16l1-3 8.5-8.5 2 2L7 15z"/></svg>
   </span>
 );
 

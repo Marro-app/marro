@@ -10,10 +10,17 @@ export const BrandIcon = ({name, size=36}) => {
   const txt = b?.letter || (name||"?")[0].toUpperCase();
   const fontSize = txt.length > 2 ? size*0.28 : txt.length > 1 ? size*0.34 : size*0.44;
   const [imgErr, setImgErr] = useState(false);
-  const faviconUrl = domain && !imgErr ? `https://www.google.com/s2/favicons?domain=${domain}&sz=128` : null;
+  // Prefer the curated brand monogram (always crisp + theme-aware). A fetched
+  // favicon is only worth it when we have a domain but no curated brand — Google's
+  // service upscales tiny source icons, which read blurry (the Apple TV report), so
+  // we never lean on it for a brand we can already render sharply ourselves.
+  const useFavicon = domain && !b && !imgErr;
+  const faviconUrl = useFavicon ? `https://www.google.com/s2/favicons?domain=${domain}&sz=128` : null;
   return faviconUrl ? (
-    <div style={{width:size,height:size,borderRadius:size*0.22,overflow:"hidden",flexShrink:0,background:"#fff",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <img src={faviconUrl} alt="" width={size*0.7} height={size*0.7} style={{objectFit:"contain",imageRendering:"-webkit-optimize-contrast"}} onError={()=>setImgErr(true)}/>
+    // Deliberate light "logo chip": favicons are drawn for a light backdrop, so this
+    // is an intentional rounded plate (hairline + inset ring), not a stray white box.
+    <div style={{width:size,height:size,borderRadius:size*0.22,overflow:"hidden",flexShrink:0,background:"#fff",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"inset 0 0 0 1px rgba(0,0,0,0.10)"}}>
+      <img src={faviconUrl} alt="" width={Math.round(size*0.62)} height={Math.round(size*0.62)} loading="lazy" style={{objectFit:"contain"}} onError={()=>setImgErr(true)}/>
     </div>
   ) : (
     <div style={{
