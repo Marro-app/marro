@@ -205,7 +205,7 @@ function StageCanvas({ scene, corePulse, scrollerRef }){
   const ringRotate = useSpring(useTransform(scrollYProgress, [0, 1], [0, 35]), { stiffness: 100, damping: 30 });
   const scale = useSpring(useTransform(scrollYProgress, [0, 0.5, 1], [1, 1.04, 0.96]), { stiffness: 100, damping: 30 });
   const y = useSpring(useTransform(scrollYProgress, [0, 0.5, 1], [0, -14, 14]), { stiffness: 100, damping: 30 });
-  const glowDrift = useSpring(useTransform(scrollYProgress, [0, 0.5, 1], [0.7, 1, 0.7]), { stiffness: 100, damping: 30 });
+  const glowDrift = useSpring(useTransform(scrollYProgress, [0, 0.5, 1], [0.9, 1, 0.75]), { stiffness: 100, damping: 30 });
 
   const leanX = useMotionValue(0);
   const leanY = useMotionValue(0);

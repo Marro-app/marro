@@ -1,6 +1,6 @@
 # Motion System
 
-Motion conveys state, never decoration (product register). 150–250ms, ease-out. No page-load choreography.
+Motion conveys state, never decoration (product register). 150–250ms, ease-out. **No page-load choreography *in the app*** — dashboard/tabs/modals appear without entrance animation. The **marketing landing is different**: it's allowed intentional brand moments (the `MarroIntro` ring-draw reveal, and the desktop hero's word-by-word headline rise on first paint). These are decorative-by-design, live only in the visible theater (never in the SR/reduced-motion trees), and are still held to the GPU/easing/duration rules below.
 
 ## Inventory
 - **Ambient blobs**: 4 divs, blur(90px), 19–25s transform-only float cycles. Budget-health signal with three states driven by `<BlobHealth>`:

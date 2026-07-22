@@ -2,6 +2,16 @@
 
 Newest first. One line per finding: severity · what · fix.
 
+## 2026-07-20 — Design/a11y sweep + landing polish (branch `mo/design-a11y-landing-polish`)
+
+Full audit (landing + app, both themes, `?mock=1`). Headline finding: the product is already largely compliant — automated scans over-reported (glass panels defeat contrast tools; `::after` hit-slop defeats size tools), so every flag was hand-verified. Two genuine hit-target gaps found + fixed; rest was false positives.
+
+- **`InfoNote` dismiss ✕** (`src/components/primitives.jsx`): rendered 13×18px with no hit-slop because it used the `.txt-act` text-link style instead of the icon-button pattern. Switched to `.xbtn` + a 28px box → verified **44×44** real hit area (visual ✕ unchanged). This is the "InfoNote ✕" case the DESIGN_SYSTEM HIG note flagged.
+- **"Add category"** (`src/tabs/BudgetTab.jsx`): standalone `.btn-pop` pill at 22px tall. Added shared **`.hit-slop`** utility (`index.html`: `position:relative` + `::after{inset:-11px}`) → verified **44px** hit area, visually unchanged. "Manage" (line 136) deliberately left as-is — it's an inline text link inside a sentence (WCAG target-size inline exception; slop there would overlap rows).
+- **Verified clean, not changed**: `.xbtn`/`.infotip-btn` already hit 44px via existing hit-slop; landing scroll-dots already 46px (`::after{inset:-17px}`); keyboard `:focus-visible` rings present (global rule, confirmed live with real Tab); light + dark theme text contrast passes (opaque-ancestor sampling; the 1.15 "failures" from naive sampling are glass artifacts, not real).
+- **Number cards** (`MetricTile`, `primitives.jsx`): non-a11y polish — `tabular-nums lining-nums`, value 21→24px, spacing to 4px scale. Contrast unaffected (same tokens).
+- **Landing hero entrance** (desktop theater only): word-by-word rise + warmer marigold glow. Decorative, lives only in the visible fixed layer; SR article + reduced-motion StaticDocument keep the plain headline; `.lp-hw`/`.lp-hero-in` CSS-guarded off under `prefers-reduced-motion`. See MOTION_SYSTEM note on landing brand moments.
+
 ## 2026-07-19 — Shell blockers: reorder handle, keyboard reorder, modal focus, money clamps (branch `mo/fix-shell-blockers`)
 
 Four break-testing findings from a prior sweep (`marro-ui-sweep-findings.md`). Verified via `?mock=1` harness, both themes, desktop.
