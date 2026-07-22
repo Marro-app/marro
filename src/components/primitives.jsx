@@ -303,7 +303,12 @@ export const InfoTip = ({text}) => {
 
 export const Divider = () => <div style={{height:1,background:C.border,margin:"10px 0"}}/>;
 
-export const MetricTile = ({label, value, sub, color, onClick, role, ariaLive}) => (
+// subMinLines (opt-in): reserve a fixed number of sub-text lines and clamp to
+// them, so a row of sibling tiles stays the same height when one sub wraps and
+// another doesn't — no awkward stretch. Omitted → original single-line behavior
+// (unchanged for existing callers). Full text stays in the DOM for screen
+// readers; the visual clamp is cosmetic and the title attr surfaces it on hover.
+export const MetricTile = ({label, value, sub, color, onClick, role, ariaLive, subMinLines}) => (
   <div onClick={onClick} role={role} aria-live={ariaLive} style={{
     background:"rgba(255,255,255,0.07)",
     backdropFilter:"blur(40px) saturate(180%)",
@@ -318,7 +323,8 @@ export const MetricTile = ({label, value, sub, color, onClick, role, ariaLive}) 
     <div style={{position:"absolute",left:"8%",right:"8%",top:0,height:1,background:"linear-gradient(90deg,transparent,rgba(255,255,255,0.40),transparent)",pointerEvents:"none"}}/>
     <div style={{fontSize:10,color:C.gray,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}}>{label}</div>
     <div style={{fontSize:24,fontWeight:700,color:color||C.text,letterSpacing:"-0.02em",lineHeight:1.15,fontFamily:"'Newsreader',Georgia,serif",fontVariantNumeric:"tabular-nums lining-nums"}}>{value}</div>
-    {sub && <div style={{fontSize:11,color:C.gray,marginTop:4}}>{sub}</div>}
+    {sub && <div title={typeof sub==="string"?sub:undefined} style={{fontSize:11,color:C.gray,marginTop:4,
+      ...(subMinLines?{lineHeight:1.4,minHeight:`calc(${subMinLines} * 1.4em)`,display:"-webkit-box",WebkitBoxOrient:"vertical",WebkitLineClamp:subMinLines,overflow:"hidden"}:null)}}>{sub}</div>}
   </div>
 );
 

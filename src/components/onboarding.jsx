@@ -598,7 +598,10 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
               <div style={sub}>Both are optional — skip either and Marro just shows an estimate until you fill them in.</div>
 
               <div style={{marginTop:20}}>
-                <label htmlFor="ob-money-spendable" style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:C.textMid,display:"block",marginBottom:6}}>Money you can spend now</label>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+                  <label htmlFor="ob-money-spendable" style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:C.textMid}}>Money you can spend now</label>
+                  <InfoTip text="What's in your checking/spending account today. Aid or loan money counts once it's been sent to you."/>
+                </div>
                 <input id="ob-money-spendable" type="number" min="0" inputMode="decimal" placeholder="$0" value={moneySpendable}
                   aria-label="Money you can spend now, across all accounts you spend from"
                   onChange={e=>setMoneySpendable(e.target.value)} style={input}/>
@@ -674,7 +677,10 @@ function MoneySetupBody({data, commit, setLandOnLoans}){
   return (
     <div>
       <div style={{marginTop:2}}>
-        <label htmlFor="ps-money-spendable" style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:C.textMid,display:"block",marginBottom:6}}>Money you can spend now</label>
+        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+          <label htmlFor="ps-money-spendable" style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:C.textMid}}>Money you can spend now</label>
+          <InfoTip text="What's in your checking/spending account today. Aid or loan money counts once it's been sent to you."/>
+        </div>
         <input id="ps-money-spendable" type="number" min="0" inputMode="decimal" placeholder="$0" value={spendable}
           aria-label="Money you can spend now, across all accounts you spend from"
           onChange={e=>setSpendable(e.target.value)} style={input}/>

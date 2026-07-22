@@ -199,6 +199,7 @@ export function App() {
   const [yearUndo, setYearUndo] = useState(null); // last soft-deleted year, for the Undo toast
   useEffect(()=>{ if(!yearUndo) return; const t=setTimeout(()=>setYearUndo(null),8000); return ()=>clearTimeout(t); },[yearUndo]);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState(""); // typed "RESET" guard, mirrors the delete-account modal
   const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false); // settings → "Delete my account"
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deleteAccountError, setDeleteAccountError] = useState(null);
@@ -1003,21 +1004,40 @@ export function App() {
       {showQuickAdd && <QuickAddModal onClose={()=>setShowQuickAdd(false)}/>}
       {showCategories && <Modal title="Categories" onClose={()=>{setShowCategories(false);refocusSettingsBtn();}} width={480}><React.Suspense fallback={<div role="status" aria-live="polite" style={{padding:24,textAlign:"center",color:"var(--text-dim)",fontSize:14}}>Loading…</div>}><CustomizeTab/></React.Suspense></Modal>}
       {renewDlg && <RenewalDialog sub={renewDlg} onClose={()=>setRenewDlg(null)} onConfirm={handleRenewal}/>}
-      {confirmReset && <Modal title="Reset your financial data?" onClose={()=>setConfirmReset(false)} width={350}>
-        <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>This clears your budget, weekly entries, savings, subscriptions, loans, and account balances, and starts you fresh with the default setup. It keeps your name and photo. This cannot be undone.</div>
+      {confirmReset && <Modal title="Reset your financial data?" onClose={()=>{setConfirmReset(false);setResetConfirmText("");}} width={380}>
+        <div style={{fontSize:13,color:C.textMid,marginBottom:14,lineHeight:1.6}}>This clears your budget, weekly entries, savings, subscriptions, loans, and account balances. It <strong>keeps your name, photo, and theme</strong>, then walks you back through setup so you can re-enter your numbers. <strong>This cannot be undone.</strong></div>
+        <label style={{display:"block",fontSize:11,fontWeight:600,color:C.textMid,marginBottom:6}} htmlFor="reset-confirm-input">
+          Type <strong>RESET</strong> to confirm
+        </label>
+        <input
+          id="reset-confirm-input"
+          autoFocus
+          value={resetConfirmText}
+          onChange={e=>setResetConfirmText(e.target.value)}
+          placeholder="RESET"
+          style={{width:"100%",boxSizing:"border-box",padding:"9px 10px",fontSize:13,borderRadius:8,border:`1px solid ${C.border}`,background:C.surface,color:C.text,marginBottom:14,outline:"none"}}
+        />
         <div style={{display:"flex",gap:8}}>
-          <button className="btn-fill" onClick={()=>setConfirmReset(false)} style={{flex:1.4,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.creamSoft,color:C.text,cursor:"pointer"}}>Cancel</button>
-          <button className="btn-fill" onClick={()=>{
-            // Founder decision: wipe all FINANCIAL data but keep who the user is.
-            // Start from defaults, then restore identity/preference fields and pin
-            // setupVersion to the current SETUP_VERSION so onboarding does NOT re-trigger.
-            const fresh=JSON.parse(JSON.stringify(DEFAULT_STATE));
-            fresh.preferredName=data.preferredName;
-            fresh.avatar=data.avatar;
-            fresh.darkMode=data.darkMode;
-            fresh.setupVersion=SETUP_VERSION;
-            upd(fresh);setConfirmReset(false);
-          }} style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:`1px solid ${C.dangerMid}`,borderRadius:8,background:C.dangerLight,color:C.danger,cursor:"pointer"}}>Reset data</button>
+          <button className="btn-fill" onClick={()=>{setConfirmReset(false);setResetConfirmText("");}} style={{flex:1.4,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.creamSoft,color:C.text,cursor:"pointer"}}>Cancel</button>
+          <button
+            className="btn-fill"
+            disabled={resetConfirmText.trim().toUpperCase()!=="RESET"}
+            onClick={()=>{
+              // Founder decision: wipe all FINANCIAL data but keep who the user is —
+              // name, photo, and theme. Then set setupVersion=null so the returning
+              // user is walked BACK THROUGH setup (ProgressiveSetup re-asks the money
+              // step; a truly blank state would get full onboarding) to re-enter their
+              // numbers. This reverses the prior pass, which pinned SETUP_VERSION and
+              // skipped onboarding.
+              const fresh=JSON.parse(JSON.stringify(DEFAULT_STATE));
+              fresh.preferredName=data.preferredName;
+              fresh.avatar=data.avatar;
+              fresh.darkMode=data.darkMode;
+              fresh.setupVersion=null;
+              upd(fresh);setConfirmReset(false);setResetConfirmText("");
+            }}
+            style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:`1px solid ${C.dangerMid}`,borderRadius:8,background:C.dangerLight,color:C.danger,cursor:resetConfirmText.trim().toUpperCase()!=="RESET"?"not-allowed":"pointer",opacity:resetConfirmText.trim().toUpperCase()!=="RESET"?0.5:1}}
+          >Reset</button>
         </div>
       </Modal>}
       {confirmDeleteAccount && <Modal title="Delete your account?" onClose={()=>{if(!deletingAccount)setConfirmDeleteAccount(false);}} width={380}>
@@ -1345,14 +1365,14 @@ export function App() {
            caps at 320px like a normal card. ── */}
       <div style={{display:"flex",gap:10,marginBottom:SHOW_PHASE2_TILES?10:20,flexWrap:"wrap"}}>
         {SHOW_PHASE2_TILES && (()=>{ const rt=runwayTileDisplay(runway, cushionSource); return (
-          <MetricTile label="Runway" value={rt.value} sub={rt.sub} color={rt.color}
+          <MetricTile label="Runway" value={rt.value} sub={rt.sub} color={rt.color} subMinLines={2}
             role={rt.alert?"alert":undefined} ariaLive={rt.alert?"assertive":undefined}/>
         ); })()}
         {SHOW_PHASE2_TILES
-          ? <MetricTile label="Monthly plan"  value={fmt(moSpend)} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/>
+          ? <MetricTile label="Monthly plan"  value={fmt(moSpend)} subMinLines={2} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/>
           : <div style={{flex:"0 1 320px",minWidth:130}}><MetricTile label="Monthly plan"  value={fmt(moSpend)} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/></div>
         }
-        {SHOW_PHASE2_TILES && <MetricTile label="Debt" value={fmt(debtProjection.total)} sub={debtProjection.isEstimate?"estimate":"at graduation"}/>}
+        {SHOW_PHASE2_TILES && <MetricTile label="Debt" value={fmt(debtProjection.total)} subMinLines={2} sub={debtProjection.isEstimate?"estimate":"at graduation"}/>}
       </div>
 
       {/* "Did your refund land?" nudge (walkthrough §9) — only when the header's own
