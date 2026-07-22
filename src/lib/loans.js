@@ -258,9 +258,31 @@ export function effectiveFeePct(loan) {
 // ── Principal & accrued interest ─────────────────────────────────────────────
 
 /**
+ * The full amount the award letter OFFERED for this loan, if the student
+ * recorded it — the sticker figure on the aid letter, which is often MORE than
+ * they actually took. Purely informational: it is never fed into principal,
+ * interest, or the debt projection (those all run off the ACCEPTED amount —
+ * the disbursement rows below). Returns `null` when no offer was recorded, so
+ * the UI can hide the "you accepted X of Y offered" note entirely rather than
+ * showing a $0 offer. Founder decision (2026-07-21): a loan captures BOTH the
+ * award-letter offer and the (often smaller) amount actually borrowed; only
+ * the borrowed amount costs money, so only the borrowed amount drives the math.
+ */
+export function loanOfferedAmount(loan) {
+  if (loan == null || loan.offeredAmount == null) return null;
+  const n = Number(loan.offeredAmount);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
  * How much of this loan is actually owed as principal (before any interest),
  * fee included — the fee is deducted from what the student receives but NOT
  * from what they owe, so it inflates this number rather than shrinking it.
+ *
+ * Built from the ACCEPTED amount (the disbursement rows, or the entered
+ * balance) — NEVER from `offeredAmount`, the award-letter sticker figure. A
+ * student offered $45k who accepted $30k owes on the $30k; the $45k offer is
+ * kept for reference only (see `loanOfferedAmount`).
  *
  * Two entry modes (see the plan's walkthrough §2 for why both exist):
  *   - "original amount" (default): sums the disbursement rows the student

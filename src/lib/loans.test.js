@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   FEDERAL_GRAD_UNSUB_RATES, FEDERAL_GRAD_PLUS_RATES, FEDERAL_ORIGINATION_FEE, FEDERAL_GRAD_PLUS_FEE, HRSA_RATE,
-  effectiveRate, isRateEstimated, effectiveFeePct, loanPrincipal, accruedInterest, loanTypeKey,
+  effectiveRate, isRateEstimated, effectiveFeePct, loanPrincipal, loanOfferedAmount, accruedInterest, loanTypeKey,
   projectDebtAtGraduation, computeRunway, estimateRefunds, loanReturnWindows,
   refundPlaybookTrigger, returnSavingsAtGraduation, classifyCushionSource,
 } from './loans.js';
@@ -68,6 +68,23 @@ describe('loanPrincipal', () => {
   it('as-of-balance mode uses the entered balance as-is, fee not re-applied', () => {
     const loan = makeLoan({ asOfDate: '2027-01-01', asOfBalance: 22000 });
     expect(loanPrincipal(loan)).toBe(22000);
+  });
+  it('ignores offeredAmount entirely — principal is built from the ACCEPTED amount, not the award-letter offer', () => {
+    const accepted = makeLoan({ academicYear: 2025, disbursements: [{ id: 'd1', date: '2025-08-05', amount: 20000 }] });
+    const withBiggerOffer = { ...accepted, offeredAmount: 45000 };
+    expect(loanPrincipal(withBiggerOffer)).toBe(loanPrincipal(accepted));
+  });
+});
+
+describe('loanOfferedAmount', () => {
+  it('returns the recorded offer when present', () => {
+    expect(loanOfferedAmount(makeLoan({ offeredAmount: 45000 }))).toBe(45000);
+  });
+  it('returns null when no offer was recorded (or it is zero/negative/garbage), so the UI can hide the note', () => {
+    expect(loanOfferedAmount(makeLoan())).toBe(null); // no offeredAmount field
+    expect(loanOfferedAmount(makeLoan({ offeredAmount: null }))).toBe(null);
+    expect(loanOfferedAmount(makeLoan({ offeredAmount: 0 }))).toBe(null);
+    expect(loanOfferedAmount(makeLoan({ offeredAmount: -100 }))).toBe(null);
   });
 });
 
@@ -158,6 +175,12 @@ describe('projectDebtAtGraduation', () => {
 
   it('an empty loans list returns a zeroed, estimate-flagged result rather than crashing', () => {
     expect(projectDebtAtGraduation([], gradDate)).toEqual({ total: 0, byLoan: [], isEstimate: true });
+  });
+
+  it('the award-letter offer never inflates what you owe — projection runs off the accepted amount only', () => {
+    const accepted = makeLoan({ id: 'a1', academicYear: 2025, disbursements: [{ id: 'd1', date: '2025-08-05', amount: 20000 }] });
+    const withOffer = { ...accepted, offeredAmount: 60000 };
+    expect(projectDebtAtGraduation([withOffer], gradDate).total).toBeCloseTo(projectDebtAtGraduation([accepted], gradDate).total, 6);
   });
 
   it('reproduces the hand-checked studentaid.gov example end-to-end', () => {

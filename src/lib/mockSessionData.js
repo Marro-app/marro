@@ -80,6 +80,9 @@ export function buildMockState() {
         academicYear: new Date().getFullYear() - 1,
         rate: null, // resolved from the federal rate table for that academic year
         status: 'disbursed',
+        // Award letter offered 45k; the student accepted only 41k (2 × 20,500).
+        // Exercises the offer-vs-accepted split — only the 41k drives the math.
+        offeredAmount: 45000,
         disbursements: [
           // Fall disbursement in the academic year's start calendar year, spring
           // disbursement in the FOLLOWING calendar year (academic years span two
@@ -101,6 +104,7 @@ export function buildMockState() {
         academicYear: new Date().getFullYear() - 1,
         rate: null, // HPSL/PCL/LDS resolve to the fixed 5% HRSA rate
         status: 'disbursed',
+        offeredAmount: 8500, // accepted the full offer here
         disbursements: [
           { id: 'db_mock_2a', amount: 8500, date: `${new Date().getFullYear() - 1}-08-05`, dateConfirmed: true },
         ],

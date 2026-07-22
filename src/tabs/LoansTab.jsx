@@ -6,8 +6,8 @@ import { DateField } from '../components/pickers.jsx';
 import { useApp } from '../context/AppContext.js';
 import { radioProps } from '../lib/ui-helpers.js';
 import {
-  effectiveRate, isRateEstimated, loanPrincipal, projectDebtAtGraduation, loanTypeKey,
-  estimateRefunds, computeRunway, loanReturnWindows, refundNudgeState, returnSavingsAtGraduation,
+  effectiveRate, loanPrincipal, loanOfferedAmount, projectDebtAtGraduation, loanTypeKey,
+  estimateRefunds, computeRunway, loanReturnWindows, refundNudgeState,
 } from '../lib/loans.js';
 import { disbFallbackDate, DAYS_PER_MONTH, DEFAULT_SAVINGS_APY, HYSA_RATE_RANGE_COPY, FDIC_INSURANCE_CAP } from '../lib/constants.js';
 
@@ -18,7 +18,7 @@ import { disbFallbackDate, DAYS_PER_MONTH, DEFAULT_SAVINGS_APY, HYSA_RATE_RANGE_
 // shipped: no "disbursement" (→ "money arrives"/"part"), no "principal"
 // (→ "amount borrowed"), no "interest accrual" (→ "interest that has built
 // up so far"), no "capitalization" (never shown), no bare "origination fee"
-// (→ "the ~1% fee the government takes off the top"), no "APY" (→ "interest
+// (→ "the standard fee of about 1% the government takes off the top"), no "APY" (→ "interest
 // rate"), no bare offered/accepted/disbursed (→ plain-English status labels).
 // See docs/PRODUCT_DECISIONS.md "Phase 2 commit 4" for the read-through log.
 
@@ -37,6 +37,7 @@ const blankLoan = () => {
     id: `ln_${Date.now()}_${Math.floor(Math.random() * 1e4)}`,
     name: '', type: 'federal', subtype: null, academicYear: y, rate: null,
     status: 'disbursed',
+    offeredAmount: null,
     disbursements: [newDisb(y, 0), newDisb(y, 1)],
     feePct: null, notes: '',
     asOfBalance: null, asOfDate: null,
@@ -59,6 +60,12 @@ const LOAN_TYPE_OPTIONS = [
 ];
 const HPSL_FAMILY = new Set(['hpsl', 'pcl', 'lds']);
 const UNDERGRAD_KEYS = new Set(['directUnsubUndergrad', 'directSubUndergrad']);
+// Loan types whose interest rate is set by rule rather than by the student:
+// the HRSA family + Perkins carry a rate fixed by law; the Direct Loan family
+// takes the government's rate for the year borrowed. Both are still editable
+// (item 21) — we just show a heads-up when the student overrides a set rate.
+const FIXED_STATUTORY_KEYS = new Set(['hpsl', 'pcl', 'lds', 'perkins']);
+const GOV_TABLE_KEYS = new Set(['directUnsubGrad', 'gradPLUS', 'directUnsubUndergrad', 'directSubUndergrad']);
 /** Which picker option should read as selected for a given loan — collapses pcl/lds onto the "hpsl" row per the design (identical profile; keys stay distinct in the data only). */
 function pickerKeyFor(loan) {
   const key = loanTypeKey(loan);
@@ -89,9 +96,29 @@ function SegButton({ active, onClick, children, ariaLabel }) {
 function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
   const [pctText, setPctText] = useState(loan.rate != null ? String(Math.round(loan.rate * 1000) / 10) : '');
   const annualTotal = (loan.disbursements || []).reduce((a, d) => a + (Number(d.amount) || 0), 0);
+  const offered = loanOfferedAmount(loan);
   const asOfMode = loan.asOfDate != null;
-  const estimated = isRateEstimated(loan);
   const rateHigh = pctText !== '' && Number(pctText) > 20;
+
+  // School year shown as a full range (item 19) — 2026 → "2026–2027".
+  const yearRange = `${loan.academicYear}–${loan.academicYear + 1}`;
+
+  // ── Rate (item 21): the field is ALWAYS editable regardless of type. For a
+  // type whose rate is set by rule, we leave `loan.rate` null (so the correct
+  // statutory/government number keeps flowing from the rate table) and show
+  // that number as the placeholder plus a plain-language note; typing a value
+  // overrides it, and we warn that they've replaced a set rate.
+  const typeKey = loanTypeKey(loan);
+  const isFixedStatutory = FIXED_STATUTORY_KEYS.has(typeKey);
+  const isGovTable = GOV_TABLE_KEYS.has(typeKey);
+  const hasSetRate = isFixedStatutory || isGovTable;
+  const resolvedPct = (effectiveRate(loan) * 100).toFixed(2);
+  const rateOverridden = loan.rate != null;
+
+  // ── 120-day return countdown (items 18 & 24): tied to THIS loan, computed
+  // fresh each render. Show the soonest-expiring open window.
+  const myWindows = loanReturnWindows([loan], todayStr());
+  const returnWindow = myWindows.length ? myWindows.reduce((a, b) => (b.daysLeft < a.daysLeft ? b : a)) : null;
 
   const patch = (fn) => { const d = JSON.parse(JSON.stringify(data)); const l = d.loans[idx]; fn(l, d); upd(d); };
 
@@ -127,7 +154,7 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
   return (
     <Card style={{ position: 'relative' }}>
       <div style={{ position: 'absolute', top: 12, right: 12 }}>
-        <XBtn label={`Delete loan ${loan.name || 'entry'}`} danger onClick={() => { const d = JSON.parse(JSON.stringify(data)); d.loans = d.loans.filter((l) => l.id !== loan.id); upd(d); }} />
+        <XBtn label={`Remove loan ${loan.name || 'entry'}`} onClick={() => { const d = JSON.parse(JSON.stringify(data)); d.loans = d.loans.filter((l) => l.id !== loan.id); upd(d); }} />
       </div>
 
       {/* ── Always visible: name, type, school year, amount ── */}
@@ -151,10 +178,11 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
           </select>
         </div>
         <div style={{ flex: '1 1 120px' }}>
-          <label style={labelStyle} htmlFor={`ln-year-${loan.id}`}>School year</label>
-          <input id={`ln-year-${loan.id}`} type="number" value={loan.academicYear} aria-label="School year (the year it starts)"
+          <label style={labelStyle} htmlFor={`ln-year-${loan.id}`}>School year (start)</label>
+          <input id={`ln-year-${loan.id}`} type="number" value={loan.academicYear} aria-label="School year the loan is for — enter the year it starts"
             onChange={(e) => patch((l) => { l.academicYear = Number(e.target.value) || l.academicYear; })}
             style={inputStyle({ width: '100%' })} />
+          <div style={{ fontSize: 11, color: C.gray, marginTop: 4 }}>School year {yearRange}</div>
         </div>
       </div>
 
@@ -172,33 +200,62 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
         </label>
       )}
 
-      <div style={{ marginBottom: 10 }}>
-        <span style={labelStyle} id={`ln-entrymode-lbl-${loan.id}`}>What are you looking at?</span>
-        <ChoiceGroup role="radiogroup" ariaLabelledby={`ln-entrymode-lbl-${loan.id}`} style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <SegButton active={!asOfMode} ariaLabel="My award letter — the amount I was offered or borrowed"
+      <div style={{ marginBottom: 12 }}>
+        <span style={labelStyle} id={`ln-entrymode-lbl-${loan.id}`}>What are you entering?</span>
+        <ChoiceGroup role="radiogroup" ariaLabelledby={`ln-entrymode-lbl-${loan.id}`} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <SegButton active={!asOfMode} ariaLabel="From my award letter — what I was offered and what I accepted"
             onClick={() => patch((l) => { l.asOfDate = null; l.asOfBalance = null; })}>
-            My award letter (amount offered/borrowed)
+            Award letter
           </SegButton>
-          <SegButton active={asOfMode} ariaLabel="My current balance on studentaid.gov"
+          <SegButton active={asOfMode} ariaLabel="My current balance today on studentaid.gov"
             onClick={() => patch((l) => { l.asOfDate = todayStr(); l.asOfBalance = Math.round(loanPrincipal(l) * 100) / 100; })}>
-            My current balance on studentaid.gov
+            Current balance
           </SegButton>
         </ChoiceGroup>
+        <div style={{ fontSize: 11, color: C.gray, marginTop: 6, lineHeight: 1.5 }}>
+          {asOfMode
+            ? 'Current balance is what you owe today, straight from studentaid.gov (interest already baked in).'
+            : 'Award letter is what your school offered and what you chose to accept. Use this if the loan is new.'}
+        </div>
       </div>
 
       {!asOfMode ? (
         <>
-          <div style={{ marginBottom: 6 }}>
-            <label style={labelStyle} htmlFor={`ln-amt-${loan.id}`}>Amount you borrowed that year — <strong style={{ color: C.text }}>the original amount, not today’s balance</strong></label>
-            <input id={`ln-amt-${loan.id}`} type="number" min="0" value={annualTotal || ''} placeholder="$0"
-              aria-label="Amount you borrowed that year — the original amount, not today's balance"
-              onChange={(e) => setAnnual(sanitizeMoneyInput(e.target.value))} style={inputStyle({ width: 160 })} />
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor={`ln-offer-${loan.id}`}>
+                  Amount offered <span style={{ fontWeight: 400, color: C.gray }}>(optional)</span>
+                </label>
+                <InfoTip text="The full amount your award letter offered for this loan. You don't have to take all of it — record it here just for reference. It doesn't change what you owe." />
+              </div>
+              <input id={`ln-offer-${loan.id}`} type="number" min="0" value={loan.offeredAmount ?? ''} placeholder="$0"
+                aria-label="Amount offered in your award letter, optional"
+                onChange={(e) => { const v = e.target.value; patch((l) => { l.offeredAmount = v === '' ? null : Number(sanitizeMoneyInput(v)) || 0; }); }}
+                style={inputStyle({ width: 150 })} />
+            </div>
+            <div>
+              <label style={labelStyle} htmlFor={`ln-amt-${loan.id}`}>
+                Amount you accepted <span style={{ fontWeight: 400, color: C.gray }}>(what you borrow)</span>
+              </label>
+              <input id={`ln-amt-${loan.id}`} type="number" min="0" value={annualTotal || ''} placeholder="$0"
+                aria-label="Amount you accepted — what you actually borrow and pay back"
+                onChange={(e) => setAnnual(sanitizeMoneyInput(e.target.value))} style={inputStyle({ width: 150 })} />
+            </div>
           </div>
+          <div style={{ fontSize: 11, color: C.gray, marginBottom: 8, lineHeight: 1.5 }}>
+            You can accept less than you&apos;re offered. Everything Marro shows — what you&apos;ll owe and its interest — is based on the amount you accepted.
+          </div>
+          {offered != null && annualTotal > 0 && annualTotal < offered && (
+            <div style={{ fontSize: 11, color: C.textMid, marginBottom: 10, lineHeight: 1.5 }}>
+              You accepted <strong style={{ color: C.text }}>{fmt(annualTotal)}</strong> of the <strong style={{ color: C.text }}>{fmt(offered)}</strong> offered.
+            </div>
+          )}
           <div style={{ fontSize: 11, color: C.gray, marginBottom: 10, lineHeight: 1.5 }}>
-            Don’t have your numbers? Log into studentaid.gov → Dashboard → click a loan for its exact amounts, dates, and rate. Private loans: check your lender’s site.
+            Don&apos;t have your numbers? Log into studentaid.gov → Dashboard → click a loan for its exact amounts, dates, and rate. Private loans: check your lender&apos;s site.
           </div>
 
-          <div style={{ fontSize: 11, color: C.textMid, marginBottom: 6, fontWeight: 600 }}>Money usually arrives in two parts — fall and spring:</div>
+          <div style={{ fontSize: 11, color: C.textMid, marginBottom: 6, fontWeight: 600 }}>The amount you accepted usually arrives in two parts — fall and spring:</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
             {(loan.disbursements || []).map((d, i) => (
               <div key={d.id} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -222,8 +279,8 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
       ) : (
         <div style={{ display: 'flex', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 140px' }}>
-            <label style={labelStyle} htmlFor={`ln-asof-bal-${loan.id}`}>Balance as of the date below</label>
-            <input id={`ln-asof-bal-${loan.id}`} type="number" min="0" value={loan.asOfBalance || ''} aria-label="Balance as of the date below"
+            <label style={labelStyle} htmlFor={`ln-asof-bal-${loan.id}`}>What you owe today</label>
+            <input id={`ln-asof-bal-${loan.id}`} type="number" min="0" value={loan.asOfBalance || ''} aria-label="What you owe today, from studentaid.gov"
               onChange={(e) => patch((l) => { l.asOfBalance = Number(sanitizeMoneyInput(e.target.value)) || 0; })} style={inputStyle({ width: '100%' })} />
           </div>
           <div style={{ flex: '1 1 120px' }}>
@@ -234,35 +291,57 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
         </div>
       )}
 
-      {/* ── Rate ──
-          Shown read-only whenever the resolved rate is a known, confirmed
-          fact (a table lookup or a fixed statutory rate) AND the student
-          hasn't typed a manual override — `loan.rate == null && !estimated`.
-          (Keying this off `loan.type==='federal'` alone, the pre-Package-A
-          way, mislabeled a fixed-5% HPSL/PCL/LDS rate as needing manual
-          entry, and — separately — permanently hid the rate input the
-          moment a manually-typed override made `estimated` flip to false.) */}
-      <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
-        {loan.rate == null && !estimated ? (
-          <div style={{ fontSize: 12, color: C.textMid }}>
-            {HPSL_FAMILY.has(loanTypeKey(loan)) || loanTypeKey(loan) === 'perkins' ? (
-              <>Interest rate: <strong style={{ color: C.text }}>{(effectiveRate(loan) * 100).toFixed(2)}%</strong> (a fixed rate for this loan type)</>
-            ) : (
-              <>Interest rate: <strong style={{ color: C.text }}>{(effectiveRate(loan) * 100).toFixed(2)}%</strong> (the federal rate for {loan.academicYear}–{String((loan.academicYear + 1) % 100).padStart(2, '0')} loans) <InfoTip text="Set by the government for the school year you borrowed — same rate for everyone that year."/></>
-            )}
+      {/* ── 120-day return countdown (items 18 & 24) ──
+          Replaces the two duplicate top-of-tab return banners with a compact
+          line embedded in the card it belongs to. Recomputed fresh each render
+          (see `returnWindow` above), so an edited date is never stale. */}
+      {returnWindow && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 12, padding: '10px 12px', background: C.blueLight, border: `1px solid ${C.blueMid}`, borderRadius: 8 }}>
+          <div style={{ flex: 1, fontSize: 12, color: C.textMid, lineHeight: 1.6 }}>
+            <strong style={{ color: C.text }}>
+              {returnWindow.dateConfirmed ? `${returnWindow.daysLeft} days left` : `About ${returnWindow.daysLeft} days left`}
+            </strong>{' '}to return money from this loan you didn&apos;t need. The interest and fee on anything you send back are cancelled — like you never borrowed it.
+            {!returnWindow.dateConfirmed && ' Confirm the exact deadline with your aid office.'} Your aid office handles it.
           </div>
-        ) : (
-          <div>
-            <label style={labelStyle} htmlFor={`ln-rate-${loan.id}`}>Interest rate (as a percent){estimated && ' — estimated, enter yours if you know it'}</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input id={`ln-rate-${loan.id}`} type="number" min="0" max="30" step="0.01" value={pctText}
-                placeholder={estimated ? 'e.g. 7.94' : ''} aria-label="Interest rate as a percent"
-                onChange={(e) => { const t = e.target.value; setPctText(t); const n = Number(t); patch((l) => { l.rate = t === '' ? null : (isNaN(n) ? l.rate : n / 100); }); }}
-                style={inputStyle({ width: 90 })} />
-              <span style={{ fontSize: 12, color: C.textMid }}>%</span>
-              {pctText !== '' && !rateHigh && <span style={{ fontSize: 11, color: C.teal }}>✓</span>}
-            </div>
-            {rateHigh && <div role="alert" style={{ fontSize: 11, color: C.amber, marginTop: 4 }}>That seems high — double-check?</div>}
+          <InfoTip text="Federal loans can be returned within 120 days of the money arriving. Returning unused money cancels its interest and fee, as if it never happened." />
+        </div>
+      )}
+
+      {/* ── Interest rate — ALWAYS editable, whatever the loan type (item 21) ──
+          For a type whose rate is set by rule (the HRSA family / Perkins carry
+          a rate fixed by law; the Direct Loan family uses the government's rate
+          for the year borrowed) we leave `loan.rate` null so that correct number
+          keeps flowing from the rate table, show it as the placeholder, and warn
+          if the student overrides it. Every type can still be edited. */}
+      <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
+        <label style={labelStyle} htmlFor={`ln-rate-${loan.id}`}>Interest rate (as a percent)</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input id={`ln-rate-${loan.id}`} type="number" min="0" max="30" step="0.01" value={pctText}
+            placeholder={hasSetRate ? resolvedPct : 'e.g. 7.94'} aria-label="Interest rate as a percent"
+            onChange={(e) => { const t = e.target.value; setPctText(t); const n = Number(t); patch((l) => { l.rate = t === '' ? null : (isNaN(n) ? l.rate : n / 100); }); }}
+            style={inputStyle({ width: 90 })} />
+          <span style={{ fontSize: 12, color: C.textMid }}>%</span>
+          {pctText !== '' && !rateHigh && <span style={{ fontSize: 11, color: C.teal }} aria-hidden="true">✓</span>}
+        </div>
+        {rateHigh && <div role="alert" style={{ fontSize: 11, color: C.amber, marginTop: 4 }}>That seems high — double-check?</div>}
+        {!rateOverridden && isFixedStatutory && (
+          <div style={{ fontSize: 11, color: C.gray, marginTop: 4, lineHeight: 1.5 }}>
+            This loan type has a rate fixed by law at <strong style={{ color: C.textMid }}>{resolvedPct}%</strong>. You usually won&apos;t need to change it.
+          </div>
+        )}
+        {!rateOverridden && isGovTable && (
+          <div style={{ fontSize: 11, color: C.gray, marginTop: 4, lineHeight: 1.5 }}>
+            The government sets the rate for {yearRange} loans at <strong style={{ color: C.textMid }}>{resolvedPct}%</strong> — leave this blank to use it, or enter your own from your paperwork.
+          </div>
+        )}
+        {!rateOverridden && !hasSetRate && (
+          <div style={{ fontSize: 11, color: C.gray, marginTop: 4, lineHeight: 1.5 }}>
+            Enter the rate from your loan paperwork.
+          </div>
+        )}
+        {rateOverridden && hasSetRate && (
+          <div role="alert" style={{ fontSize: 11, color: C.amber, marginTop: 4, lineHeight: 1.5 }}>
+            Heads up: this loan type normally uses a set rate of {resolvedPct}%. Clear the field to switch back to it.
           </div>
         )}
       </div>
@@ -282,7 +361,7 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
             </select>
           </div>
           <div>
-            <label style={labelStyle} htmlFor={`ln-fee-${loan.id}`}>Fee, as a percent {loan.type === 'federal' ? '(leave blank to use the ~1% fee the government takes off the top — we’ve included it)' : '(most private lenders don’t charge one)'}</label>
+            <label style={labelStyle} htmlFor={`ln-fee-${loan.id}`}>Fee, as a percent {loan.type === 'federal' ? '(leave blank to use the standard fee of about 1% the government takes off the top — we’ve included it)' : '(most private lenders don’t charge one)'}</label>
             <input id={`ln-fee-${loan.id}`} type="number" min="0" max="10" step="0.01" value={loan.feePct != null ? loan.feePct * 100 : ''}
               placeholder={loan.type === 'federal' ? '1.057' : '0'} aria-label="Fee as a percent"
               onChange={(e) => { const v = e.target.value; patch((l) => { l.feePct = v === '' ? null : (Number(v) / 100); }); }}
@@ -345,14 +424,14 @@ function BalanceCheckin({ data, upd }) {
       </SectionTitle>
       <form onSubmit={onSubmit} style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div>
-          <label style={labelStyle} htmlFor="bal-spendable">Available to spend</label>
+          <label style={labelStyle} htmlFor="bal-spendable">Money you can spend now</label>
           <input id="bal-spendable" type="number" min="0" value={spendable} placeholder="$0" required
-            aria-label="Available to spend, across all accounts you spend from"
+            aria-label="Money you can spend now, across all accounts you spend from"
             onChange={(e) => { setSpendable(sanitizeMoneyInput(e.target.value)); setConfirming(false); }}
             style={inputStyle({ width: 130 })} />
         </div>
         <div>
-          <label style={labelStyle} htmlFor="bal-savings">Set aside in savings (optional)</label>
+          <label style={labelStyle} htmlFor="bal-savings">Set aside in savings</label>
           <input id="bal-savings" type="number" min="0" value={savings} placeholder="$0"
             aria-label="Set aside in savings, optional"
             onChange={(e) => setSavings(sanitizeMoneyInput(e.target.value))} style={inputStyle({ width: 130 })} />
@@ -390,87 +469,30 @@ function BalanceCheckin({ data, upd }) {
   );
 }
 
-// ── Persistent 120-day return card (A3) ──────────────────────────────────────
-//
-// "Surplus loan money isn't wealth" — walkthrough §5. Renders above the loan
-// grid whenever any return window is still open (`loanReturnWindows`,
-// recomputed fresh on every render, never cached by loan id, so an edited
-// disbursement date is never stale — same discipline as the rest of this
-// file). Independent of the one-time Refund Playbook card (added later in
-// the stack): this one never goes away while a window is genuinely open.
-//
-// Surplus estimation is deliberately conservative ("be honest, not clever" —
-// implementation plan §3.3): it only quantifies a dollar figure once there's
-// a real MEASURED burn rate (two balance check-ins ≥14 days apart — the same
-// trust gate `computeRunway` itself uses) and a next-refund date to project
-// to. Without that history, the card still shows — with the window and the
-// plain-language education — just without inventing a savings number from
-// nothing.
-function surplusEstimateForWindow(data, disbAmount, today) {
-  const readings = [...(data.balanceReadings || [])].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  if (readings.length < 2) return null;
-  const gradDate = data.years?.[data.years.length - 1]?.endDate || null;
-  const refunds = estimateRefunds(data.years || []);
-  const runway = computeRunway({ readings, plannedMonthlyBurn: 0, upcomingRefunds: refunds, gradDate, today });
-  if (!runway.burn || runway.burn.source !== 'measured') return null; // not enough real history to trust a burn rate
-  const nextRefund = refunds.find((r) => r.date && r.date > today);
-  if (!nextRefund) return null;
-  const monthsToNextRefund = (new Date(`${nextRefund.date}T12:00:00`) - new Date(`${today}T12:00:00`)) / (24 * 60 * 60 * 1000) / DAYS_PER_MONTH;
-  const latest = readings[readings.length - 1];
-  const latestTotal = (Number(latest.spendable) || 0) + (Number(latest.savings) || 0);
-  const surplus = Math.min(disbAmount, Math.max(0, latestTotal - runway.burn.amount * monthsToNextRefund));
-  return surplus;
-}
+// ── 120-day return window (items 18 & 24) ────────────────────────────────────
+// The old design rendered a separate full-width banner PER open window at the
+// top of the tab — two loans meant two near-identical "you can still return
+// borrowed money" cards with different day counts and no way to tell which loan
+// each belonged to or to dismiss them. That's gone: the countdown now lives
+// inside each loan's own card (see `returnWindow` in LoanCard), so it's always
+// clear which loan it's about. The surplus-dollar estimate that used to ride
+// along here was dropped with it — the embedded line keeps the plain-language
+// education without inventing a per-window savings figure.
 
-function ReturnWindowCard({ data, today }) {
-  const loans = data.loans || [];
-  const windows = loanReturnWindows(loans, today);
-  if (windows.length === 0) return null;
-  const gradDate = data.years?.[data.years.length - 1]?.endDate || null;
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {windows.map((w) => {
-        const loan = loans.find((l) => l.id === w.loanId);
-        const disb = loan?.disbursements?.find((d) => d.id === w.disbursementId);
-        const disbAmount = Number(disb?.amount) || 0;
-        const surplus = surplusEstimateForWindow(data, disbAmount, today);
-        const saved = surplus && surplus > 0 ? returnSavingsAtGraduation(loans, w, gradDate, surplus) : null;
-        return (
-          <Card key={`${w.loanId}_${w.disbursementId}`} style={{ borderLeft: `3px solid ${C.blue}` }}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, color: C.text, marginBottom: 4 }}>
-                  You can still return borrowed money you didn’t need — {w.dateConfirmed ? `${w.daysLeft} days left` : `roughly ${w.daysLeft} days left, confirm with your aid office`}
-                </div>
-                <div style={{ fontSize: 12, color: C.textMid, lineHeight: 1.6 }}>
-                  Federal loans can be returned within 120 days of arriving — the interest <strong>and</strong> the fee on the returned part are cancelled, like you never borrowed it.
-                  {surplus != null && surplus > 0 && (
-                    <>
-                      {' '}Based on your numbers, about <strong style={{ color: C.text }}>{fmt(surplus)}</strong> of this money looks like more than your plan needs
-                      {saved != null && saved > 0 && <> — returning it saves about <strong style={{ color: C.text }}>{fmt(saved)}</strong> by graduation</>}.
-                    </>
-                  )}
-                  {' '}Your aid office handles it.
-                </div>
-              </div>
-            </div>
-          </Card>
-        );
-      })}
-    </div>
-  );
-}
-
+// Item 17: the ✕ and the old "Remind me later" button did the exact same
+// thing — hide the banner until the next visit (no timed reminder is ever
+// scheduled). Only "Don't show this again" is permanent. The old copy implied
+// a schedule that didn't exist, so it's gone: the ✕ IS the dismiss-for-now
+// action (the banner simply comes back next visit), and the one remaining
+// button is the honest permanent opt-out.
 function ReminderBanner({ data, upd }) {
-  const [snoozedThisSession, setSnoozedThisSession] = useState(false);
-  if ((data.loans || []).length > 0 || data.loanReminderSnooze != null || snoozedThisSession) return null;
+  const [dismissedThisSession, setDismissedThisSession] = useState(false);
+  if ((data.loans || []).length > 0 || data.loanReminderSnooze != null || dismissedThisSession) return null;
   return (
-    <Banner type="info" onClose={() => setSnoozedThisSession(true)}>
-      Add your loans so Marro can show what you’ll really owe at graduation — interest included.
+    <Banner type="info" onClose={() => setDismissedThisSession(true)}>
+      Add your loans so Marro can show what you’ll really owe at graduation — interest included. Closing this hides it for now; it comes back next time you open Marro.
       <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
-        <button type="button" className="txt-act" onClick={() => setSnoozedThisSession(true)} style={{ background: 'none', border: 'none', color: C.blue, fontSize: 12, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>Remind me later</button>
-        <button type="button" className="txt-act" onClick={() => { const d = JSON.parse(JSON.stringify(data)); d.loanReminderSnooze = { choice: 'never', at: new Date().toISOString() }; upd(d); }} style={{ background: 'none', border: 'none', color: C.blue, fontSize: 12, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>Don’t show again</button>
+        <button type="button" className="txt-act" onClick={() => { const d = JSON.parse(JSON.stringify(data)); d.loanReminderSnooze = { choice: 'never', at: new Date().toISOString() }; upd(d); }} style={{ background: 'none', border: 'none', color: C.blue, fontSize: 12, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}>Don’t show this again</button>
       </div>
     </Banner>
   );
@@ -486,7 +508,7 @@ function ReminderBanner({ data, upd }) {
 // individualized advice. Dismissing writes refundPlaybookSeen so it shows at
 // most once per semester's refund. A days-count in the return-window bullet
 // is only ever a hard number when the disbursement date was user-confirmed
-// (dateConfirmed) — otherwise it reads as a soft "roughly N days."
+// (dateConfirmed) — otherwise it reads as a soft "about N days."
 const MONTH_MS = DAYS_PER_MONTH * 24 * 60 * 60 * 1000;
 // The illustrative APY used to estimate "parking money in savings" earnings.
 // ⚠ Was a private local constant here (0.04) while SavingsTab's Growth
@@ -565,14 +587,14 @@ function RefundPlaybook({ data, upd, moSpend, refundNudgeConfirmed, setRefundNud
       <ol style={{ margin: '12px 0 0', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13, color: C.text, lineHeight: 1.55 }}>
         <li>
           {semesterNeed != null
-            ? <>This stretch needs about <strong>{fmt(semesterNeed)}</strong> ({monthsNeeded} month{monthsNeeded === 1 ? '' : 's'} × your ~{fmt(burnAmount)}/month pace).</>
+            ? <>This stretch needs about <strong>{fmt(semesterNeed)}</strong> ({monthsNeeded} month{monthsNeeded === 1 ? '' : 's'} × your pace of about {fmt(burnAmount)}/month).</>
             : <>Add your budget and a balance check-in and Marro can estimate what this stretch needs to cover.</>}
           {' '}Many students keep about one month&apos;s worth in checking.
         </li>
         <li>
           Consider parking the rest in savings.{' '}
           {parkAmount != null && parkAmount > 0
-            ? <>Many online banks currently pay {HYSA_RATE_RANGE_COPY} — {fmt(parkAmount)} parked for {monthsToHorizon} month{monthsToHorizon === 1 ? '' : 's'} could earn ~{fmt(earningsEstimate)} while staying instantly available and FDIC-insured (covered up to {fmt(FDIC_INSURANCE_CAP)} per bank).</>
+            ? <>Many online banks currently pay {HYSA_RATE_RANGE_COPY} — {fmt(parkAmount)} parked for {monthsToHorizon} month{monthsToHorizon === 1 ? '' : 's'} could earn about {fmt(earningsEstimate)} while staying instantly available and FDIC-insured (covered up to {fmt(FDIC_INSURANCE_CAP)} per bank).</>
             : <>Many online banks currently pay {HYSA_RATE_RANGE_COPY} while staying instantly available and FDIC-insured (covered up to {fmt(FDIC_INSURANCE_CAP)} per bank).</>}
           {' '}(Heads up: savings interest may generate a small tax form — usually called a 1099-INT.)
         </li>
@@ -581,7 +603,7 @@ function RefundPlaybook({ data, upd, moSpend, refundNudgeConfirmed, setRefundNud
           {window
             ? <> {window.dateConfirmed
                 ? <>You have <strong>{window.daysLeft} days</strong> left on that money.</>
-                : <>You have <strong>roughly {window.daysLeft} days</strong> left — confirm the exact date with your aid office.</>}</>
+                : <>You have <strong>about {window.daysLeft} days</strong> left — confirm the exact date with your aid office.</>}</>
             : null}
           {' '}Your financial aid office can help you decide.
         </li>
@@ -610,7 +632,6 @@ export function LoansTab() {
     <div role="tabpanel" id="tab-panel" aria-labelledby="tab-loans" tabIndex={0} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <RefundPlaybook data={data} upd={upd} moSpend={moSpend} refundNudgeConfirmed={refundNudgeConfirmed} setRefundNudgeConfirmed={setRefundNudgeConfirmed} />
       <ReminderBanner data={data} upd={upd} />
-      <ReturnWindowCard data={data} today={todayStr()} />
 
       {loans.length === 0 && (
         <EmptyState>
