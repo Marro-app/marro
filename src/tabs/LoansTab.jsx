@@ -6,7 +6,8 @@ import { DateField } from '../components/pickers.jsx';
 import { useApp } from '../context/AppContext.js';
 import { radioProps } from '../lib/ui-helpers.js';
 import {
-  effectiveRate, loanPrincipal, loanOfferedAmount, projectDebtAtGraduation, loanTypeKey,
+  effectiveFeePct, statutoryRate, isRateEstimated, isInterestDeferred,
+  loanPrincipal, loanOfferedAmount, projectDebtAtGraduation, loanTypeKey,
   estimateRefunds, computeRunway, loanReturnWindows, refundNudgeState,
 } from '../lib/loans.js';
 import { disbFallbackDate, DAYS_PER_MONTH, DEFAULT_SAVINGS_APY, HYSA_RATE_RANGE_COPY, FDIC_INSURANCE_CAP } from '../lib/constants.js';
@@ -41,6 +42,8 @@ const blankLoan = () => {
     disbursements: [newDisb(y, 0), newDisb(y, 1)],
     feePct: null, notes: '',
     asOfBalance: null, asOfDate: null,
+    // Interest deferral (null = derive default from the loan type; see isInterestDeferred).
+    interestDeferred: null, interestStartDate: null,
   };
 };
 
@@ -73,7 +76,34 @@ function pickerKeyFor(loan) {
 }
 
 const inputStyle = (extra = {}) => ({ border: `1px solid ${C.border}`, borderRadius: 8, padding: '6px 9px', background: C.bg, color: C.text, fontSize: 13, boxSizing: 'border-box', ...extra });
-const labelStyle = { fontSize: 11, color: C.textMid, marginBottom: 4, display: 'block', fontWeight: 600 };
+// Labels use full-strength text (not textMid): form labels are load-bearing
+// a11y content and must stay clearly legible on every surface, including the
+// tinted info cards where a dimmer token dips under 4.5:1 in dark mode (item 12).
+const labelStyle = { fontSize: 11, color: C.text, marginBottom: 4, display: 'block', fontWeight: 600 };
+
+// Percent fields don't run through sanitizeMoneyInput (which strips leading
+// zeros for money) — strip them here too so a typed "050" reads back as "50".
+const stripLeadingZeros = (s) => String(s).replace(/^0+(?=\d)/, '');
+
+// iOS-style switch. The whole row (track + label) is one role="switch" button,
+// so it's keyboard-operable, has a ≥44px hit target, and announces its state.
+function Toggle({ checked, onChange, label, describedBy }) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} aria-describedby={describedBy}
+      onClick={() => onChange(!checked)}
+      style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', minHeight: 44, padding: '4px 0',
+        background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+      <span aria-hidden="true" style={{ flexShrink: 0, width: 42, height: 26, borderRadius: 13, padding: 2,
+        display: 'inline-flex', alignItems: 'center',
+        background: checked ? C.teal : C.surfaceMid, border: `1px solid ${checked ? C.teal : C.border}`,
+        transition: 'background .15s, border-color .15s' }}>
+        <span style={{ width: 20, height: 20, borderRadius: 10, background: checked ? C.bg : C.gray,
+          transform: checked ? 'translateX(16px)' : 'translateX(0)', transition: 'transform .18s cubic-bezier(0.23,1,0.32,1)' }} />
+      </span>
+      <span style={{ fontSize: 12.5, color: C.text, fontWeight: 600, lineHeight: 1.4 }}>{label}</span>
+    </button>
+  );
+}
 
 const STATUS_OPTIONS = [
   { v: 'offered', label: 'Offered to me (haven’t accepted yet)' },
@@ -112,12 +142,31 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
   const isFixedStatutory = FIXED_STATUTORY_KEYS.has(typeKey);
   const isGovTable = GOV_TABLE_KEYS.has(typeKey);
   const hasSetRate = isFixedStatutory || isGovTable;
-  const resolvedPct = (effectiveRate(loan) * 100).toFixed(2);
   const rateOverridden = loan.rate != null;
+  // The TRUE statutory rate for this type, ignoring any override (item 6 fix) —
+  // used for the placeholder and the "this type's set rate is X%" heads-up.
+  const statPct = hasSetRate ? (statutoryRate(loan) * 100).toFixed(2) : null;
+  // The type's default fee (Grad PLUS 4.228%, other federal Direct ~1.057%, else 0),
+  // ignoring any override — used as the fee-field placeholder.
+  const feeDefaultPct = effectiveFeePct({ ...loan, feePct: null }) * 100;
 
-  // ── 120-day return countdown (items 18 & 24): tied to THIS loan, computed
-  // fresh each render. Show the soonest-expiring open window.
-  const myWindows = loanReturnWindows([loan], todayStr());
+  // Per-type entry framing (item 7): federal + school health-professions loans
+  // come from an award letter (offer vs. accepted); private/other loans don't —
+  // they just have a loan amount you're borrowing from a lender.
+  const isFederal = loan.type === 'federal';
+  const awardFraming = isFederal || HPSL_FAMILY.has(typeKey);
+  const balanceSource = isFederal ? 'studentaid.gov' : 'your loan servicer';
+
+  // Interest deferral toggle (founder decision) + its "starts on" date.
+  const deferred = isInterestDeferred(loan);
+
+  // ── 120-day return countdown (items 18 & 24, item 8): the 120-day return
+  // rule is a FEDERAL (Direct Loan / Title IV) borrowers' right — it does NOT
+  // apply to private loans or the HRSA health-professions family, so the
+  // countdown is gated to federal Direct loans only. Tied to THIS loan,
+  // computed fresh each render; shows the soonest-expiring open window.
+  const isFederalReturn = GOV_TABLE_KEYS.has(typeKey);
+  const myWindows = isFederalReturn ? loanReturnWindows([loan], todayStr()) : [];
   const returnWindow = myWindows.length ? myWindows.reduce((a, b) => (b.daysLeft < a.daysLeft ? b : a)) : null;
 
   const patch = (fn) => { const d = JSON.parse(JSON.stringify(data)); const l = d.loans[idx]; fn(l, d); upd(d); };
@@ -186,14 +235,8 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
         </div>
       </div>
 
-      {HPSL_FAMILY.has(loan.subtype) && (
-        <div style={{ marginBottom: 12 }}>
-          <Banner type="info">Interest-free while you’re in school and during residency — this loan doesn’t start growing until you begin paying it back.</Banner>
-        </div>
-      )}
-
       {UNDERGRAD_KEYS.has(loan.subtype) && (
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 12, color: C.textMid, cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 12, color: C.text, cursor: 'pointer' }}>
           <input type="checkbox" checked={loan.subtype === 'directSubUndergrad'}
             onChange={(e) => patch((l) => { l.subtype = e.target.checked ? 'directSubUndergrad' : 'directUnsubUndergrad'; })} />
           This one is Subsidized (interest-free while you’re in school)
@@ -203,59 +246,74 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
       <div style={{ marginBottom: 12 }}>
         <span style={labelStyle} id={`ln-entrymode-lbl-${loan.id}`}>What are you entering?</span>
         <ChoiceGroup role="radiogroup" ariaLabelledby={`ln-entrymode-lbl-${loan.id}`} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <SegButton active={!asOfMode} ariaLabel="From my award letter — what I was offered and what I accepted"
+          <SegButton active={!asOfMode} ariaLabel={awardFraming ? 'From my award letter — what I was offered and what I accepted' : 'The loan amount I am borrowing'}
             onClick={() => patch((l) => { l.asOfDate = null; l.asOfBalance = null; })}>
-            Award letter
+            {awardFraming ? 'Award letter' : 'Loan amount'}
           </SegButton>
-          <SegButton active={asOfMode} ariaLabel="My current balance today on studentaid.gov"
+          <SegButton active={asOfMode} ariaLabel={`My current balance today${isFederal ? ' on studentaid.gov' : ''}`}
             onClick={() => patch((l) => { l.asOfDate = todayStr(); l.asOfBalance = Math.round(loanPrincipal(l) * 100) / 100; })}>
             Current balance
           </SegButton>
         </ChoiceGroup>
-        <div style={{ fontSize: 11, color: C.gray, marginTop: 6, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 11, color: C.textMid, marginTop: 6, lineHeight: 1.5 }}>
           {asOfMode
-            ? 'Current balance is what you owe today, straight from studentaid.gov (interest already baked in).'
-            : 'Award letter is what your school offered and what you chose to accept. Use this if the loan is new.'}
+            ? `Current balance is what you owe today, from ${balanceSource} (interest already baked in).`
+            : awardFraming
+              ? 'Award letter is what your school offered and what you chose to accept. Use this if the loan is new.'
+              : 'Loan amount is what you’re borrowing from your lender. Use this if the loan is new.'}
         </div>
       </div>
 
       {!asOfMode ? (
         <>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+            {awardFraming && (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor={`ln-offer-${loan.id}`}>
+                    Amount offered <span style={{ fontWeight: 400, color: C.textMid }}>(optional)</span>
+                  </label>
+                  <InfoTip text="The full amount your award letter offered for this loan. You don't have to take all of it — record it here just for reference. It doesn't change what you owe." />
+                </div>
+                <input id={`ln-offer-${loan.id}`} type="number" min="0" value={loan.offeredAmount ?? ''} placeholder="$0"
+                  aria-label="Amount offered in your award letter, optional"
+                  onChange={(e) => { const v = e.target.value; patch((l) => { l.offeredAmount = v === '' ? null : Number(sanitizeMoneyInput(v)) || 0; }); }}
+                  style={inputStyle({ width: 150 })} />
+              </div>
+            )}
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
-                <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor={`ln-offer-${loan.id}`}>
-                  Amount offered <span style={{ fontWeight: 400, color: C.gray }}>(optional)</span>
+                <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor={`ln-amt-${loan.id}`}>
+                  {awardFraming
+                    ? <>Amount you accepted <span style={{ fontWeight: 400, color: C.textMid }}>(what you borrow)</span></>
+                    : <>Loan amount <span style={{ fontWeight: 400, color: C.textMid }}>(what you’re borrowing)</span></>}
                 </label>
-                <InfoTip text="The full amount your award letter offered for this loan. You don't have to take all of it — record it here just for reference. It doesn't change what you owe." />
+                {!awardFraming && <InfoTip text="The total you're borrowing from this lender — the amount you'll pay back, plus interest. Everything Marro shows is based on this number." />}
               </div>
-              <input id={`ln-offer-${loan.id}`} type="number" min="0" value={loan.offeredAmount ?? ''} placeholder="$0"
-                aria-label="Amount offered in your award letter, optional"
-                onChange={(e) => { const v = e.target.value; patch((l) => { l.offeredAmount = v === '' ? null : Number(sanitizeMoneyInput(v)) || 0; }); }}
-                style={inputStyle({ width: 150 })} />
-            </div>
-            <div>
-              <label style={labelStyle} htmlFor={`ln-amt-${loan.id}`}>
-                Amount you accepted <span style={{ fontWeight: 400, color: C.gray }}>(what you borrow)</span>
-              </label>
               <input id={`ln-amt-${loan.id}`} type="number" min="0" value={annualTotal || ''} placeholder="$0"
-                aria-label="Amount you accepted — what you actually borrow and pay back"
+                aria-label={awardFraming ? 'Amount you accepted — what you actually borrow and pay back' : 'Loan amount — what you are borrowing and pay back'}
                 onChange={(e) => setAnnual(sanitizeMoneyInput(e.target.value))} style={inputStyle({ width: 150 })} />
             </div>
           </div>
-          <div style={{ fontSize: 11, color: C.gray, marginBottom: 8, lineHeight: 1.5 }}>
-            You can accept less than you&apos;re offered. Everything Marro shows — what you&apos;ll owe and its interest — is based on the amount you accepted.
-          </div>
-          {offered != null && annualTotal > 0 && annualTotal < offered && (
+          {awardFraming && (
+            <div style={{ fontSize: 11, color: C.textMid, marginBottom: 8, lineHeight: 1.5 }}>
+              You can accept less than you&apos;re offered. Everything Marro shows — what you&apos;ll owe and its interest — is based on the amount you accepted.
+            </div>
+          )}
+          {awardFraming && offered != null && annualTotal > 0 && annualTotal < offered && (
             <div style={{ fontSize: 11, color: C.textMid, marginBottom: 10, lineHeight: 1.5 }}>
               You accepted <strong style={{ color: C.text }}>{fmt(annualTotal)}</strong> of the <strong style={{ color: C.text }}>{fmt(offered)}</strong> offered.
             </div>
           )}
-          <div style={{ fontSize: 11, color: C.gray, marginBottom: 10, lineHeight: 1.5 }}>
-            Don&apos;t have your numbers? Log into studentaid.gov → Dashboard → click a loan for its exact amounts, dates, and rate. Private loans: check your lender&apos;s site.
+          <div style={{ fontSize: 11, color: C.textMid, marginBottom: 10, lineHeight: 1.5 }}>
+            {isFederal
+              ? <>Don&apos;t have your numbers? Log into studentaid.gov → Dashboard → click a loan for its exact amounts, dates, and rate.</>
+              : awardFraming
+                ? <>Don&apos;t have your numbers? Check your award letter or ask your school&apos;s financial aid office for the exact amounts and dates.</>
+                : <>Don&apos;t have your numbers? Check your lender&apos;s website or welcome packet for the exact amounts, dates, and rate.</>}
           </div>
 
-          <div style={{ fontSize: 11, color: C.textMid, marginBottom: 6, fontWeight: 600 }}>The amount you accepted usually arrives in two parts — fall and spring:</div>
+          <div style={{ fontSize: 11, color: C.text, marginBottom: 6, fontWeight: 600 }}>This usually arrives in two parts — fall and spring:</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
             {(loan.disbursements || []).map((d, i) => (
               <div key={d.id} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -297,7 +355,7 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
           (see `returnWindow` above), so an edited date is never stale. */}
       {returnWindow && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 12, padding: '10px 12px', background: C.blueLight, border: `1px solid ${C.blueMid}`, borderRadius: 8 }}>
-          <div style={{ flex: 1, fontSize: 12, color: C.textMid, lineHeight: 1.6 }}>
+          <div style={{ flex: 1, fontSize: 12, color: C.text, lineHeight: 1.6 }}>
             <strong style={{ color: C.text }}>
               {returnWindow.dateConfirmed ? `${returnWindow.daysLeft} days left` : `About ${returnWindow.daysLeft} days left`}
             </strong>{' '}to return money from this loan you didn&apos;t need. The interest and fee on anything you send back are cancelled — like you never borrowed it.
@@ -307,43 +365,65 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
         </div>
       )}
 
-      {/* ── Interest rate — ALWAYS editable, whatever the loan type (item 21) ──
-          For a type whose rate is set by rule (the HRSA family / Perkins carry
-          a rate fixed by law; the Direct Loan family uses the government's rate
-          for the year borrowed) we leave `loan.rate` null so that correct number
-          keeps flowing from the rate table, show it as the placeholder, and warn
-          if the student overrides it. Every type can still be edited. */}
+      {/* ── Interest: rate + deferral (items 6, 9, 21) ──
+          The rate field is ALWAYS editable. For a type whose rate is set by
+          rule (HRSA family fixed by law; Direct Loan family = the government's
+          rate for the year borrowed) we leave `loan.rate` null so the correct
+          number keeps flowing from the rate table and show it as the
+          placeholder. The "this type's set rate is X%" explanation now lives in
+          a keyboard-reachable InfoTip (item 6) and always shows the TRUE
+          statutory rate (`statPct`), never whatever the student typed. */}
       <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
-        <label style={labelStyle} htmlFor={`ln-rate-${loan.id}`}>Interest rate (as a percent)</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+          <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor={`ln-rate-${loan.id}`}>Interest rate (as a percent)</label>
+          <InfoTip text={
+            isFixedStatutory
+              ? `This loan type's rate is set by law at ${statPct}%.${rateOverridden ? ` You've entered a different rate — clear the field to use ${statPct}% again.` : ' Leave the field blank to use it, or type your own from your paperwork.'}`
+              : isGovTable
+                ? `The government sets the rate for ${yearRange} loans at ${statPct}%.${rateOverridden ? ` You've entered a different rate — clear the field to use ${statPct}% again.` : ' Leave the field blank to use it, or type your own from your paperwork.'}`
+                : "Enter the interest rate from your loan paperwork or your lender's website."
+          } />
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <input id={`ln-rate-${loan.id}`} type="number" min="0" max="30" step="0.01" value={pctText}
-            placeholder={hasSetRate ? resolvedPct : 'e.g. 7.94'} aria-label="Interest rate as a percent"
-            onChange={(e) => { const t = e.target.value; setPctText(t); const n = Number(t); patch((l) => { l.rate = t === '' ? null : (isNaN(n) ? l.rate : n / 100); }); }}
+            placeholder={hasSetRate ? statPct : 'e.g. 7.94'} aria-label="Interest rate as a percent"
+            onChange={(e) => { const t = stripLeadingZeros(e.target.value); setPctText(t); const n = Number(t); patch((l) => { l.rate = t === '' ? null : (isNaN(n) ? l.rate : n / 100); }); }}
             style={inputStyle({ width: 90 })} />
           <span style={{ fontSize: 12, color: C.textMid }}>%</span>
           {pctText !== '' && !rateHigh && <span style={{ fontSize: 11, color: C.teal }} aria-hidden="true">✓</span>}
         </div>
         {rateHigh && <div role="alert" style={{ fontSize: 11, color: C.amber, marginTop: 4 }}>That seems high — double-check?</div>}
-        {!rateOverridden && isFixedStatutory && (
-          <div style={{ fontSize: 11, color: C.gray, marginTop: 4, lineHeight: 1.5 }}>
-            This loan type has a rate fixed by law at <strong style={{ color: C.textMid }}>{resolvedPct}%</strong>. You usually won&apos;t need to change it.
-          </div>
-        )}
-        {!rateOverridden && isGovTable && (
-          <div style={{ fontSize: 11, color: C.gray, marginTop: 4, lineHeight: 1.5 }}>
-            The government sets the rate for {yearRange} loans at <strong style={{ color: C.textMid }}>{resolvedPct}%</strong> — leave this blank to use it, or enter your own from your paperwork.
-          </div>
-        )}
         {!rateOverridden && !hasSetRate && (
-          <div style={{ fontSize: 11, color: C.gray, marginTop: 4, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 11, color: C.textMid, marginTop: 4, lineHeight: 1.5 }}>
             Enter the rate from your loan paperwork.
           </div>
         )}
-        {rateOverridden && hasSetRate && (
-          <div role="alert" style={{ fontSize: 11, color: C.amber, marginTop: 4, lineHeight: 1.5 }}>
-            Heads up: this loan type normally uses a set rate of {resolvedPct}%. Clear the field to switch back to it.
+
+        {/* Interest deferral toggle (founder decision): default ON for
+            HPSL/subsidized, OFF for unsubsidized/private — editable per loan. */}
+        <div style={{ marginTop: 8 }}>
+          <Toggle checked={deferred} label="Interest isn’t accruing yet"
+            describedBy={`ln-defer-hint-${loan.id}`}
+            onChange={(next) => patch((l) => { l.interestDeferred = next; if (!next) l.interestStartDate = null; })} />
+          <div id={`ln-defer-hint-${loan.id}`} style={{ fontSize: 11, color: C.textMid, marginTop: 2, lineHeight: 1.5 }}>
+            {deferred
+              ? 'While this is on, Marro adds no interest until the date you set below.'
+              : 'Interest is building from the day each part of the money arrives.'}
           </div>
-        )}
+          {deferred && (
+            <div style={{ marginTop: 8, maxWidth: 200 }}>
+              <span style={labelStyle}>Interest starts on</span>
+              <DateField value={loan.interestStartDate || ''} ariaLabel="Date interest starts accruing"
+                onChange={(v) => patch((l) => { l.interestStartDate = v; })}
+                style={{ width: '100%', fontSize: 12, padding: '5px 8px' }} />
+              {!loan.interestStartDate && (
+                <div style={{ fontSize: 11, color: C.textMid, marginTop: 4, lineHeight: 1.5 }}>
+                  No date yet, so Marro adds no interest for this loan. Set the date interest kicks in — often when you finish school or residency.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── More options ── */}
@@ -361,10 +441,16 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
             </select>
           </div>
           <div>
-            <label style={labelStyle} htmlFor={`ln-fee-${loan.id}`}>Fee, as a percent {loan.type === 'federal' ? '(leave blank to use the standard fee of about 1% the government takes off the top — we’ve included it)' : '(most private lenders don’t charge one)'}</label>
-            <input id={`ln-fee-${loan.id}`} type="number" min="0" max="10" step="0.01" value={loan.feePct != null ? loan.feePct * 100 : ''}
-              placeholder={loan.type === 'federal' ? '1.057' : '0'} aria-label="Fee as a percent"
-              onChange={(e) => { const v = e.target.value; patch((l) => { l.feePct = v === '' ? null : (Number(v) / 100); }); }}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+              <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor={`ln-fee-${loan.id}`}>Loan fee (%)</label>
+              <InfoTip text={isFederal
+                ? "Federal loans take a small fee (about 1%) off the top before the money reaches you — but you still owe it, so Marro includes it. Leave blank to use the standard fee, or type your own from your paperwork."
+                : "Most private and school loans charge no fee. Leave this blank unless your paperwork lists one."} />
+            </div>
+            <input id={`ln-fee-${loan.id}`} type="number" min="0" max="10" step="0.01"
+              value={loan.feePct != null ? +(loan.feePct * 100).toFixed(3) : ''}
+              placeholder={String(+(feeDefaultPct).toFixed(3))} aria-label="Loan fee as a percent"
+              onChange={(e) => { const v = stripLeadingZeros(e.target.value); patch((l) => { l.feePct = v === '' ? null : (Number(v) / 100); }); }}
               style={inputStyle({ width: 100 })} />
           </div>
           <div>
@@ -424,7 +510,10 @@ function BalanceCheckin({ data, upd }) {
       </SectionTitle>
       <form onSubmit={onSubmit} style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div>
-          <label style={labelStyle} htmlFor="bal-spendable">Money you can spend now</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+            <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor="bal-spendable">Money you can spend now</label>
+            <InfoTip text="What's in your checking or spending account today. Aid or loan money counts once it's been sent to you." />
+          </div>
           <input id="bal-spendable" type="number" min="0" value={spendable} placeholder="$0" required
             aria-label="Money you can spend now, across all accounts you spend from"
             onChange={(e) => { setSpendable(sanitizeMoneyInput(e.target.value)); setConfirming(false); }}
@@ -574,7 +663,10 @@ function RefundPlaybook({ data, upd, moSpend, refundNudgeConfirmed, setRefundNud
   const monthsToHorizon = monthsNeeded;
   const earningsEstimate = parkAmount != null && monthsToHorizon != null ? parkAmount * PLAYBOOK_APY * (monthsToHorizon / 12) : null;
 
-  const windows = loanReturnWindows(data.loans || [], today).sort((a, b) => a.daysLeft - b.daysLeft);
+  // The 120-day return right is federal Direct-loan only (item 8) — never
+  // count private or HRSA health-professions loans toward this bullet.
+  const federalLoans = (data.loans || []).filter((l) => GOV_TABLE_KEYS.has(loanTypeKey(l)));
+  const windows = loanReturnWindows(federalLoans, today).sort((a, b) => a.daysLeft - b.daysLeft);
   const window = windows[0] || null;
 
   return (
@@ -609,7 +701,7 @@ function RefundPlaybook({ data, upd, moSpend, refundNudgeConfirmed, setRefundNud
         </li>
       </ol>
 
-      <div style={{ marginTop: 12, fontSize: 10.5, color: C.gray, lineHeight: 1.5 }}>
+      <div style={{ marginTop: 12, fontSize: 10.5, color: C.text, lineHeight: 1.5 }}>
         General education, not individualized financial advice — confirm specifics with your loan servicer or aid office.
       </div>
     </div>
@@ -625,6 +717,24 @@ export function LoansTab() {
   const gradDate = data.years?.[data.years.length - 1]?.endDate || null;
   const proj = projectDebtAtGraduation(loans, gradDate);
   const counted = loans.filter((l) => l.status === 'accepted' || l.status === 'disbursed');
+
+  // Item 11: spell out WHY the total is an estimate instead of the old, confusing
+  // "add your loans to make this exact" (shown even after loans were added). Each
+  // reason maps to a real driver of `proj.isEstimate` in loans.js.
+  const estimateReasons = [];
+  if (proj.isEstimate && counted.length > 0) {
+    const flags = { private: false, rate: false, dates: false };
+    for (const l of counted) {
+      const key = loanTypeKey(l);
+      if (key === 'private' || key === 'otherUserRate') flags.private = true;
+      else if (isRateEstimated(l)) flags.rate = true;
+      const disb = l.disbursements || [];
+      if (l.asOfDate == null && (disb.length === 0 || disb.some((d) => !d.date))) flags.dates = true;
+    }
+    if (flags.private) estimateReasons.push('a private or “other” loan, which has no government-set rate or fee formula');
+    if (flags.rate) estimateReasons.push('a loan whose school year isn’t in our rate table yet, so its rate is approximate');
+    if (flags.dates) estimateReasons.push('a money-arrival date Marro had to guess');
+  }
 
   const addLoan = () => { const d = JSON.parse(JSON.stringify(data)); d.loans = [...(d.loans || []), blankLoan()]; upd(d); };
 
@@ -645,7 +755,13 @@ export function LoansTab() {
           <div style={{ fontSize: 26, fontWeight: 700, color: C.text, fontFamily: "'Newsreader',Georgia,serif" }}>{fmt(proj.total)}</div>
           {proj.isEstimate && (
             <div style={{ marginTop: 10 }}>
-              <Banner type="info">Estimate — add your loans to make this exact</Banner>
+              <Banner type="info">
+                {counted.length === 0
+                  ? 'Estimate — add your loans to make this exact.'
+                  : estimateReasons.length > 0
+                    ? <><strong>This total includes an estimate</strong> because it uses {estimateReasons.join('; ')}. Federal loans with a confirmed rate and dates are calculated exactly.</>
+                    : 'This total includes an estimate. Federal loans with a confirmed rate and dates are calculated exactly.'}
+              </Banner>
             </div>
           )}
           <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>

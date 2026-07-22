@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   FEDERAL_GRAD_UNSUB_RATES, FEDERAL_GRAD_PLUS_RATES, FEDERAL_ORIGINATION_FEE, FEDERAL_GRAD_PLUS_FEE, HRSA_RATE,
-  effectiveRate, isRateEstimated, effectiveFeePct, loanPrincipal, loanOfferedAmount, accruedInterest, loanTypeKey,
+  effectiveRate, isRateEstimated, effectiveFeePct, statutoryRate, isInterestDeferred,
+  loanPrincipal, loanOfferedAmount, accruedInterest, loanTypeKey,
   projectDebtAtGraduation, computeRunway, estimateRefunds, loanReturnWindows,
   refundPlaybookTrigger, returnSavingsAtGraduation, classifyCushionSource,
 } from './loans.js';
@@ -608,6 +609,91 @@ describe('otherUserRate — behaves exactly like today\'s private path when the 
     const loan = makeLoan({ subtype: 'otherUserRate', type: 'private', rate: null });
     expect(effectiveRate(loan)).toBe(0);
     expect(isRateEstimated(loan)).toBe(true);
+  });
+});
+
+// ── statutoryRate (item 6) ────────────────────────────────────────────────────
+describe('statutoryRate — the type\'s set rate, ignoring any student override', () => {
+  it('returns the fixed/table rate even when the student typed a DIFFERENT rate (the item-6 bug)', () => {
+    expect(statutoryRate(makeLoan({ subtype: 'hpsl', type: 'private', rate: 0.03 }))).toBe(HRSA_RATE);
+    expect(statutoryRate(makeLoan({ subtype: 'directUnsubGrad', academicYear: 2025, rate: 0.02 }))).toBe(FEDERAL_GRAD_UNSUB_RATES[2025]);
+    expect(statutoryRate(makeLoan({ subtype: 'gradPLUS', academicYear: 2026, rate: 0.11 }))).toBe(FEDERAL_GRAD_PLUS_RATES[2026]);
+  });
+  it('clamps out-of-table years to the nearest known year', () => {
+    expect(statutoryRate(makeLoan({ subtype: 'directUnsubGrad', academicYear: 2008 }))).toBe(FEDERAL_GRAD_UNSUB_RATES[2013]);
+    expect(statutoryRate(makeLoan({ subtype: 'directUnsubGrad', academicYear: 2031 }))).toBe(FEDERAL_GRAD_UNSUB_RATES[2026]);
+  });
+  it('returns null for private/other types, which have no set rate', () => {
+    expect(statutoryRate(makeLoan({ subtype: 'private', type: 'private' }))).toBe(null);
+    expect(statutoryRate(makeLoan({ subtype: 'otherUserRate', type: 'private' }))).toBe(null);
+  });
+});
+
+// ── interest deferral (founder decision, 2026-07-22) ──────────────────────────
+// Interest deferral is an explicit per-loan toggle: when on, no interest accrues
+// before the "interest starts on" date. Defaults per type (HPSL/subsidized ON,
+// unsubsidized/private OFF) and generalizes the old accruesInSchool short-circuit.
+describe('isInterestDeferred — per-type default, overridable', () => {
+  it('defaults OFF for unsubsidized/private, ON for HPSL family / subsidized undergrad', () => {
+    expect(isInterestDeferred(makeLoan({ subtype: 'directUnsubGrad' }))).toBe(false);
+    expect(isInterestDeferred(makeLoan({ subtype: 'gradPLUS' }))).toBe(false);
+    expect(isInterestDeferred(makeLoan({ subtype: 'private', type: 'private' }))).toBe(false);
+    expect(isInterestDeferred(makeLoan({ subtype: 'hpsl', type: 'private' }))).toBe(true);
+    expect(isInterestDeferred(makeLoan({ subtype: 'lds', type: 'private' }))).toBe(true);
+    expect(isInterestDeferred(makeLoan({ subtype: 'directSubUndergrad' }))).toBe(true);
+  });
+  it('an explicit interestDeferred flag overrides the per-type default', () => {
+    expect(isInterestDeferred(makeLoan({ subtype: 'hpsl', type: 'private', interestDeferred: false }))).toBe(false);
+    expect(isInterestDeferred(makeLoan({ subtype: 'directUnsubGrad', interestDeferred: true }))).toBe(true);
+  });
+});
+
+describe('accruedInterest — interest deferral start date', () => {
+  const base = makeLoan({ academicYear: 2026, rate: null, subtype: 'directUnsubGrad', disbursements: [{ id: 'd1', date: '2026-08-01', amount: 20000 }] });
+
+  it('deferred: interest accrues only from the start date — same as a loan disbursed on that date', () => {
+    const deferred = { ...base, interestDeferred: true, interestStartDate: '2027-01-01' };
+    const fromStart = makeLoan({ academicYear: 2026, rate: null, subtype: 'directUnsubGrad', disbursements: [{ id: 'd1', date: '2027-01-01', amount: 20000 }] });
+    expect(accruedInterest(deferred, '2027-07-01')).toBeCloseTo(accruedInterest(fromStart, '2027-07-01'), 6);
+    expect(accruedInterest(deferred, '2027-07-01')).toBeGreaterThan(0);
+    // ...and strictly less than the same loan with no deferral (which accrued from Aug 1)
+    expect(accruedInterest(deferred, '2027-07-01')).toBeLessThan(accruedInterest(base, '2027-07-01'));
+  });
+
+  it('deferred: zero interest at any date before the start date is reached', () => {
+    const deferred = { ...base, interestDeferred: true, interestStartDate: '2027-01-01' };
+    expect(accruedInterest(deferred, '2026-12-01')).toBe(0);
+    expect(accruedInterest(deferred, '2027-01-01')).toBe(0); // the start day itself has zero elapsed days
+  });
+
+  it('deferred with NO start date set accrues nothing within the horizon (the HPSL default, unchanged)', () => {
+    const hpsl = makeLoan({ subtype: 'hpsl', type: 'private', disbursements: [{ id: 'd1', date: '2026-08-05', amount: 20000 }] });
+    expect(accruedInterest(hpsl, '2030-05-15')).toBe(0);
+  });
+
+  it('turning deferral OFF on an HPSL makes it accrue from disbursement at the 5% HRSA rate', () => {
+    const hpsl = makeLoan({ subtype: 'hpsl', type: 'private', rate: null, interestDeferred: false, feePct: 0, disbursements: [{ id: 'd1', date: '2026-08-01', amount: 20000 }] });
+    expect(accruedInterest(hpsl, '2027-08-01')).toBeCloseTo(20000 * 0.05, 0); // ~1yr simple interest, no fee
+  });
+
+  it('a non-deferred loan ignores any stray interestStartDate', () => {
+    const withStray = { ...base, interestDeferred: false, interestStartDate: '2027-01-01' };
+    expect(accruedInterest(withStray, '2027-07-01')).toBeCloseTo(accruedInterest(base, '2027-07-01'), 6);
+  });
+
+  it('as-of-balance mode also honors a deferral start date', () => {
+    const loan = makeLoan({ subtype: 'directUnsubGrad', rate: 0.08, asOfDate: '2027-01-01', asOfBalance: 25000, disbursements: [], interestDeferred: true, interestStartDate: '2027-07-01' });
+    expect(accruedInterest(loan, '2027-04-01')).toBe(0); // before the start date
+    // ~1yr of simple interest counted from the start date (2027-07-01), not the as-of date.
+    const oneYearFromStart = 25000 * 0.08 * (366 / 365); // 2027-07-01 → 2028-07-01 spans leap day 2028-02-29
+    expect(accruedInterest(loan, '2028-07-01')).toBeCloseTo(oneYearFromStart, 4);
+  });
+
+  it('projectDebtAtGraduation honors the deferral start date', () => {
+    const deferred = { ...base, status: 'disbursed', interestDeferred: true, interestStartDate: '2029-06-01' };
+    const grad = '2030-05-15';
+    const fromStart = projectDebtAtGraduation([makeLoan({ academicYear: 2026, subtype: 'directUnsubGrad', disbursements: [{ id: 'd1', date: '2029-06-01', amount: 20000 }] })], grad);
+    expect(projectDebtAtGraduation([deferred], grad).total).toBeCloseTo(fromStart.total, 6);
   });
 });
 

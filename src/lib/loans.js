@@ -143,6 +143,21 @@ export const LOAN_INTEREST_PROFILE = {
   otherUserRate:        { accruesInSchool: true,  accruesInGrace: true,  graceMonths: 6,  accruesInResidency: true  }, // conservative default; user can override via `rate`
 };
 
+/**
+ * Is interest deferred (not accruing yet) for this loan? Founder decision
+ * (2026-07-22): interest deferral is an explicit per-loan TOGGLE. When the
+ * student has set `interestDeferred` (true/false), that wins. Otherwise it
+ * defaults per type from `LOAN_INTEREST_PROFILE.accruesInSchool`: HPSL/PCL/LDS
+ * and Direct Subsidized default ON (interest-free for now); Direct
+ * Unsubsidized, Grad PLUS, and private default OFF (accruing from day one).
+ */
+export function isInterestDeferred(loan) {
+  if (loan && typeof loan.interestDeferred === 'boolean') return loan.interestDeferred;
+  const key = loanTypeKey(loan);
+  const profile = LOAN_INTEREST_PROFILE[key] || LOAN_INTEREST_PROFILE.directUnsubGrad;
+  return !profile.accruesInSchool;
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const GROWING_EPSILON = 1; // $/month burn at or below this reads as "not really spending down" rather than a near-infinite countdown
 
@@ -219,6 +234,29 @@ export function effectiveRate(loan) {
   const minYear = Math.min(...years);
   const maxYear = Math.max(...years);
   const y = Math.max(minYear, Math.min(maxYear, loan.academicYear));
+  return table[y];
+}
+
+/**
+ * The government/statutory rate for this loan's TYPE, as a decimal, IGNORING
+ * any student-entered override — i.e. the number the type "normally uses."
+ * HRSA/Perkins types return their fixed statutory rate; the Direct Loan types
+ * return their year-table rate (clamped to the nearest known year). Returns
+ * `null` for private/otherUserRate, which have no set rate at all.
+ *
+ * This exists specifically so the UI can tell the student "this type's set
+ * rate is X%" using the TRUE statutory number even after they've typed a
+ * different rate into the field — `effectiveRate` can't, because a student
+ * override always wins there (that was the item-6 bug: the heads-up echoed
+ * whatever the student typed instead of the real statutory rate).
+ */
+export function statutoryRate(loan) {
+  const key = loanTypeKey(loan);
+  if (key in FIXED_RATE_BY_KEY) return FIXED_RATE_BY_KEY[key];
+  const table = YEAR_TABLE_BY_KEY[key];
+  if (!table) return null;
+  const years = Object.keys(table).map(Number);
+  const y = Math.max(Math.min(...years), Math.min(Math.max(...years), loan.academicYear));
   return table[y];
 }
 
@@ -326,21 +364,30 @@ export function loanPrincipal(loan) {
  */
 export function accruedInterest(loan, asOf) {
   if (loan.status === 'offered') return 0;
-  const key = loanTypeKey(loan);
-  const profile = LOAN_INTEREST_PROFILE[key] || LOAN_INTEREST_PROFILE.directUnsubGrad;
-  if (!profile.accruesInSchool) return 0;
 
   const rate = effectiveRate(loan);
 
+  // Interest deferral (founder decision, 2026-07-22): when interest is
+  // deferred, nothing accrues before the student's "interest starts on" date.
+  // A deferred loan with no start date set hasn't begun accruing at all within
+  // this horizon (the HPSL/subsidized default — interest-free through school),
+  // so it contributes zero — bit-identical to the old `accruesInSchool:false`
+  // short-circuit this replaced. A non-deferred loan accrues from each
+  // disbursement date exactly as before.
+  const deferred = isInterestDeferred(loan);
+  const start = deferred && loan.interestStartDate && isPlausibleDate(loan.interestStartDate) ? loan.interestStartDate : null;
+  if (deferred && !start) return 0;
+  const accrueFrom = (date) => (start && start > date ? start : date);
+
   if (loan.asOfDate != null && loan.asOfBalance != null) {
-    const days = Math.max(0, daysBetween(loan.asOfDate, asOf));
+    const days = Math.max(0, daysBetween(accrueFrom(loan.asOfDate), asOf));
     return (Number(loan.asOfBalance) || 0) * (rate / 365) * days;
   }
 
   const fee = effectiveFeePct(loan);
   return (loan.disbursements || []).reduce((sum, d) => {
     if (!d.date) return sum; // undated rows are handled upstream (see fillMissingDisbursementDates) — never silently skip in the caller that matters
-    const days = Math.max(0, daysBetween(d.date, asOf));
+    const days = Math.max(0, daysBetween(accrueFrom(d.date), asOf));
     const principal = (Number(d.amount) || 0) * (1 + fee);
     return sum + principal * (rate / 365) * days;
   }, 0);
