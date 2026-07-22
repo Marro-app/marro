@@ -4,6 +4,7 @@ import { Modal, ChoiceGroup, Paginator, usePagination } from './primitives.jsx';
 import { Icon } from './icons.jsx';
 import { radioProps } from '../lib/ui-helpers.js';
 import { myInviteQuota, myInviteCodes, generateInviteCode, revokeOwnCode, sendInviteEmail } from '../lib/data.js';
+import { useApp } from '../context/AppContext.js';
 
 // "Invite friends" — the member-facing referral surface (Settings → Invite
 // friends). Each code lets exactly one friend in; a member's invite limit is 5
@@ -36,6 +37,13 @@ const CODE_FILTER_OPTIONS = [
   {key:"revoked",  label:"Revoked"},
 ];
 const PAGINATE_THRESHOLD = 10;
+
+// Small archive-box glyph (no matching entry in the shared Icon set).
+const ArchiveIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="3" y="4" width="14" height="3.4" rx="1"/><path d="M4.4 7.4v7.1a1 1 0 0 0 1 1h9.2a1 1 0 0 0 1-1V7.4M8.2 10.6h3.6"/>
+  </svg>
+);
 
 function CopyBtn({value}){
   const [copied, setCopied] = useState(false);
@@ -192,6 +200,18 @@ export function InviteFriendsModal({onClose}){
   const [msg, setMsg]       = useState(null); // {text, tone:'error'|'info'}
   const [revokingCode, setRevokingCode] = useState(null);
   const [filter, setFilter] = useState("all");
+  const [showArchived, setShowArchived] = useState(false);
+
+  // Archiving is a purely client-side view preference: it hides a code from the
+  // main list without touching the server (the code still exists in the RLS-
+  // gated invite_codes table and still counts against quota). The archived-code
+  // list is persisted in the user's synced app_state (data.archivedInviteCodes),
+  // so it follows them across devices. See data.js diffStates whitelist.
+  const { data, upd } = useApp();
+  const archivedSet = new Set(data.archivedInviteCodes || []);
+  const setArchivedCodes = (next) => { const d=JSON.parse(JSON.stringify(data)); d.archivedInviteCodes=[...next]; upd(d); };
+  const archiveCode   = (code) => { const s=new Set(archivedSet); s.add(code);    setArchivedCodes(s); };
+  const unarchiveCode = (code) => { const s=new Set(archivedSet); s.delete(code); setArchivedCodes(s); };
 
   const load = useCallback(async()=>{
     const [q, cs] = await Promise.all([myInviteQuota(), myInviteCodes()]);
@@ -245,11 +265,15 @@ export function InviteFriendsModal({onClose}){
   // Below the threshold, filtering chips would just be one more control to
   // scan for a list you can already see in full, so they only appear once
   // pagination kicks in.
-  const paginate = personalCodes.length > PAGINATE_THRESHOLD;
+  // Archived codes are pulled out of the main list (and its filter/pagination);
+  // they get their own collapsible "Archived" section below.
+  const liveCodes = personalCodes.filter(c=>!archivedSet.has(c.code));
+  const archivedList = personalCodes.filter(c=>archivedSet.has(c.code));
+  const paginate = liveCodes.length > PAGINATE_THRESHOLD;
   const changeFilter = (key) => { setFilter(key); setPage(1); };
-  const filtered = filter==="all" ? personalCodes : personalCodes.filter(c=>codeStatus(c).key===filter);
+  const filtered = filter==="all" ? liveCodes : liveCodes.filter(c=>codeStatus(c).key===filter);
   const {page, setPage, totalPages, pageItems} = usePagination(filtered, PAGINATE_THRESHOLD);
-  const visibleCodes = paginate ? pageItems : personalCodes;
+  const visibleCodes = paginate ? pageItems : liveCodes;
 
   return (
     <Modal title="Invite friends" onClose={onClose} width={440}>
@@ -296,7 +320,7 @@ export function InviteFriendsModal({onClose}){
           )}
 
           {visibleCodes.length===0
-            ? <div style={{fontSize:12.5,color:C.gray,textAlign:"center",padding:"16px 0"}}>No codes match this filter.</div>
+            ? <div style={{fontSize:12.5,color:C.gray,textAlign:"center",padding:"16px 0"}}>{filter==="all" ? "All your codes are archived — see below." : "No codes match this filter."}</div>
             : (
               <ul style={{listStyle:"none",margin:0,padding:0,display:"flex",flexDirection:"column",gap:8}}>
                 {visibleCodes.map(c=>{
@@ -306,17 +330,27 @@ export function InviteFriendsModal({onClose}){
                       <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14,letterSpacing:"0.06em",color:C.text}}>{c.code}</span>
                       <span style={{fontSize:10,padding:"2px 9px",borderRadius:999,background:st.bg,color:st.color,fontWeight:600,whiteSpace:"nowrap"}}>{st.label}</span>
                       <span style={{flex:1}}/>
-                      {!c.revoked_at && !c.redeemed_at && (
-                        <span style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
-                          <EmailCodeBtn codeRow={c} onSent={load}/>
-                          <CopyBtn value={c.code}/>
-                          <button type="button" className="xbtn" aria-label={`Revoke code ${c.code}`} title="Revoke code"
-                            onClick={()=>revoke(c.code)} disabled={revokingCode===c.code}
-                            style={{width:32,height:32,borderRadius:16,border:`1px solid ${C.dangerMid}`,background:"transparent",color:C.danger,cursor:revokingCode===c.code?"not-allowed":"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:11,fontWeight:600}}>
-                            {revokingCode===c.code ? "…" : "✕"}
-                          </button>
-                        </span>
-                      )}
+                      <span style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                        {!c.revoked_at && !c.redeemed_at && (
+                          <>
+                            <EmailCodeBtn codeRow={c} onSent={load}/>
+                            <CopyBtn value={c.code}/>
+                            <button type="button" className="xbtn" aria-label={`Revoke code ${c.code}`} title="Revoke code"
+                              onClick={()=>revoke(c.code)} disabled={revokingCode===c.code}
+                              style={{width:32,height:32,borderRadius:16,border:`1px solid ${C.dangerMid}`,background:"transparent",color:C.danger,cursor:revokingCode===c.code?"not-allowed":"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:11,fontWeight:600}}>
+                              {revokingCode===c.code ? "…" : "✕"}
+                            </button>
+                          </>
+                        )}
+                        {/* Archive is available on every code (including used/revoked
+                            ones, which otherwise have no actions) — it just hides
+                            the code from this list; nothing is deleted. */}
+                        <button type="button" className="xbtn" aria-label={`Archive code ${c.code}`} title="Archive"
+                          onClick={()=>archiveCode(c.code)}
+                          style={{width:32,height:32,borderRadius:16,border:`1px solid ${C.border}`,background:"transparent",color:C.textMid,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                          <ArchiveIcon/>
+                        </button>
+                      </span>
                     </li>
                   );
                 })}
@@ -325,6 +359,37 @@ export function InviteFriendsModal({onClose}){
 
           {paginate && <Paginator idPrefix="Invite codes" page={page} totalPages={totalPages} onChange={setPage} totalCount={filtered.length} pageSize={PAGINATE_THRESHOLD}/>}
         </>
+      )}
+
+      {archivedList.length>0 && (
+        <div style={{marginTop:16,paddingTop:16,borderTop:`1px solid ${C.border}`}}>
+          <button type="button" onClick={()=>setShowArchived(s=>!s)} aria-expanded={showArchived} aria-controls="invite-archived-list"
+            style={{display:"flex",alignItems:"center",gap:8,width:"100%",minHeight:32,background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left",font:"inherit"}}>
+            <Icon name="chevron" size={12} style={{transform:showArchived?"rotate(180deg)":"none",transition:"transform .15s",color:C.gray,flexShrink:0}}/>
+            <span style={{fontSize:13,fontWeight:600,color:C.text}}>Archived ({archivedList.length})</span>
+          </button>
+          {/* Interactive content (Unarchive buttons) is conditionally rendered
+              rather than always-mounted-then-hidden, so collapsed controls never
+              sit in the keyboard tab order; aria-expanded conveys the state. */}
+          {showArchived && (
+            <ul id="invite-archived-list" style={{listStyle:"none",margin:"10px 0 0",padding:0,display:"flex",flexDirection:"column",gap:8}}>
+              {archivedList.map(c=>{
+                const st = codeStatus(c);
+                return (
+                  <li key={c.code} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 12px",borderRadius:10,border:`1px solid ${C.border}`,opacity:0.85}}>
+                    <span style={{fontFamily:"monospace",fontWeight:700,fontSize:14,letterSpacing:"0.06em",color:C.text}}>{c.code}</span>
+                    <span style={{fontSize:10,padding:"2px 9px",borderRadius:999,background:st.bg,color:st.color,fontWeight:600,whiteSpace:"nowrap"}}>{st.label}</span>
+                    <span style={{flex:1}}/>
+                    <button type="button" className="btn-pop" aria-label={`Unarchive code ${c.code}`} onClick={()=>unarchiveCode(c.code)}
+                      style={{fontSize:11,fontWeight:600,padding:"6px 12px",minHeight:32,borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",color:C.text,cursor:"pointer",flexShrink:0}}>
+                      Unarchive
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       )}
     </Modal>
   );

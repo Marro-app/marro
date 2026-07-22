@@ -72,9 +72,25 @@ const CrashFallback = () => (
     justifyContent:'center',gap:16,padding:24,textAlign:'center',
     background:'var(--bg)',color:'var(--text)',
   }}>
-    <svg width="40" height="40" viewBox="0 0 26 26" fill="none" stroke="var(--text-dim)" strokeWidth="1.2" aria-hidden="true">
-      <g transform="translate(13,13)"><circle r="11"/><circle r="7.5"/><circle r="4" opacity="0.72"/></g>
-    </svg>
+    {/* Reuse the app's boot logo — the animated growth-rings mark WITH the gold
+        core (the same markup shown in index.html's #loading splash), instead of
+        a static ring that's missing the gold center. The `.boot-*` classes live
+        in index.html's always-present <style>, so they're available here even
+        mid-crash without importing any component. Under prefers-reduced-motion,
+        index.html's media query freezes the rings and gold core in place
+        (animation:none;opacity:1) and hides the orbiting dot — so reduced-motion
+        users still get a correct, static logo with the gold center. */}
+    <div className="boot-mark" aria-hidden="true" style={{color:'var(--text-dim)'}}>
+      <svg width="76" height="76" viewBox="0 0 26 26" fill="none" stroke="currentColor" strokeWidth="1.1">
+        <g transform="translate(13,13)">
+          <circle r="4" opacity="0.72" className="boot-ring boot-r1"/>
+          <circle r="7.5" className="boot-ring boot-r2"/>
+          <circle r="11" className="boot-ring boot-r3"/>
+          <circle r="1.5" fill="#DDA528" stroke="none" className="boot-core"/>
+        </g>
+      </svg>
+      <div className="boot-orbit"><div className="boot-dot"/></div>
+    </div>
     <div style={{fontSize:15,color:'var(--text-dim)',maxWidth:340}}>
       Something went wrong. Your data is safe — reloading should fix it.
     </div>

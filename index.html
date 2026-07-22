@@ -411,19 +411,35 @@
     from { opacity: 0; transform: rotate(-30deg) scale(0.85); }
     to   { opacity: 1; transform: none; }
   }
+  /* Hover sheen. This layer paints ABOVE the card's text (it's the last
+     absolutely-positioned child, so it stacks over the static-flow content),
+     so the highlight must stay OFF the text or it washes out contrast on hover
+     (a11y). Card titles/labels sit top-left; values sit top-right — so the
+     sheen originates from the bottom-right corner (315deg) and fades to
+     transparent well before it reaches them, at a much lower peak opacity than
+     before. Keeps a subtle glass gleam without ever crossing the text. */
   .mc-sh {
     position: absolute; inset: 0; border-radius: inherit;
-    background: linear-gradient(135deg, rgba(255,255,255,0.10) 0%, transparent 50%);
+    background: linear-gradient(315deg, rgba(255,255,255,0.06) 0%, transparent 40%);
     pointer-events: none; opacity: 0; transition: opacity 180ms ease;
   }
   [data-theme="light"] .mc-sh {
-    background: linear-gradient(135deg, rgba(255,255,255,0.45) 0%, transparent 50%);
+    background: linear-gradient(315deg, rgba(255,255,255,0.20) 0%, transparent 40%);
   }
   .mc-sp {
     position: absolute; left: 8%; right: 8%; top: 0;
     height: 1px; background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 30%, rgba(255,255,255,0.55) 70%, transparent 100%);
     pointer-events: none;
   }
+  /* Reliable disclosure/collapse: the panel is ALWAYS mounted (so an
+     aria-controls reference is never dangling) and animated open/closed by
+     transitioning grid-template-rows 0fr↔1fr — the panel visibly slides open,
+     so a rotated chevron can never be left with nothing showing. The inner
+     wrapper clips the content while collapsed. Reduced-motion: snap, no slide. */
+  .collapse-panel { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 220ms cubic-bezier(0.23,1,0.32,1); }
+  .collapse-panel.open { grid-template-rows: 1fr; }
+  .collapse-panel > .collapse-inner { overflow: hidden; min-height: 0; }
+  @media (prefers-reduced-motion: reduce) { .collapse-panel { transition: none; } }
   /* ── Glass modal panel ── */
   .mm {
     background: var(--glass-modal-fallback);
