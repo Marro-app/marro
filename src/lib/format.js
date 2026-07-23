@@ -130,7 +130,12 @@ export const subMonthlyTotal = (subs=[]) => subs.filter(s=>s.active!==false).red
 // from under the user's cursor. Returns a string, ready to hold in state.
 export const MAX_QUICK_ADD_AMOUNT = 999999;
 export const sanitizeMoneyInput = (raw, max = Infinity) => {
-  const s = String(raw).replace(/^-+/, '');
+  // Strip a leading minus (no negative dollars) AND any leading zeros before
+  // the integer part — so a fat-fingered "050" reads back as "50" and "007.5"
+  // as "7.5", never the "050" leading-zero display flagged in testing. The
+  // lookahead keeps a lone "0" and the "0" in "0.5"/"0.99" intact (only zeros
+  // that precede another digit are dropped).
+  const s = String(raw).replace(/^-+/, '').replace(/^0+(?=\d)/, '');
   const n = Number(s);
   if (s !== '' && isFinite(n) && n > max) return String(max);
   return s;
