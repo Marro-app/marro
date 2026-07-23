@@ -285,30 +285,51 @@ export const Modal = ({title, onClose, children, width=440, panelClassName="mm",
   ), document.body);
 };
 
-// `glyph`/`label`/`tone` (opt-in) let a caller swap the default "i" dot for a
-// different trigger — e.g. a runway tile's ⚠️/ℹ️ status icon — while keeping
-// InfoTip's accessible reveal (hover, focus, tap/Enter toggle), aria-expanded/
-// aria-describedby wiring, and WCAG-1.4.13 Escape-to-dismiss. Passing a custom
-// `glyph` renders it bare (no circle chrome) so an emoji reads cleanly; the
-// default (no glyph) is unchanged for every existing caller. `tone:"warn"`
-// tints the default dot amber. `label` sets the button's accessible name — set
-// it when the glyph alone wouldn't tell a screen-reader user what it reveals.
+// `glyph`/`label`/`tone` (opt-in) swap the default "i" dot for a different
+// trigger — e.g. a runway tile's ⚠️/ℹ️ status icon — while keeping InfoTip's
+// accessible reveal (hover, focus, tap/Enter toggle), aria wiring, and WCAG
+// 1.4.13 Escape-to-dismiss. A custom `glyph` renders bare (no circle) so an
+// emoji reads cleanly; `tone:"warn"` tints the default dot amber; `label` sets
+// the accessible name.
+// The tooltip bubble is PORTALED to document.body with position:fixed off the
+// button's live rect, so it escapes the loan Card's lingering entrance-animation
+// transform (a stacking/containing context) that otherwise trapped it BEHIND the
+// neighbouring card — it now always paints above sibling cards.
 export const InfoTip = ({text, glyph, label="More info", tone="info"}) => {
   const [show,setShow] = useState(false);
+  const [pos,setPos] = useState(null); // {left, bottom} in viewport px, or null
+  const btnRef = React.useRef(null);
   const timer = React.useRef();
   const tipId = useId();
-  const open  = () => { clearTimeout(timer.current); timer.current = setTimeout(()=>setShow(true),140); };
+  const place = () => {
+    const el = btnRef.current;
+    if(!el) return;
+    const r = el.getBoundingClientRect();
+    // Anchor the bubble's bottom just above the button, horizontally centred.
+    setPos({ left: r.left + r.width/2, bottom: window.innerHeight - r.top + 6 });
+  };
+  const open  = () => { clearTimeout(timer.current); timer.current = setTimeout(()=>{ place(); setShow(true); },140); };
   const close = () => { clearTimeout(timer.current); setShow(false); };
+  // Keep the bubble glued to the button while it's open and the page scrolls/resizes.
+  useEffect(()=>{
+    if(!show) return;
+    const onMove = () => place();
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return ()=>{ window.removeEventListener("scroll", onMove, true); window.removeEventListener("resize", onMove); };
+  },[show]);
   const warn = tone==="warn";
   const dot  = {width:16,height:16,borderRadius:8,background:warn?C.amberLight:C.surface,color:warn?C.amber:C.gray,fontSize:9,fontWeight:700,border:`1px solid ${warn?C.amberMid:C.border}`,lineHeight:"normal"};
   const bare = {width:16,height:16,fontSize:12,background:"transparent",border:"none",lineHeight:1};
-  return <span style={{position:"relative",display:"inline-flex"}}>
-    <button type="button" aria-label={label} aria-expanded={show} aria-describedby={show?tipId:undefined}
+  return <span style={{display:"inline-flex"}}>
+    <button ref={btnRef} type="button" aria-label={label} aria-expanded={show} aria-describedby={show?tipId:undefined}
       className="infotip-btn"
-      onMouseEnter={open} onMouseLeave={close} onFocus={open} onClick={()=>setShow(s=>!s)} onBlur={close}
+      onMouseEnter={open} onMouseLeave={close} onFocus={open} onClick={()=>{ if(!show) place(); setShow(s=>!s); }} onBlur={close}
       onKeyDown={e=>{ if(e.key==="Escape"&&show){ e.stopPropagation(); close(); } }} // WCAG 1.4.13: tooltip dismissible without moving focus
       style={{display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"help",padding:0,margin:0,fontFamily:"inherit",...(glyph?bare:dot)}}>{glyph||"i"}</button>
-    {show && <div id={tipId} role="tooltip" style={{position:"absolute",bottom:"calc(100% + 6px)",left:"50%",transform:"translateX(-50%)",transformOrigin:"bottom center",animation:"tipIn 140ms cubic-bezier(0.23,1,0.32,1)",background:C.glassTooltip,color:C.text,fontSize:11,padding:"6px 10px",borderRadius:8,whiteSpace:"normal",width:200,zIndex:999,lineHeight:1.5,boxShadow:"0 4px 16px rgba(0,0,0,0.32)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.border}`}}>{text}</div>}
+    {show && pos && createPortal(
+      <div id={tipId} role="tooltip" style={{position:"fixed",left:pos.left,bottom:pos.bottom,transform:"translateX(-50%)",transformOrigin:"bottom center",animation:"tipIn 140ms cubic-bezier(0.23,1,0.32,1)",background:C.glassTooltip,color:C.text,fontSize:11,padding:"6px 10px",borderRadius:8,whiteSpace:"normal",width:200,maxWidth:"calc(100vw - 24px)",zIndex:2000,lineHeight:1.5,boxShadow:"0 4px 16px rgba(0,0,0,0.32)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.border}`,pointerEvents:"none"}}>{text}</div>,
+      document.body)}
   </span>;
 };
 
