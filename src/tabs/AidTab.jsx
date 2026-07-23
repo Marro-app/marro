@@ -127,12 +127,23 @@ export function AidTab(){
           const endOverlap   = nextYr?.startDate && y.endDate && y.endDate >= nextYr.startDate;
           const invertedRange = y.startDate && y.endDate && y.endDate < y.startDate;
           return (
-            <Card key={y.id}>
+            // Item 10 — an expanded card spans the whole grid (grid-column:1/-1)
+            // so its collapsed row-neighbors reflow below/around it instead of
+            // being stretched blank beside it; collapsed cards keep their normal
+            // single track. At mobile width the grid is already one column, so
+            // 1/-1 is a no-op there.
+            <Card key={y.id} style={{gridColumn:expanded?"1 / -1":"auto"}}>
               {/* Pinned top-right so it never wraps down beside the pill */}
               {data.years.length>1 && <div style={{position:"absolute",top:12,right:12,zIndex:1}}><XBtn label="Remove year" onClick={()=>setConfirmYearRemove(y.id)} size={30}/></div>}
 
+              {/* Item 9 — the ENTIRE header row is one full-width button. Negative
+                  margins pull it out to the card's edges and the padding is added
+                  back inside, so the whole header (including the empty space beside
+                  the chevron that used to be dead card-padding) toggles the card.
+                  box-sizing:border-box keeps the padded-back button within bounds.
+                  Extra right padding clears the absolutely-positioned Remove ✕. */}
               <button type="button" onClick={()=>toggleYear(y.id)} aria-expanded={expanded} aria-controls={`aid-year-detail-${y.id}`}
-                style={{display:"flex",width:"100%",minHeight:44,justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",rowGap:6,background:"transparent",border:"none",padding:0,paddingRight:data.years.length>1?34:0,cursor:"pointer",textAlign:"left",font:"inherit",color:"inherit"}}>
+                style={{display:"flex",boxSizing:"border-box",width:"auto",minHeight:44,justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",rowGap:6,margin:"-18px -20px 0",padding:"18px 20px",paddingRight:data.years.length>1?54:20,background:"transparent",border:"none",cursor:"pointer",textAlign:"left",font:"inherit",color:"inherit"}}>
                 <span style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
                   <Icon name="chevron" size={12} style={{transform:expanded?"rotate(180deg)":"none",transition:"transform .15s",color:C.gray,flexShrink:0}}/>
                   <span style={{fontWeight:700,fontSize:14,color:C.text,whiteSpace:"nowrap"}}>{y.label}</span>
