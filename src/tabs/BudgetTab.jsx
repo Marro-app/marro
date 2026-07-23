@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { C, CHART_COLORS, tipProps } from '../lib/theme.js';
-import { fmt, fmtS, MONTH_NAMES, MONTH_FULL, sanitizeMoneyInput } from '../lib/format.js';
+import { fmt, fmtS, MONTH_NAMES, MONTH_FULL, sanitizeMoneyInput, cleanNumEvent } from '../lib/format.js';
 import { USMLE_STEP_FEE_ESTIMATE } from '../lib/constants.js';
 import { Card, SectionTitle, Divider, InfoTip, Pill, XBtn, Modal } from '../components/primitives.jsx';
 import { Icon, CatIcon, CatIconPicker, ChangeIconButton } from '../components/icons.jsx';
@@ -141,7 +141,7 @@ export function BudgetTab(){
                   </div>
                   {isAuto
                     ? <span style={{fontSize:13,fontWeight:600,color:C.blue,minWidth:72,textAlign:"right"}}>{fmt(amt)}<span style={{fontSize:10,color:C.gray,fontWeight:400}}> auto</span></span>
-                    : <input type="number" min="0" value={getMonthVal(cat.id)} onChange={e=>setMo(ay,cat.id,sanitizeMoneyInput(e.target.value))}
+                    : <input type="number" min="0" value={getMonthVal(cat.id)} onChange={e=>setMo(ay,cat.id,cleanNumEvent(e))}
                         aria-label={`Monthly budget for ${cat.label}`}
                         style={{width:80,textAlign:"right",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",background:C.bg,color:C.text,fontWeight:600}}/>
                   }

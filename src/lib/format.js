@@ -141,6 +141,19 @@ export const sanitizeMoneyInput = (raw, max = Infinity) => {
   return s;
 };
 
+// Shared onChange helper for money/number inputs. sanitizeMoneyInput strips
+// leading zeros in the RETURNED string, but a type="number" controlled input
+// bound to a numeric value won't re-render its text when the number is
+// unchanged (typing "050" → sanitizes to "50", but 50===50 so React skips the
+// DOM update and the field keeps showing "050"). Writing the cleaned string
+// back onto the node forces the display to update. Route every money input's
+// onChange through this so they all behave; returns the cleaned string.
+export const cleanNumEvent = (e, max = Infinity) => {
+  const clean = sanitizeMoneyInput(e.target.value, max);
+  if (e.target.value !== clean) e.target.value = clean;
+  return clean;
+};
+
 export const getYearMonthStr = (date) => {
   const d = new Date(date+"T12:00:00");
   return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
