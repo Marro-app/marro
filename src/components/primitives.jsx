@@ -285,25 +285,43 @@ export const Modal = ({title, onClose, children, width=440, panelClassName="mm",
   ), document.body);
 };
 
-export const InfoTip = ({text}) => {
+// `glyph`/`label`/`tone` (opt-in) let a caller swap the default "i" dot for a
+// different trigger — e.g. a runway tile's ⚠️/ℹ️ status icon — while keeping
+// InfoTip's accessible reveal (hover, focus, tap/Enter toggle), aria-expanded/
+// aria-describedby wiring, and WCAG-1.4.13 Escape-to-dismiss. Passing a custom
+// `glyph` renders it bare (no circle chrome) so an emoji reads cleanly; the
+// default (no glyph) is unchanged for every existing caller. `tone:"warn"`
+// tints the default dot amber. `label` sets the button's accessible name — set
+// it when the glyph alone wouldn't tell a screen-reader user what it reveals.
+export const InfoTip = ({text, glyph, label="More info", tone="info"}) => {
   const [show,setShow] = useState(false);
   const timer = React.useRef();
   const tipId = useId();
   const open  = () => { clearTimeout(timer.current); timer.current = setTimeout(()=>setShow(true),140); };
   const close = () => { clearTimeout(timer.current); setShow(false); };
+  const warn = tone==="warn";
+  const dot  = {width:16,height:16,borderRadius:8,background:warn?C.amberLight:C.surface,color:warn?C.amber:C.gray,fontSize:9,fontWeight:700,border:`1px solid ${warn?C.amberMid:C.border}`,lineHeight:"normal"};
+  const bare = {width:16,height:16,fontSize:12,background:"transparent",border:"none",lineHeight:1};
   return <span style={{position:"relative",display:"inline-flex"}}>
-    <button type="button" aria-label="More info" aria-expanded={show} aria-describedby={show?tipId:undefined}
+    <button type="button" aria-label={label} aria-expanded={show} aria-describedby={show?tipId:undefined}
       className="infotip-btn"
-      onMouseEnter={open} onMouseLeave={close} onClick={()=>setShow(s=>!s)} onBlur={close}
+      onMouseEnter={open} onMouseLeave={close} onFocus={open} onClick={()=>setShow(s=>!s)} onBlur={close}
       onKeyDown={e=>{ if(e.key==="Escape"&&show){ e.stopPropagation(); close(); } }} // WCAG 1.4.13: tooltip dismissible without moving focus
-      style={{width:16,height:16,borderRadius:8,background:C.surface,color:C.gray,fontSize:9,fontWeight:700,display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"help",border:`1px solid ${C.border}`,padding:0,margin:0,lineHeight:"normal",fontFamily:"inherit"}}>i</button>
+      style={{display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"help",padding:0,margin:0,fontFamily:"inherit",...(glyph?bare:dot)}}>{glyph||"i"}</button>
     {show && <div id={tipId} role="tooltip" style={{position:"absolute",bottom:"calc(100% + 6px)",left:"50%",transform:"translateX(-50%)",transformOrigin:"bottom center",animation:"tipIn 140ms cubic-bezier(0.23,1,0.32,1)",background:C.glassTooltip,color:C.text,fontSize:11,padding:"6px 10px",borderRadius:8,whiteSpace:"normal",width:200,zIndex:999,lineHeight:1.5,boxShadow:"0 4px 16px rgba(0,0,0,0.32)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.border}`}}>{text}</div>}
   </span>;
 };
 
 export const Divider = () => <div style={{height:1,background:C.border,margin:"10px 0"}}/>;
 
-export const MetricTile = ({label, value, sub, color, onClick, role, ariaLive}) => (
+// subIcon (opt-in): a small trailing element rendered inline after the sub —
+// e.g. a runway tile's InfoTip status icon that reveals a longer warning on
+// hover/focus/tap. Kept OUT of the value/label rows so it never shifts them.
+// Subs are always a short single line now (a prior clamp-to-N-lines approach
+// was removed — it truncated the runway warning with an ellipsis; the overflow
+// lives behind subIcon instead), so sibling tiles stay the same height with no
+// reserved-line trick needed.
+export const MetricTile = ({label, value, sub, color, onClick, role, ariaLive, subIcon}) => (
   <div onClick={onClick} role={role} aria-live={ariaLive} style={{
     background:"rgba(255,255,255,0.07)",
     backdropFilter:"blur(40px) saturate(180%)",
@@ -318,7 +336,8 @@ export const MetricTile = ({label, value, sub, color, onClick, role, ariaLive}) 
     <div style={{position:"absolute",left:"8%",right:"8%",top:0,height:1,background:"linear-gradient(90deg,transparent,rgba(255,255,255,0.40),transparent)",pointerEvents:"none"}}/>
     <div style={{fontSize:10,color:C.gray,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}}>{label}</div>
     <div style={{fontSize:24,fontWeight:700,color:color||C.text,letterSpacing:"-0.02em",lineHeight:1.15,fontFamily:"'Newsreader',Georgia,serif",fontVariantNumeric:"tabular-nums lining-nums"}}>{value}</div>
-    {sub && <div style={{fontSize:11,color:C.gray,marginTop:4}}>{sub}</div>}
+    {sub && <div style={{fontSize:11,color:C.gray,marginTop:4,lineHeight:1.4,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+      <span>{sub}</span>{subIcon}</div>}
   </div>
 );
 

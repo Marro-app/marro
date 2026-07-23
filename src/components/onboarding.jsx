@@ -314,7 +314,7 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
   const [otherInst, setOtherInst]   = useState(data.program?.other?.institution || "");
   // Money step (Phase 2, walkthrough §0) — both skippable, savings optional.
   // Checking "I have student loans" routes to the Loans tab after setup so
-  // she can go straight into the ~2-minute loan entry the copy promises.
+  // she can go straight into the roughly 2-minute loan entry the copy promises.
   const [moneySpendable, setMoneySpendable] = useState("");
   const [moneySavings, setMoneySavings] = useState("");
   const [hasLoans, setHasLoans] = useState(false);
@@ -598,22 +598,27 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
               <div style={sub}>Both are optional — skip either and Marro just shows an estimate until you fill them in.</div>
 
               <div style={{marginTop:20}}>
-                <label htmlFor="ob-money-spendable" style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:C.textMid,display:"block",marginBottom:6}}>Available to spend</label>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+                  <label htmlFor="ob-money-spendable" style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:C.textMid}}>Money you can spend now</label>
+                  <InfoTip text="What's in your checking/spending account today. Aid or loan money counts once it's been sent to you."/>
+                </div>
                 <input id="ob-money-spendable" type="number" min="0" inputMode="decimal" placeholder="$0" value={moneySpendable}
-                  aria-label="Available to spend, across all accounts you spend from"
+                  aria-label="Money you can spend now, across all accounts you spend from"
                   onChange={e=>setMoneySpendable(e.target.value)} style={input}/>
               </div>
               <div style={{marginTop:14}}>
-                <label htmlFor="ob-money-savings" style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:C.textMid,display:"block",marginBottom:6}}>Set aside in savings (optional)</label>
+                <label htmlFor="ob-money-savings" style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:C.textMid,display:"block",marginBottom:6}}>Set aside in savings</label>
                 <input id="ob-money-savings" type="number" min="0" inputMode="decimal" placeholder="$0" value={moneySavings}
                   aria-label="Set aside in savings, optional"
                   onChange={e=>setMoneySavings(e.target.value)} style={input}/>
               </div>
-              <label style={{display:"flex",alignItems:"center",gap:9,marginTop:16,fontSize:13,color:C.text,cursor:"pointer"}}>
-                <input type="checkbox" checked={hasLoans} onChange={e=>setHasLoans(e.target.checked)} style={{width:18,height:18,flexShrink:0}}/>
-                I have student loans
+              <label style={{display:"flex",alignItems:"flex-start",gap:12,marginTop:16,padding:"16px",borderRadius:12,border:`1px solid ${hasLoans?C.sel:C.border}`,background:hasLoans?C.selBg:C.surface,cursor:"pointer",transition:"all .15s"}}>
+                <input type="checkbox" checked={hasLoans} onChange={e=>setHasLoans(e.target.checked)} style={{width:20,height:20,flexShrink:0,marginTop:1,cursor:"pointer"}}/>
+                <div>
+                  <div style={{fontSize:14,fontWeight:600,color:C.text}}>I have student loans</div>
+                  <div style={{fontSize:12,color:C.textMid,marginTop:4,lineHeight:1.5}}>{hasLoans ? "We'll set those up next — takes about 2 min." : "Loans matter more than your checking or savings — we'll help you track what you'll owe at graduation."}</div>
+                </div>
               </label>
-              {hasLoans && <div style={{fontSize:11.5,color:C.textMid,marginTop:6,marginLeft:27,lineHeight:1.5}}>We&apos;ll set those up next — takes ~2 min.</div>}
 
               {err && <div role="alert" style={{marginTop:12,fontSize:12,color:C.danger}}>{err}</div>}
               <button className="ob-cta" style={{...ctaPrimary(!saving),marginTop:err?12:20}} disabled={saving} onClick={finish}>{saving?"Setting up…":"Finish"}</button>
@@ -672,22 +677,27 @@ function MoneySetupBody({data, commit, setLandOnLoans}){
   return (
     <div>
       <div style={{marginTop:2}}>
-        <label htmlFor="ps-money-spendable" style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:C.textMid,display:"block",marginBottom:6}}>Available to spend</label>
+        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+          <label htmlFor="ps-money-spendable" style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:C.textMid}}>Money you can spend now</label>
+          <InfoTip text="What's in your checking/spending account today. Aid or loan money counts once it's been sent to you."/>
+        </div>
         <input id="ps-money-spendable" type="number" min="0" inputMode="decimal" placeholder="$0" value={spendable}
-          aria-label="Available to spend, across all accounts you spend from"
+          aria-label="Money you can spend now, across all accounts you spend from"
           onChange={e=>setSpendable(e.target.value)} style={input}/>
       </div>
       <div style={{marginTop:14}}>
-        <label htmlFor="ps-money-savings" style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:C.textMid,display:"block",marginBottom:6}}>Set aside in savings (optional)</label>
+        <label htmlFor="ps-money-savings" style={{fontSize:11,fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",color:C.textMid,display:"block",marginBottom:6}}>Set aside in savings</label>
         <input id="ps-money-savings" type="number" min="0" inputMode="decimal" placeholder="$0" value={savings}
           aria-label="Set aside in savings, optional"
           onChange={e=>setSavings(e.target.value)} style={input}/>
       </div>
-      <label style={{display:"flex",alignItems:"center",gap:9,marginTop:16,fontSize:13,color:C.text,cursor:"pointer"}}>
-        <input type="checkbox" checked={hasLoans} onChange={e=>setHasLoans(e.target.checked)} style={{width:18,height:18,flexShrink:0}}/>
-        I have student loans
+      <label style={{display:"flex",alignItems:"flex-start",gap:12,marginTop:16,padding:"16px",borderRadius:12,border:`1px solid ${hasLoans?C.sel:C.border}`,background:hasLoans?C.selBg:C.surface,cursor:"pointer",transition:"all .15s"}}>
+        <input type="checkbox" checked={hasLoans} onChange={e=>setHasLoans(e.target.checked)} style={{width:20,height:20,flexShrink:0,marginTop:1,cursor:"pointer"}}/>
+        <div>
+          <div style={{fontSize:14,fontWeight:600,color:C.text}}>I have student loans</div>
+          <div style={{fontSize:12,color:C.textMid,marginTop:4,lineHeight:1.5}}>{hasLoans ? "We'll set those up next — takes about 2 min." : "Loans matter more than your checking or savings — we'll help you track what you'll owe at graduation."}</div>
+        </div>
       </label>
-      {hasLoans && <div style={{fontSize:11.5,color:C.textMid,marginTop:6,marginLeft:27,lineHeight:1.5}}>We&apos;ll set those up next — takes ~2 min.</div>}
       <button className="ob-cta" style={{...cta,marginTop:20}} onClick={finishStep}>Finish</button>
       <button onClick={()=>{ setLandOnLoans(false); commit({}); }} className="txt-act" style={{display:"block",margin:"12px auto 0",border:"none",background:"transparent",color:C.textMid,fontSize:12.5}}>Skip</button>
     </div>
