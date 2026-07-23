@@ -14,7 +14,7 @@ import { AV_PALETTE, avColor, AVATARS, AV_GROUPS } from './lib/avatars.js';
 import { popoverStyle, wrapPop, edgeFadeClass, radioProps, tabProps, yrRangeLabel } from './lib/ui-helpers.js';
 import { useLiftCard, useEscClose, useEdgeFade } from './lib/hooks.js';
 import { Icon, MarroLogo, GoogleGlyph } from './components/icons.jsx';
-import { XBtn, Card, SectionTitle, ChoiceGroup, Stepper, TabBtn, YrBtn, Banner, Modal, MetricTile, BlobHealth } from './components/primitives.jsx';
+import { XBtn, Card, SectionTitle, ChoiceGroup, Stepper, TabBtn, YrBtn, Banner, Modal, MetricTile, InfoTip, BlobHealth } from './components/primitives.jsx';
 import { DateField } from './components/pickers.jsx';
 import { AvatarArt, Avatar, AvatarPicker } from './components/avatars.jsx';
 import { LoginScreen } from './components/LoginScreen.jsx'; // kept, no longer rendered — see LandingPage
@@ -58,9 +58,16 @@ let markedSessionDecided = false;
 // Maps computeRunway()'s state machine to the tile's value/sub/color per the
 // plan's walkthrough §5/§9 copy table. `alert:true` marks the state that must
 // carry role="alert" on the tile (a11y rule 7 — the gap warning has to be
-// announced, not just colored). Every sub-line carries its own meaning in
-// plain words, per the "no label ships that a confused M1 would need to
-// google" rule — never a bare number.
+// announced, not just colored). Every sub carries its own meaning in plain
+// words, per the "no label ships that a confused M1 would need to google" rule
+// — never a bare number.
+// `sub` is always a SHORT single line that must read on its own; any longer
+// warning/guidance goes in `detail` (a plain string) instead of wrapping the
+// tile. The header renders `detail` behind a small InfoTip icon on the tile
+// (⚠️ for alert states, ℹ️ otherwise) that reveals it on hover/focus/tap — so
+// the tile stays clean and the same height as its siblings, and the full text
+// is still keyboard- and screen-reader-reachable (InfoTip's aria wiring). This
+// replaced an earlier line-clamp that truncated the warning with an ellipsis.
 // `cushionSource` ("loan"|"own"|"mixed"|undefined, from `classifyCushionSource`)
 // only matters for the `growing` state — every other state is unaffected.
 // Founder decision: a "growing" balance built from unspent LOAN money isn't
@@ -73,31 +80,30 @@ function runwayTileDisplay(runway, cushionSource) {
     case 'growing':
       if (cushionSource === 'own') return { value: 'Saving more than you spend ✓', sub: 'your balance grows a little each month', color: C.green };
       return { value: 'Extra loan money', sub: 'you may be able to return some — see your Loans tab', color: C.blue };
-    case 'through_graduation': {
-      const sub = runway.savings > 0
-        ? <>your money lasts through graduation<div style={{ marginTop: 2 }}>plus {fmt(runway.savings)} in savings</div></>
-        : 'your money lasts through graduation';
-      return { value: 'On track ✓', sub, color: C.green };
-    }
+    case 'through_graduation':
+      return {
+        value: 'On track ✓', color: C.green,
+        sub: 'your money lasts through graduation',
+        detail: runway.savings > 0 ? `You have ${fmt(runway.savings)} in savings on top of this.` : undefined,
+      };
     case 'overdrawn':
       return {
         value: '$0', color: C.amber, alert: true,
         sub: runway.coveredBySavings ? 'overdrawn — your savings covers it' : 'overdrawn — no savings to fall back on yet',
       };
-    case 'gap': {
-      const sub = <>
-        <span>⚠ you run out {runway.gapDays} days before your next refund (around {fmtDay(runway.nextRefund.date)})</span>
-        <div style={{ marginTop: 2 }}>cutting about {fmt(runway.trimPerMonthToClose)}/mo would close the gap</div>
-        {runway.savings > 0 && <div style={{ marginTop: 2 }}>plus {fmt(runway.savings)} in savings if you need it</div>}
-      </>;
-      return { value: fmt(runway.spendable), sub, color: C.amber, alert: true };
-    }
+    case 'gap':
+      return {
+        value: fmt(runway.spendable), color: C.amber, alert: true,
+        sub: 'short before your next refund',
+        detail: `You run out about ${runway.gapDays} days before your next refund (around ${fmtDay(runway.nextRefund.date)}). Cutting about ${fmt(runway.trimPerMonthToClose)}/mo would close the gap.${runway.savings > 0 ? ` You also have ${fmt(runway.savings)} in savings if you need it.` : ''}`,
+      };
     case 'counting_down': {
       if (runway.basicallyOnTrack) return { value: fmt(runway.spendable), sub: "you're basically on track ✓", color: C.green };
-      const sub = runway.savings > 0
-        ? <>your money lasts until around {fmtDay(runway.runOutDate)}<div style={{ marginTop: 2 }}>plus {fmt(runway.savings)} in savings</div></>
-        : <>your money lasts until around {fmtDay(runway.runOutDate)}</>;
-      return { value: fmt(runway.spendable), sub, color: C.text };
+      return {
+        value: fmt(runway.spendable), color: C.text,
+        sub: `your money lasts until around ${fmtDay(runway.runOutDate)}`,
+        detail: runway.savings > 0 ? `You have ${fmt(runway.savings)} in savings on top of this.` : undefined,
+      };
     }
     case 'graduated':
       return { value: '—', sub: 'all done — congrats!', color: C.teal };
@@ -1365,14 +1371,18 @@ export function App() {
            caps at 320px like a normal card. ── */}
       <div style={{display:"flex",gap:10,marginBottom:SHOW_PHASE2_TILES?10:20,flexWrap:"wrap"}}>
         {SHOW_PHASE2_TILES && (()=>{ const rt=runwayTileDisplay(runway, cushionSource); return (
-          <MetricTile label="Runway" value={rt.value} sub={rt.sub} color={rt.color} subMinLines={2}
-            role={rt.alert?"alert":undefined} ariaLive={rt.alert?"assertive":undefined}/>
+          <MetricTile label="Runway" value={rt.value} sub={rt.sub} color={rt.color}
+            role={rt.alert?"alert":undefined} ariaLive={rt.alert?"assertive":undefined}
+            subIcon={rt.detail
+              ? <InfoTip text={rt.detail} glyph={rt.alert?"⚠️":"ℹ️"}
+                  label={rt.alert?"Runway warning — full detail":"Runway — more detail"}/>
+              : undefined}/>
         ); })()}
         {SHOW_PHASE2_TILES
-          ? <MetricTile label="Monthly plan"  value={fmt(moSpend)} subMinLines={2} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/>
+          ? <MetricTile label="Monthly plan"  value={fmt(moSpend)} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/>
           : <div style={{flex:"0 1 320px",minWidth:130}}><MetricTile label="Monthly plan"  value={fmt(moSpend)} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/></div>
         }
-        {SHOW_PHASE2_TILES && <MetricTile label="Debt" value={fmt(debtProjection.total)} subMinLines={2} sub={debtProjection.isEstimate?"estimate":"at graduation"}/>}
+        {SHOW_PHASE2_TILES && <MetricTile label="Debt" value={fmt(debtProjection.total)} sub={debtProjection.isEstimate?"estimate":"at graduation"}/>}
       </div>
 
       {/* "Did your refund land?" nudge (walkthrough §9) — only when the header's own
