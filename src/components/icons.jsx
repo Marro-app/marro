@@ -116,6 +116,28 @@ export const CatIconPicker = ({value, onChange}) => (
   </div>
 );
 
+// Editable-icon control — a bordered "plate" that reads as a tappable button
+// (not decoration). On hover/focus a scrim + pencil glyph surfaces the
+// "change icon" affordance. Used for the category icons in the Customize and
+// Budget tabs. The accessible label lives on the button; scrim/glyph are
+// decorative. 44×44 default keeps a full hit target.
+export const ChangeIconButton = ({onClick, ariaLabel, expanded, children, size=44}) => (
+  <button type="button" className="icon-edit-btn" onClick={onClick}
+    aria-label={ariaLabel} aria-expanded={expanded} title="Change icon"
+    style={{position:"relative",width:size,height:size,borderRadius:12,flexShrink:0,
+      display:"inline-flex",alignItems:"center",justifyContent:"center",
+      border:`1px solid ${C.border}`,background:C.surface,color:C.text,
+      cursor:"pointer",padding:0,overflow:"hidden"}}>
+    {children}
+    <span className="icon-edit-scrim" aria-hidden="true">
+      <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor"
+        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M13.5 4.5l2 2M4 16l1-3 8.5-8.5 2 2L7 15z"/>
+      </svg>
+    </span>
+  </button>
+);
+
 // Glass month dropdown — replaces native <select> (same popover language as the pie range picker)
 export const MarroLogo = ({size=54}) => {
   // Always-dark tile (like the avatar coins). In dark mode a faint cream hairline

@@ -440,6 +440,17 @@
   .collapse-panel.open { grid-template-rows: 1fr; }
   .collapse-panel > .collapse-inner { overflow: hidden; min-height: 0; }
   @media (prefers-reduced-motion: reduce) { .collapse-panel { transition: none; } }
+  /* ── Editable-icon control ── the icon plate reads as a button; a scrim +
+     pencil glyph surfaces the "change icon" affordance on hover/keyboard focus. */
+  .icon-edit-scrim {
+    position: absolute; inset: 0; border-radius: inherit;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.52); color: #fff;
+    opacity: 0; transition: opacity 150ms ease; pointer-events: none;
+  }
+  .icon-edit-btn:hover .icon-edit-scrim,
+  .icon-edit-btn:focus-visible .icon-edit-scrim { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { .icon-edit-scrim { transition: none; } }
   /* ── Glass modal panel ── */
   .mm {
     background: var(--glass-modal-fallback);
