@@ -313,9 +313,12 @@ export function loanOfferedAmount(loan) {
 }
 
 /**
- * How much of this loan is actually owed as principal (before any interest),
- * fee included — the fee is deducted from what the student receives but NOT
- * from what they owe, so it inflates this number rather than shrinking it.
+ * How much of this loan is actually owed as principal (before any interest) —
+ * the ACCEPTED (face) amount. Founder correction (2026-07-22): the origination
+ * fee does NOT inflate what you owe. In reality the fee is skimmed off the top
+ * before the money reaches you, so it REDUCES the cash you receive (see
+ * `cashReceived`) while you still owe the full face amount. So owed principal =
+ * accepted amount, with no fee gross-up.
  *
  * Built from the ACCEPTED amount (the disbursement rows, or the entered
  * balance) — NEVER from `offeredAmount`, the award-letter sticker figure. A
@@ -324,16 +327,32 @@ export function loanOfferedAmount(loan) {
  *
  * Two entry modes (see the plan's walkthrough §2 for why both exist):
  *   - "original amount" (default): sums the disbursement rows the student
- *     entered, each grossed up by the fee.
+ *     entered (the accepted amount).
  *   - "balance as of [date]" (`asOfBalance`/`asOfDate` set): the student typed
- *     in a real balance from their servicer, which already has any fee baked
- *     in — so it's used as-is, with no fee re-applied on top of itself.
+ *     in a real balance from their servicer, used as-is.
  */
 export function loanPrincipal(loan) {
   if (loan.asOfDate != null && loan.asOfBalance != null) return Number(loan.asOfBalance) || 0;
-  const fee = effectiveFeePct(loan);
+  return (loan.disbursements || []).reduce((a, d) => a + (Number(d.amount) || 0), 0);
+}
+
+/**
+ * How much cash actually reaches the student's account for this loan, after the
+ * origination fee is skimmed off the top: accepted amount × (1 − fee). This is
+ * award-letter/disbursement-mode only and is purely informational — it is NOT
+ * part of what's owed (you owe the full accepted amount; see `loanPrincipal`).
+ * Returns `null` when there's no fee, no accepted amount, or the loan is in
+ * current-balance mode (that balance is already what's owed, fee long since
+ * skimmed), so the UI can hide the "about $X reaches your account" line.
+ */
+export function cashReceived(loan) {
+  if (loan == null) return null;
+  if (loan.asOfDate != null && loan.asOfBalance != null) return null;
   const gross = (loan.disbursements || []).reduce((a, d) => a + (Number(d.amount) || 0), 0);
-  return gross * (1 + fee);
+  if (gross <= 0) return null;
+  const fee = effectiveFeePct(loan);
+  if (fee <= 0) return null;
+  return gross * (1 - fee);
 }
 
 /**
@@ -384,11 +403,13 @@ export function accruedInterest(loan, asOf) {
     return (Number(loan.asOfBalance) || 0) * (rate / 365) * days;
   }
 
-  const fee = effectiveFeePct(loan);
+  // Interest accrues on the ACCEPTED (face) amount — NOT grossed up by the fee.
+  // The fee reduces cash received, not what you owe (founder correction
+  // 2026-07-22; see loanPrincipal / cashReceived).
   return (loan.disbursements || []).reduce((sum, d) => {
     if (!d.date) return sum; // undated rows are handled upstream (see fillMissingDisbursementDates) — never silently skip in the caller that matters
     const days = Math.max(0, daysBetween(accrueFrom(d.date), asOf));
-    const principal = (Number(d.amount) || 0) * (1 + fee);
+    const principal = Number(d.amount) || 0;
     return sum + principal * (rate / 365) * days;
   }, 0);
 }
@@ -640,10 +661,10 @@ export function loanReturnWindows(loans, today) {
  * leaving it a vague tip. Clones the loan that owns `window`'s disbursement,
  * reduces THAT disbursement's amount by `returnAmount` (capped at the
  * disbursement's own amount — can't return more than arrived), and diffs
- * `projectDebtAtGraduation` with vs. without the reduction. The fee shrinks
- * proportionally (it's charged on the disbursed amount), so the delta
- * captures both the cancelled fee and the cancelled future interest — exactly
- * what federal Return of Title IV actually cancels.
+ * `projectDebtAtGraduation` with vs. without the reduction. Since owed principal
+ * is the face amount (the fee is not part of owed debt — founder correction
+ * 2026-07-22), the delta captures the cancelled future interest on the returned
+ * money; the returned principal itself is a wash (subtracted back out below).
  *
  * Returns `0` (never negative, never a guess bigger than what's returnable)
  * if the window's loan/disbursement can't be found or `returnAmount` isn't a
@@ -660,9 +681,9 @@ export function loanReturnWindows(loans, today) {
  * Also fixes the ~4.7x overstatement: `before - after` is the full drop in
  * debt-at-graduation, which cancels the returned PRINCIPAL itself as well as
  * the fee and interest on it. But giving back money you never spent isn't a
- * "saving" — you had that cash and now you don't, a wash. Only the fee and
- * interest that would otherwise have piled up on it is the real benefit, so
- * the raw returned principal (`capped`) is subtracted back out.
+ * "saving" — you had that cash and now you don't, a wash. Only the interest
+ * that would otherwise have piled up on it is the real benefit, so the raw
+ * returned principal (`capped`) is subtracted back out.
  */
 export function returnSavingsAtGraduation(loans, window, gradDate, returnAmount) {
   const amt = Number(returnAmount) || 0;
@@ -682,7 +703,7 @@ export function returnSavingsAtGraduation(loans, window, gradDate, returnAmount)
 
   const before = projectDebtAtGraduation([loan], gradDate).total;
   const after = projectDebtAtGraduation([withReturn], gradDate).total;
-  const debtReduction = before - after; // returned principal (fee-grossed) + fee + interest cancelled
+  const debtReduction = before - after; // returned principal + interest cancelled on it
   return Math.max(0, debtReduction - capped);
 }
 
