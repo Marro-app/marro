@@ -1374,7 +1374,7 @@ export function App() {
           <MetricTile label="Runway" value={rt.value} sub={rt.sub} color={rt.color}
             role={rt.alert?"alert":undefined} ariaLive={rt.alert?"assertive":undefined}
             subIcon={rt.detail
-              ? <InfoTip text={rt.detail} glyph={rt.alert?"⚠️":"ℹ️"}
+              ? <InfoTip text={rt.detail} tone={rt.alert?"warn":"info"}
                   label={rt.alert?"Runway warning — full detail":"Runway — more detail"}/>
               : undefined}/>
         ); })()}
