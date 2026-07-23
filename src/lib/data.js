@@ -557,7 +557,11 @@ export function diffStates(base, cur) {
   // and safe — it only loses data if BOTH devices archive/restore in the same
   // sync window, which `findConflicts` will surface as a conflict rather than
   // silently dropping either side.
-  for (const k of ['darkMode','logo','preferredName','avatar','program','setupVersion','archivedYears','loanReminderSnooze','refundPlaybookSeen']) {
+  // `archivedInviteCodes` is a plain list of invite-code strings the user has
+  // hidden from their invite list — a purely client-side view preference (the
+  // codes themselves live in the RLS-gated `invite_codes` table; archiving does
+  // NOT touch the server). Same replace-whole-array treatment as `archivedYears`.
+  for (const k of ['darkMode','logo','preferredName','avatar','program','setupVersion','archivedYears','archivedInviteCodes','loanReminderSnooze','refundPlaybookSeen']) {
     if (js(base[k]) !== js(cur[k])) ch[k] = {b:base[k], c:cur[k]};
   }
   for (const k of ['monthDisabled']) {
