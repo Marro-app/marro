@@ -10,10 +10,17 @@ export const BrandIcon = ({name, size=36}) => {
   const txt = b?.letter || (name||"?")[0].toUpperCase();
   const fontSize = txt.length > 2 ? size*0.28 : txt.length > 1 ? size*0.34 : size*0.44;
   const [imgErr, setImgErr] = useState(false);
-  const faviconUrl = domain && !imgErr ? `https://www.google.com/s2/favicons?domain=${domain}&sz=128` : null;
+  // Prefer the curated brand monogram (always crisp + theme-aware). A fetched
+  // favicon is only worth it when we have a domain but no curated brand — Google's
+  // service upscales tiny source icons, which read blurry (the Apple TV report), so
+  // we never lean on it for a brand we can already render sharply ourselves.
+  const useFavicon = domain && !b && !imgErr;
+  const faviconUrl = useFavicon ? `https://www.google.com/s2/favicons?domain=${domain}&sz=128` : null;
   return faviconUrl ? (
-    <div style={{width:size,height:size,borderRadius:size*0.22,overflow:"hidden",flexShrink:0,background:"#fff",display:"flex",alignItems:"center",justifyContent:"center"}}>
-      <img src={faviconUrl} alt="" width={size*0.7} height={size*0.7} style={{objectFit:"contain",imageRendering:"-webkit-optimize-contrast"}} onError={()=>setImgErr(true)}/>
+    // Deliberate light "logo chip": favicons are drawn for a light backdrop, so this
+    // is an intentional rounded plate (hairline + inset ring), not a stray white box.
+    <div style={{width:size,height:size,borderRadius:size*0.22,overflow:"hidden",flexShrink:0,background:"#fff",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"inset 0 0 0 1px rgba(0,0,0,0.10)"}}>
+      <img src={faviconUrl} alt="" width={Math.round(size*0.62)} height={Math.round(size*0.62)} loading="lazy" style={{objectFit:"contain"}} onError={()=>setImgErr(true)}/>
     </div>
   ) : (
     <div style={{
@@ -107,6 +114,28 @@ export const CatIconPicker = ({value, onChange}) => (
       );
     })}
   </div>
+);
+
+// Editable-icon control — a bordered "plate" that reads as a tappable button
+// (not decoration). On hover/focus a scrim + pencil glyph surfaces the
+// "change icon" affordance. Used for the category icons in the Customize and
+// Budget tabs. The accessible label lives on the button; scrim/glyph are
+// decorative. 44×44 default keeps a full hit target.
+export const ChangeIconButton = ({onClick, ariaLabel, expanded, children, size=44}) => (
+  <button type="button" className="icon-edit-btn" onClick={onClick}
+    aria-label={ariaLabel} aria-expanded={expanded} title="Change icon"
+    style={{position:"relative",width:size,height:size,borderRadius:12,flexShrink:0,
+      display:"inline-flex",alignItems:"center",justifyContent:"center",
+      border:`1px solid ${C.border}`,background:C.surface,color:C.text,
+      cursor:"pointer",padding:0,overflow:"hidden"}}>
+    {children}
+    <span className="icon-edit-scrim" aria-hidden="true">
+      <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor"
+        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M13.5 4.5l2 2M4 16l1-3 8.5-8.5 2 2L7 15z"/>
+      </svg>
+    </span>
+  </button>
 );
 
 // Glass month dropdown — replaces native <select> (same popover language as the pie range picker)
