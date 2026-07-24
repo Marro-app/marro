@@ -5,7 +5,7 @@ import { Card, SectionTitle, XBtn, Pill, ScrollX, InfoTip } from '../components/
 import { Icon } from '../components/icons.jsx';
 import { DateField } from '../components/pickers.jsx';
 import { useApp } from '../context/AppContext.js';
-import { useEscClose } from '../lib/hooks.js';
+import { useEscClose, useGridColumnCount } from '../lib/hooks.js';
 
 // Aid & Detail — per-year grant/cost cards + the multi-year overview table.
 // No private state besides the collapse/expand set for the year cards (item 4,
@@ -24,6 +24,12 @@ export function AidTab(){
   // disappears out from under a focused Dismiss button.
   const aidNoteRef = useRef(null);
   const panelRef = useRef(null);
+  const yearsGridRef = useRef(null);
+  const yearsGridCols = useGridColumnCount(yearsGridRef);
+  // True when the trailing "Add year" tile lands alone on a new row (no year
+  // card beside it) — it should then span the full row instead of sitting
+  // stranded at one column's width.
+  const addYearAlone = data.years.length % yearsGridCols === 0;
   const aidNoteOpen = !dismissed["aidnote"];
   const closeAidNote = () => {
     const active = document.activeElement;
@@ -111,7 +117,7 @@ export function AidTab(){
           collapsed card stays a summary row no matter how tall its neighbor gets.
           minmax(min(100%,300px),1fr) (per DESIGN_SYSTEM "Layout") also stops a hard 300px
           track from overflowing viewports narrower than 300px. */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,300px),1fr))",gap:16,alignItems:"start"}}>
+      <div ref={yearsGridRef} style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,300px),1fr))",gap:16,alignItems:"start"}}>
         {data.years.map((y,i)=>{
           const g=Number(y.grant)||0,tf=Number(y.tuitionFees)||0,hi=Number(y.healthIns)||0;
           const rawGap=g-tf-hi; // unfloored — negative means costs exceed aid
@@ -205,7 +211,7 @@ export function AidTab(){
             </Card>
           );
         })}
-        <button type="button" aria-label="Add year" onClick={()=>setShowAddYear(true)} style={{width:"100%",font:"inherit",background:"transparent",border:`2px dashed ${C.border}`,borderRadius:12,minHeight:120,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,cursor:"pointer",color:C.gray,transition:"border-color 0.15s, color 0.15s"}}
+        <button type="button" aria-label="Add year" onClick={()=>setShowAddYear(true)} style={{gridColumn:addYearAlone?"1 / -1":undefined,width:"100%",font:"inherit",background:"transparent",border:`2px dashed ${C.border}`,borderRadius:12,minHeight:120,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,cursor:"pointer",color:C.gray,transition:"border-color 0.15s, color 0.15s"}}
           onMouseEnter={e=>{e.currentTarget.style.borderColor=C.teal;e.currentTarget.style.color=C.teal;}}
           onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.gray;}}>
           <span style={{fontSize:24,fontWeight:300,lineHeight:1}}>+</span>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { C, CHART_COLORS, tipProps } from '../lib/theme.js';
 import { fmt, fmtS, MONTH_NAMES, MONTH_FULL, sanitizeMoneyInput, cleanNumEvent } from '../lib/format.js';
@@ -22,8 +22,15 @@ export function BudgetTab(){
           getMonthVal, spentInMonth, unbudgetedCats, unbudgetedTotal, promoteToBudget,
           toggleMonthCat, setMo, reorderCats, addCat,
           newCatName, setNewCatName, newCatIcon, setNewCatIcon, iconPickOpen, setIconPickOpen } = useApp();
-  const [dragCat, setDragCat] = useState(null);
-  const [dragOverCat, setDragOverCat] = useState(null);
+  // Category reorder is pointer-driven rather than HTML5 drag-and-drop: native
+  // DnD can only use the dragged ELEMENT as its drag image, which meant the grip
+  // button (all the `draggable` attribute could sit on) was the only thing that
+  // appeared to lift. Tracking pointer deltas ourselves lets the whole row move
+  // and the other rows slide out of the way, instead of a static drop-line.
+  const [drag, setDrag] = useState(null);
+  const dragRef = useRef(null);
+  const rowRefs = useRef(new Map());
+  const reduceMotion = typeof window!=="undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const [showAddCat, setShowAddCat] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [showSubscriptions, setShowSubscriptions] = useState(false);
@@ -35,6 +42,64 @@ export function BudgetTab(){
   // and its drag/keyboard reorder logic (both mouse-drag drop targets and
   // ArrowUp/ArrowDown need the same ordered, filtered list).
   const reorderableCats = cats.filter(c=>!c.locked && !disabledCats.includes(c.id));
+
+  // Where the dragged row would land, given how far it's travelled: walk outward
+  // from its original slot, crossing a neighbour once we've passed that
+  // neighbour's midpoint. Row heights vary (the subscriptions row carries a
+  // subtitle), so they're measured at drag start rather than assumed uniform.
+  const targetIndexFor = (fromIdx, dy, heights) => {
+    let idx = fromIdx, acc = 0;
+    if (dy > 0) {
+      for (let i = fromIdx + 1; i < heights.length; i++) {
+        acc += heights[i];
+        if (dy > acc - heights[i] / 2) idx = i; else break;
+      }
+    } else if (dy < 0) {
+      for (let i = fromIdx - 1; i >= 0; i--) {
+        acc += heights[i];
+        if (-dy > acc - heights[i] / 2) idx = i; else break;
+      }
+    }
+    return idx;
+  };
+
+  // How far a NON-dragged row slides to open the gap. Only rows between the
+  // dragged row's origin and its current target move, each by exactly the
+  // dragged row's height, so the list reads as one continuous shift.
+  const rowShift = (i) => {
+    if (!drag || i === drag.fromIdx) return 0;
+    const { fromIdx, toIdx, heights } = drag;
+    if (fromIdx < toIdx && i > fromIdx && i <= toIdx) return -heights[fromIdx];
+    if (fromIdx > toIdx && i >= toIdx && i < fromIdx) return heights[fromIdx];
+    return 0;
+  };
+
+  const startDrag = (e, cat, idx) => {
+    if (e.button != null && e.button !== 0) return;
+    const heights = reorderableCats.map(c => rowRefs.current.get(c.id)?.offsetHeight || 0);
+    const st = { id: cat.id, fromIdx: idx, toIdx: idx, dy: 0, startY: e.clientY, heights };
+    dragRef.current = st;
+    setDrag(st);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const moveDrag = (e) => {
+    const st = dragRef.current;
+    if (!st) return;
+    const dy = e.clientY - st.startY;
+    const next = { ...st, dy, toIdx: targetIndexFor(st.fromIdx, dy, st.heights) };
+    dragRef.current = next;
+    setDrag(next);
+  };
+
+  const endDrag = () => {
+    const st = dragRef.current;
+    if (!st) return;
+    dragRef.current = null;
+    setDrag(null);
+    const target = reorderableCats[st.toIdx];
+    if (target && st.toIdx !== st.fromIdx) reorderCats(st.id, target.id);
+  };
 
   // Plan vs actual — the one chart Phase 1 keeps on Home (ported from the hidden Charts tab)
   const budgetVsActual = MONTH_NAMES.map((m,mi)=>{
@@ -102,6 +167,7 @@ export function BudgetTab(){
 
             {reorderableCats.map((cat,i)=>{
               const isAuto = cat.autoCalc===true;
+              const isDragging = drag?.id===cat.id;
               const isDisabled = disabledCats.includes(cat.id);
               const amt = isDisabled ? 0 : getMonthVal(cat.id);
               const pct = moSpend>0?Math.round(amt/moSpend*100):0;
@@ -112,20 +178,32 @@ export function BudgetTab(){
               };
               return (
                 <div key={cat.id}
-                  onDragOver={e=>{e.preventDefault();if(dragCat&&dragCat!==cat.id)setDragOverCat(cat.id);}}
-                  onDrop={e=>{e.preventDefault();if(dragCat)reorderCats(dragCat,cat.id);setDragCat(null);setDragOverCat(null);}}
-                  style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`,opacity:dragCat===cat.id?0.4:1,borderTop:dragOverCat===cat.id?`2px solid ${C.sel}`:"2px solid transparent",background:dragOverCat===cat.id?C.bgDark:"transparent"}}>
+                  ref={el=>{if(el)rowRefs.current.set(cat.id,el);else rowRefs.current.delete(cat.id);}}
+                  style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`,
+                    position:"relative",background:C.bg,
+                    // The dragged row rides the pointer and lifts above the list;
+                    // every other row slides to open the gap. Transitions are
+                    // suppressed on the dragged row (it must track the pointer
+                    // exactly, with no lag) and honor Reduce Motion elsewhere.
+                    transform:isDragging?`translateY(${drag.dy}px) scale(1.02)`:`translateY(${rowShift(i)}px)`,
+                    transition:isDragging||reduceMotion?"none":"transform .18s cubic-bezier(.2,.8,.2,1)",
+                    zIndex:isDragging?20:1,
+                    boxShadow:isDragging?"0 8px 24px rgba(0,0,0,0.28)":"none",
+                    borderRadius:isDragging?10:0,
+                    cursor:isDragging?"grabbing":undefined}}>
                   {!isAuto && (
-                    <button type="button" className="xbtn" draggable
-                      onDragStart={()=>setDragCat(cat.id)}
-                      onDragEnd={()=>{setDragCat(null);setDragOverCat(null);}}
+                    <button type="button" className="xbtn"
+                      onPointerDown={e=>startDrag(e,cat,i)}
+                      onPointerMove={moveDrag}
+                      onPointerUp={endDrag}
+                      onPointerCancel={endDrag}
                       onKeyDown={e=>{
                         if(e.key==="ArrowUp"){e.preventDefault();moveCat(-1);}
                         else if(e.key==="ArrowDown"){e.preventDefault();moveCat(1);}
                       }}
                       aria-label={`Reorder ${cat.label}: use arrow keys`}
                       title="Drag to reorder, or use arrow keys"
-                      style={{width:24,height:24,borderRadius:6,border:"none",background:"transparent",color:C.gray,fontSize:12,cursor:"grab",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,padding:0}}>
+                      style={{width:24,height:24,borderRadius:6,border:"none",background:"transparent",color:C.gray,fontSize:12,cursor:isDragging?"grabbing":"grab",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,padding:0,touchAction:"none"}}>
                       <span aria-hidden="true">⠿</span>
                     </button>
                   )}
