@@ -18,10 +18,13 @@ import { useApp } from '../context/AppContext.js';
 export function BudgetTab(){
   const { data, cats, ay, yr, yrStartYear, selMonth, setSelMonth, subs, subsMo, disabledCats,
           moSpend, moSpendable, moSurplus, runningBalance, totalAccumulatedBalance,
-          priorYearsCarryover, annDisburse, annOther, allEntriesFlat,
+          priorYearsCarryover, annDisburse, annOther, aidBreakdown, allEntriesFlat,
           getMonthVal, spentInMonth, unbudgetedCats, unbudgetedTotal, promoteToBudget,
           toggleMonthCat, setMo, reorderCats, addCat,
           newCatName, setNewCatName, newCatIcon, setNewCatIcon, iconPickOpen, setIconPickOpen } = useApp();
+  // True when this year's spending money is mostly borrowed — gates every
+  // "nice surplus!" affirmation below. See yearAidBreakdown in src/lib/aid.js.
+  const surplusBorrowed = !!aidBreakdown?.isLoanFunded;
   // Category reorder is pointer-driven rather than HTML5 drag-and-drop: native
   // DnD can only use the dragged ELEMENT as its drag image, which meant the grip
   // button (all the `draggable` attribute could sit on) was the only thing that
@@ -268,12 +271,19 @@ export function BudgetTab(){
                 <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,color:C.gray}}><Icon name="live" size={11} color={C.green} style={{animation:"marroPulse 2s infinite"}}/>Live</span>
               </div>
               
+              {/* A surplus built mostly from borrowed money is not wealth — it's
+                  cash sitting at ~8% that could often be returned. So when the
+                  year is loan funded, a POSITIVE surplus reads blue, never green,
+                  and the label says "borrowed" — the wording has to carry it too,
+                  since colour alone would fail WCAG 1.4.1. Same rule the Runway
+                  tile already applies via classifyCushionSource. */}
               {[
-                {l:"Total aid sent to you",      v:fmt(annDisburse)+"/yr",    c:C.teal},
+                {l:"Aid and loans sent to you", v:fmt(annDisburse)+"/yr",    c:C.teal},
                 {l:"Other income",              v:fmt(annOther)+"/yr",       c:C.text},
                 {l:"Monthly spending money",    v:fmt(moSpendable)+"/mo",    c:C.teal,bold:true},
                 {l:"Monthly plan",              v:fmt(moSpend)+"/mo",        c:C.text},
-                {l:"Monthly surplus",           v:fmtS(moSurplus)+"/mo",     c:moSurplus>=0?C.green:C.neg,bold:true},
+                {l:surplusBorrowed?"Left over (borrowed)":"Monthly surplus",
+                 v:fmtS(moSurplus)+"/mo",     c:moSurplus<0?C.neg:(surplusBorrowed?C.blue:C.green),bold:true},
               ].map(r=>(
                 <div key={r.l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
                   <span style={{color:C.gray}}>{r.l}</span>
@@ -285,10 +295,17 @@ export function BudgetTab(){
                 <span style={{color:runningBalance>=0?C.teal:C.neg}}>{fmtS(runningBalance)}</span>
               </div>
               {moSurplus!==0 && (
-                <div style={{marginTop:8,padding:"10px 12px",background:moSurplus>=0?C.greenLight:C.negLight,borderRadius:8,fontSize:12,color:moSurplus>=0?C.green:C.neg,fontWeight:500}}>
-                  {moSurplus>=0
-                    ? `${fmt(moSurplus)} surplus this month — it carries into your running balance and adds to your year-end net.`
-                    : `${fmt(Math.abs(moSurplus))} over budget this month — this draws down your running balance and lowers your year-end net.`}
+                <div style={{marginTop:8,padding:"10px 12px",
+                  background:moSurplus<0?C.negLight:(surplusBorrowed?C.blueLight:C.greenLight),borderRadius:8,fontSize:12,
+                  color:moSurplus<0?C.neg:(surplusBorrowed?C.blue:C.green),fontWeight:500}}>
+                  {moSurplus<0
+                    ? `${fmt(Math.abs(moSurplus))} over budget this month — this draws down your running balance and lowers your year-end net.`
+                    : surplusBorrowed
+                      // Swapped, not added: the old "surplus carries into your
+                      // running balance" line is actively wrong advice when the
+                      // money is borrowed at ~8%.
+                      ? `${fmt(moSurplus)} left over this month — but this is borrowed money. Returning what you don't need within 120 days cancels its interest.`
+                      : `${fmt(moSurplus)} surplus this month — it carries into your running balance and adds to your year-end net.`}
                 </div>
               )}
             </Card>
@@ -365,7 +382,13 @@ export function BudgetTab(){
                   : <>Cumulative surplus/deficit from {MONTH_FULL[0]} through {MONTH_FULL[selMonth]}, if you stay on budget.</>
                 }
               </div>
-              {totalAccumulatedBalance>moSpendable*2 && <div style={{marginTop:8,padding:"6px 10px",background:C.greenLight,borderRadius:8,fontSize:11,color:C.green}}>You&apos;re building a healthy cushion. Consider moving some into a high-yield savings account.</div>}
+              {/* "Healthy cushion → move it to a HYSA" must not fire on borrowed
+                  money: a savings account pays ~4% while the loan charges ~8%, so
+                  parking it loses money. Returning it is the better move. */}
+              {totalAccumulatedBalance>moSpendable*2 && (surplusBorrowed
+                ? <div style={{marginTop:8,padding:"6px 10px",background:C.blueLight,borderRadius:8,fontSize:11,color:C.blue}}>You&apos;re holding a large cushion of borrowed money. Returning what you don&apos;t need beats saving it — a savings account pays less than your loan charges.</div>
+                : <div style={{marginTop:8,padding:"6px 10px",background:C.greenLight,borderRadius:8,fontSize:11,color:C.green}}>You&apos;re building a healthy cushion. Consider moving some into a high-yield savings account.</div>
+              )}
               {totalAccumulatedBalance<0 && <div style={{marginTop:8,padding:"6px 10px",background:C.negLight,borderRadius:8,fontSize:11,color:C.neg}}>You&apos;re running a cumulative deficit. Review spending or adjust your budget.</div>}
             </Card>
 
