@@ -352,10 +352,15 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
               You accepted <strong style={{ color: C.text }}>{fmt(annualTotal)}</strong> of the <strong style={{ color: C.text }}>{fmt(offered)}</strong> offered.
             </div>
           )}
-          {/* #1 — the fee reduces the cash you RECEIVE; you still owe the full accepted amount. */}
-          {cash != null && annualTotal > 0 && (
+          {/* Every loan shows what actually lands in the account. With a fee, the
+              cash is less than the amount owed (fee skimmed off the top); with no
+              fee, the full amount lands — either way the student sees the real
+              number they'll have to work with, not just the face amount. */}
+          {annualTotal > 0 && (
             <div style={{ fontSize: 11, color: C.text, marginBottom: 10, lineHeight: 1.5 }}>
-              About <strong style={{ color: C.text }}>{fmt(cash)}</strong> actually reaches your account (after the {feeDisplayPct}% fee). You still owe the full <strong style={{ color: C.text }}>{fmt(annualTotal)}</strong>.
+              {cash != null && cash < annualTotal
+                ? <>About <strong style={{ color: C.text }}>{fmt(cash)}</strong> reaches your account (after the {feeDisplayPct}% fee) — that&apos;s what you keep. You still owe the full <strong style={{ color: C.text }}>{fmt(annualTotal)}</strong>.</>
+                : <>The full <strong style={{ color: C.text }}>{fmt(annualTotal)}</strong> reaches your account — no fee on this loan.</>}
             </div>
           )}
           <div style={{ fontSize: 11, color: C.text, marginBottom: 10, lineHeight: 1.5 }}>
@@ -497,7 +502,7 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
           exactly that gap clicking near the chevron. Keyboard-operable with a
           correct aria-expanded/aria-controls; the chevron is decorative. */}
       <button type="button" onClick={toggleMore} aria-expanded={moreOpen} aria-controls={`ln-more-${loan.id}`}
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 6,
           width: 'calc(100% + 40px)', margin: '0 -20px', boxSizing: 'border-box',
           background: 'none', border: 'none', color: C.text, fontSize: 12, fontWeight: 600, cursor: 'pointer',
           padding: '12px 20px 4px', minHeight: 44, textAlign: 'left' }}>
@@ -514,19 +519,23 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
               {STATUS_OPTIONS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
             </select>
           </div>
-          {/* #1 — the loan fee only exists for the federal Direct family + Grad
-              PLUS, and only matters when entering award-letter amounts (in
-              current-balance mode the fee is already baked into the balance).
-              Hidden entirely for HPSL/private/other and in current-balance mode. */}
-          {!asOfMode && typeHasFee && (
+          {/* The loan fee is skimmed off the top before the money reaches you.
+              Shown for EVERY loan type in award-letter mode (not just the federal
+              Direct family): a private/HPSL loan defaults to 0% but the field must
+              still be visible so any fee — including a stale one carried over from
+              a type switch — is always seeable and clearable. Hidden only in
+              current-balance mode, where the fee is already baked into the balance. */}
+          {!asOfMode && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
                 <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor={`ln-fee-${loan.id}`}>Loan fee (%)</label>
-                <InfoTip text="Federal loans take a small fee off the top before the money reaches you. You still owe the full amount you accepted — the fee just means a little less cash lands in your account. Leave blank to use the standard fee, or type your own from your paperwork." />
+                <InfoTip text={typeHasFee
+                  ? "Federal loans take a small fee off the top before the money reaches you. You still owe the full amount you accepted — the fee just means a little less cash lands in your account. Leave blank to use the standard fee, or type your own from your paperwork."
+                  : "Most private and school loans have no fee — leave this at 0 unless your paperwork lists an origination fee. A fee is taken off the top, so a little less cash lands in your account, but you still owe the full amount."} />
               </div>
               <input id={`ln-fee-${loan.id}`} type="number" min="0" max="10" step="0.01"
                 value={loan.feePct != null ? +(loan.feePct * 100).toFixed(3) : ''}
-                placeholder={String(+(feeDefaultPct).toFixed(3))} aria-label="Loan fee as a percent"
+                placeholder={typeHasFee ? String(+(feeDefaultPct).toFixed(3)) : '0'} aria-label="Loan fee as a percent"
                 onChange={(e) => { const v = cleanNumInput(e); patch((l) => { l.feePct = v === '' ? null : (Number(v) / 100); }); }}
                 style={inputStyle({ width: 100 })} />
             </div>
@@ -806,23 +815,26 @@ export function LoansTab() {
   const proj = projectDebtAtGraduation(loans, gradDate);
   const counted = loans.filter((l) => l.status === 'accepted' || l.status === 'disbursed');
 
-  // Item 11: spell out WHY the total is an estimate instead of the old, confusing
-  // "add your loans to make this exact" (shown even after loans were added). Each
-  // reason maps to a real driver of `proj.isEstimate` in loans.js.
+  // Spell out WHY the total isn't exact. Only GENUINELY inferred data (a guessed
+  // date, an off-table rate) counts as an "estimate" now — a fully-filled private
+  // loan is exact for the numbers entered and is described separately, so we stop
+  // calling a complete loan an "estimate" (founder feedback). Reasons map to the
+  // `basis` field on each proj.byLoan row.
   const estimateReasons = [];
-  if (proj.isEstimate && counted.length > 0) {
-    const flags = { private: false, rate: false, dates: false };
+  if (proj.hasInferred && counted.length > 0) {
+    const flags = { rate: false, dates: false };
     for (const l of counted) {
-      const key = loanTypeKey(l);
-      if (key === 'private' || key === 'otherUserRate') flags.private = true;
-      else if (isRateEstimated(l)) flags.rate = true;
+      if (isRateEstimated(l)) flags.rate = true;
       const disb = l.disbursements || [];
       if (l.asOfDate == null && (disb.length === 0 || disb.some((d) => !d.date))) flags.dates = true;
     }
-    if (flags.private) estimateReasons.push('a private or “other” loan, which has no government-set rate or fee formula');
     if (flags.rate) estimateReasons.push('a loan whose school year isn’t in our rate table yet, so its rate is approximate');
     if (flags.dates) estimateReasons.push('a money-arrival date Marro had to guess');
   }
+  // Any fully-filled private/"other" loan — exact for the rate the student typed,
+  // but not government-verified. Drives the softer "based on the rates you
+  // entered" note when nothing is actually inferred.
+  const hasEnteredPrivate = proj.byLoan.some((r) => r.basis === 'entered');
 
   const addLoan = () => { const d = JSON.parse(JSON.stringify(data)); d.loans = [...(d.loans || []), blankLoan()]; upd(d); };
 
@@ -846,9 +858,14 @@ export function LoansTab() {
               <Banner type="info">
                 {counted.length === 0
                   ? 'Estimate — add your loans to make this exact.'
-                  : estimateReasons.length > 0
-                    ? <><strong>This total includes an estimate</strong> because it uses {estimateReasons.join('; ')}. Federal loans with a confirmed rate and dates are calculated exactly.</>
-                    : 'This total includes an estimate. Federal loans with a confirmed rate and dates are calculated exactly.'}
+                  : proj.hasInferred
+                    ? (estimateReasons.length > 0
+                        ? <><strong>This total includes an estimate</strong> because it uses {estimateReasons.join('; ')}. Federal loans with a confirmed rate and dates are calculated exactly.</>
+                        : 'This total includes an estimate. Federal loans with a confirmed rate and dates are calculated exactly.')
+                    // No inferred data — the only reason it isn't "exact" is a
+                    // fully-filled private/"other" loan. Say so plainly instead
+                    // of implying Marro guessed.
+                    : <>These totals use the rate you entered for your private or “other” loan, so they’re exact as long as that rate is right. Federal loans are calculated from the government’s set rates.</>}
               </Banner>
             </div>
           )}
@@ -861,7 +878,17 @@ export function LoansTab() {
                   <span style={{ color: C.text }}>{loan?.name || 'Untitled loan'}</span>
                   <span style={{ color: C.text, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                     {fmt(row.total)}
-                    {row.isEstimate && (
+                    {/* A fully-filled private loan (basis 'entered') is exact for
+                        the rate typed in — label it "(your rate)", not "(estimate)",
+                        which wrongly implies Marro guessed. Only genuinely inferred
+                        loans keep the "(estimate)" badge. */}
+                    {row.basis === 'entered' && (
+                      <>
+                        <span style={{ color: C.text, fontWeight: 400 }}>(your rate)</span>
+                        <InfoTip text="Exact for the rate you entered — Marro just can't verify a private or “other” loan's terms the way it can a federal loan." />
+                      </>
+                    )}
+                    {row.basis === 'estimate' && (
                       <>
                         <span style={{ color: C.text, fontWeight: 400 }}>(estimate)</span>
                         {/* #5 — the "estimate" is explainable: exactly why this loan

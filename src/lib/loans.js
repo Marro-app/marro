@@ -475,15 +475,30 @@ export function projectDebtAtGraduation(loans, gradDate) {
     // statutory rate — they must NOT inherit "always an estimate" from that
     // storage detail the way a genuine private loan does.
     const key = loanTypeKey(filled);
-    const loanIsEstimate = key === 'private' || key === 'otherUserRate' || usedFallback || isRateEstimated(filled);
+    const noFormula = key === 'private' || key === 'otherUserRate';
+    // Data Marro genuinely had to infer or is still missing — a guessed
+    // disbursement date or a rate not in the table. This is the "real" estimate.
+    const inferred = usedFallback || isRateEstimated(filled);
+    const loanIsEstimate = noFormula || inferred;
     if (loanIsEstimate) isEstimate = true;
+    // `basis` separates WHY a total isn't exact, so the UI can stop calling a
+    // fully-filled private loan an "estimate" (which implies Marro guessed):
+    //   'exact'    — federal loan, government formula, confirmed rate + dates.
+    //   'entered'  — private/other loan with everything filled in: exact for the
+    //                numbers the student typed, we just can't verify the terms.
+    //   'estimate' — something was inferred or is still missing.
+    const basis = inferred ? 'estimate' : (noFormula ? 'entered' : 'exact');
     const principal = loanPrincipal(filled);
     const interest = accruedInterest(filled, gradDate);
-    return { loanId: loan.id, principal, interest, total: principal + interest, isEstimate: loanIsEstimate };
+    return { loanId: loan.id, principal, interest, total: principal + interest, isEstimate: loanIsEstimate, basis };
   });
 
   const total = byLoan.reduce((a, l) => a + l.total, 0);
-  return { total, byLoan, isEstimate };
+  // Did any loan have genuinely inferred/missing data (vs. only being a
+  // fully-filled private loan)? Lets the UI choose "includes an estimate"
+  // vs. the softer "based on the rates you entered."
+  const hasInferred = byLoan.some((l) => l.basis === 'estimate');
+  return { total, byLoan, isEstimate, hasInferred };
 }
 
 // ── Runway ────────────────────────────────────────────────────────────────────

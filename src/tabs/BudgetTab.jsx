@@ -183,7 +183,13 @@ export function BudgetTab(){
                 <div key={cat.id}
                   ref={el=>{if(el)rowRefs.current.set(cat.id,el);else rowRefs.current.delete(cat.id);}}
                   style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`,
-                    position:"relative",background:C.bg,
+                    position:"relative",
+                    // Resting rows stay TRANSPARENT so the card's glass material
+                    // shows through — only the dragged row needs an opaque fill so
+                    // it reads as lifted above the ones it passes over. (Painting
+                    // every row solid C.bg flattened the whole list to black — the
+                    // "lost the glass look" regression from the drag rework.)
+                    background:isDragging?C.bg:"transparent",
                     // The dragged row rides the pointer and lifts above the list;
                     // every other row slides to open the gap. Transitions are
                     // suppressed on the dragged row (it must track the pointer
@@ -278,15 +284,17 @@ export function BudgetTab(){
                   since colour alone would fail WCAG 1.4.1. Same rule the Runway
                   tile already applies via classifyCushionSource. */}
               {[
-                {l:"Aid and loans sent to you", v:fmt(annDisburse)+"/yr",    c:C.teal},
+                {l:"Aid and loans sent to you", v:fmt(annDisburse)+"/yr",    c:C.teal,
+                 tip:"What's left of your grants and loans after tuition, fees, and health insurance come out — the money that actually reaches your account for living costs."},
                 {l:"Other income",              v:fmt(annOther)+"/yr",       c:C.text},
-                {l:"Monthly spending money",    v:fmt(moSpendable)+"/mo",    c:C.teal,bold:true},
+                {l:"Monthly spending money",    v:fmt(moSpendable)+"/mo",    c:C.teal,bold:true,
+                 tip:"Your aid and loans sent to you, plus any other income, spread evenly across the 12 months of the school year."},
                 {l:"Monthly plan",              v:fmt(moSpend)+"/mo",        c:C.text},
                 {l:surplusBorrowed?"Left over (borrowed)":"Monthly surplus",
                  v:fmtS(moSurplus)+"/mo",     c:moSurplus<0?C.neg:(surplusBorrowed?C.blue:C.green),bold:true},
               ].map(r=>(
                 <div key={r.l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
-                  <span style={{color:C.gray}}>{r.l}</span>
+                  <span style={{color:C.gray,display:"inline-flex",alignItems:"center",gap:4}}>{r.l}{r.tip && <InfoTip text={r.tip} />}</span>
                   <span style={{fontWeight:r.bold?700:500,color:r.c}}>{r.v}</span>
                 </div>
               ))}
@@ -304,7 +312,7 @@ export function BudgetTab(){
                       // Swapped, not added: the old "surplus carries into your
                       // running balance" line is actively wrong advice when the
                       // money is borrowed at ~8%.
-                      ? `${fmt(moSurplus)} left over this month — but this is borrowed money. Returning what you don't need within 120 days cancels its interest.`
+                      ? `${fmt(moSurplus)} left over this month — but this is borrowed money. You can return what you don't need within 120 days of a loan being paid out to cancel its interest.`
                       : `${fmt(moSurplus)} surplus this month — it carries into your running balance and adds to your year-end net.`}
                 </div>
               )}
