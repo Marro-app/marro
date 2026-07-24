@@ -7,6 +7,7 @@ import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
 import { fmt, fmtS, fmtD, fmtDay, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr } from './lib/format.js';
 import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState, classifyCushionSource } from './lib/loans.js';
+import { yearAidBreakdown, unmatchedLoans } from './lib/aid.js';
 import { WEEKS_PER_MONTH, USMLE_STEP_FEE_ESTIMATE } from './lib/constants.js';
 import { BRANDS, BRAND_DOMAINS, getBrandDomain, getBrand } from './lib/brands.js';
 import { US_MED_SCHOOLS, degreeForSchool, DO_DUAL, dualOptionsForSchool } from './lib/schools.js';
@@ -576,12 +577,19 @@ export function App() {
   const subsMo = Math.round(subMonthlyTotal(subs));
 
   // ── Financials ────────────────────────────────────────────────────────────
-  const annGrant    = Number(yr.grant)||0;
-  const annTuition  = Number(yr.tuitionFees)||0;
-  const annHlth     = Number(yr.healthIns)||0;
-  const annDisburse = Math.max(annGrant - annTuition - annHlth, 0);
-  const annOther    = (Number(yr.otherIncome)||0)*12;
-  const moSpendable = (annDisburse + annOther)/12;
+  // All aid math routes through yearAidBreakdown (src/lib/aid.js) so the Aid
+  // tab, Budget tab, Charts bars and header tiles can never disagree — this
+  // formula used to be copy-pasted in six places with no test coverage.
+  // Loans now feed spending money: they're entered once on the Loans tab and
+  // flow from there, so `grant` means grants and scholarships only.
+  const aidBreakdown = yearAidBreakdown(yr, data.loans||[], yrStartYear);
+  const annGrant    = aidBreakdown.grants;
+  const annTuition  = aidBreakdown.tuitionFees;
+  const annHlth     = aidBreakdown.healthIns;
+  const annLoanCash = aidBreakdown.loanCash;
+  const annDisburse = aidBreakdown.sentToYou;
+  const annOther    = aidBreakdown.otherIncomeAnnual;
+  const moSpendable = aidBreakdown.moSpendable;
   // Month-disabled categories
   const monthKey = ay+"-"+MONTH_NAMES[selMonth];
   const disabledCats = data.monthDisabled?.[monthKey]||[];
@@ -660,7 +668,7 @@ export function App() {
     let total = 0;
     for(const y of data.years) {
       if(y.id === ay) break;
-      const yMoSpendable = Math.max((Number(y.grant)||0)-(Number(y.tuitionFees)||0)-(Number(y.healthIns)||0),0)/12 + (Number(y.otherIncome)||0);
+      const yMoSpendable = yearAidBreakdown(y, data.loans||[]).moSpendable;
       const yDisabled = data.monthDisabled||{};
       MONTH_NAMES.forEach((mn,mi)=>{
         const disM = yDisabled[y.id+"-"+mn]||[];
@@ -680,7 +688,7 @@ export function App() {
 
 
   // 5-yr
-  const totDisburse = data.years.reduce((a,y)=>a+Math.max((Number(y.grant)||0)-(Number(y.tuitionFees)||0)-(Number(y.healthIns)||0),0)+(Number(y.otherIncome)||0)*12,0);
+  const totDisburse = data.years.reduce((a,y)=>{const b=yearAidBreakdown(y, data.loans||[]);return a+b.sentToYou+b.otherIncomeAnnual;},0);
   const totSpend    = data.years.reduce((a,y)=>a+moTotal({...y.monthly,subs:subsMo})*12,0);
 
   // ── Phase 2: Debt + Runway header tiles (commit 7) ──────────────────────────
@@ -688,7 +696,15 @@ export function App() {
   // uses for its own debt/runway math, so header and tab never disagree.
   const gradDate = data.years[data.years.length-1]?.endDate || null;
   const today = todayStr();
-  const upcomingRefunds = estimateRefunds(data.years).filter(r=>r.date && r.date > today);
+  // Loans are passed in so real disbursement dates count as incoming money.
+  // Without this, a loan landing between two balance check-ins reads as a huge
+  // NEGATIVE burn ("you're spending less!") — computeRunway nets refunds out of
+  // its burn window, and loan cash used to be covered only by accident, via the
+  // loan money students hand-typed into `grant`.
+  const upcomingRefunds = estimateRefunds(data.years, data.loans||[]).filter(r=>r.date && r.date > today);
+  // Committed loans whose academic year matches no year record — surfaced on
+  // the Aid tab rather than silently dropped from spending money.
+  const strayLoans = unmatchedLoans(data.loans||[], data.years);
   const debtProjection = projectDebtAtGraduation(data.loans||[], gradDate);
   const runway = computeRunway({ readings: data.balanceReadings||[], plannedMonthlyBurn: moSpend, upcomingRefunds, gradDate, today });
   // A4 (Phase 2.6 Package A): only meaningful for the tile's "growing" state
@@ -944,7 +960,7 @@ export function App() {
   // Charts
 
   const barData = data.years.map(y=>{
-    const sp=Math.round((Math.max((Number(y.grant)||0)-(Number(y.tuitionFees)||0)-(Number(y.healthIns)||0),0)+(Number(y.otherIncome)||0)*12)/12);
+    const sp=Math.round(yearAidBreakdown(y, data.loans||[]).moSpendable);
     return {name:y.label.split("—")[0].trim().replace("Year ","Y"),Spendable:sp,Spend:Math.round(moTotal({...y.monthly,subs:subsMo}))};
   });
 
@@ -965,7 +981,7 @@ export function App() {
   const ctx = {
     // core state
     data, setData, upd, save, ay, setAy, cats, profile, session, syncStatus,
-    flash, bloom, triggerBloom, dismissed, dismiss, selMonth, setSelMonth,
+    flash, bloom, triggerBloom, dismissed, dismiss, selMonth, setSelMonth, setTab,
     // shared form/modal state (spans tabs or App-level chrome)
     renewDlg, setRenewDlg, newCatName, setNewCatName, newCatIcon, setNewCatIcon,
     iconPickOpen, setIconPickOpen, viewWeek, setViewWeek,
@@ -973,7 +989,7 @@ export function App() {
     nyStart, setNyStart, nyEnd, setNyEnd, yearUndo, setYearUndo,
     // derived financial memos
     yr, yrStartYear, subs, subsMo, annGrant, annTuition, annHlth, annDisburse,
-    annOther, moSpendable, monthKey, disabledCats, moSpend, allEntriesFlat,
+    annOther, annLoanCash, aidBreakdown, strayLoans, moSpendable, monthKey, disabledCats, moSpend, allEntriesFlat,
     spentInMonth, unbudgetedCats, unbudgetedTotal, moSurplus, monthNetFor,
     runningBalance, curYrNet, priorYearsCarryover, totalAccumulatedBalance,
     totDisburse, totSpend, getMonthValIdx, getMonthVal, weeklyBudget,

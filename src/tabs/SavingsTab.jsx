@@ -13,7 +13,10 @@ import { logEvent } from '../lib/data.js';
 // the projector APY input (all reset when you leave Savings, which is fine — they
 // are transient forms). Shared data/upd + the derived balances come from useApp().
 export function SavingsTab(){
-  const { data, upd, yr, ay, totalAccumulatedBalance, moSurplus, triggerBloom, reverseDepositGroup } = useApp();
+  const { data, upd, yr, ay, totalAccumulatedBalance, moSurplus, aidBreakdown, triggerBloom, reverseDepositGroup } = useApp();
+  // Mostly-borrowed spending money — swaps the "save your surplus" advice for
+  // "return it," since a savings account pays less than the loan charges.
+  const surplusBorrowed = !!aidBreakdown?.isLoanFunded;
   const [savingsDepositGoal, setSavingsDepositGoal] = useState(null);
   const [savingsDepositAmt,  setSavingsDepositAmt]  = useState("");
   const [savingsDepositNote, setSavingsDepositNote] = useState("");
@@ -411,18 +414,28 @@ export function SavingsTab(){
                 recs.push({color:C.teal,text:`You're saving ${fmt(mSav)}/mo (${fmt(annualSav)}/yr). Over your remaining ~${moLeft} months of school, that compounds to ${fmt(Math.round(savGrowth))} at ${apy||0}% APY.`});
               }
 
-              // HYSA recommendation
+              // HYSA recommendation. Swapped when the money is borrowed: a
+              // savings account pays ~4% while the loan charges ~8%, so parking
+              // borrowed cash loses money every month it sits there.
               if(totalAccumulatedBalance>500){
-                const hysaEarn=Math.round(totalAccumulatedBalance*(apy/100));
-                recs.push({color:C.green,text:`Your ${fmt(totalAccumulatedBalance)} planned surplus earns ~${fmt(hysaEarn)}/yr in a ${apy||0}% HYSA vs ~$0 sitting in a checking account.`});
+                if(surplusBorrowed){
+                  recs.push({color:C.blue,text:`Your ${fmt(totalAccumulatedBalance)} planned surplus is borrowed money. A savings account pays less than your loans charge, so returning what you don't need beats saving it.`});
+                } else {
+                  const hysaEarn=Math.round(totalAccumulatedBalance*(apy/100));
+                  recs.push({color:C.green,text:`Your ${fmt(totalAccumulatedBalance)} planned surplus earns ~${fmt(hysaEarn)}/yr in a ${apy||0}% HYSA vs ~$0 sitting in a checking account.`});
+                }
               } else if(totalAccumulatedBalance<0){
                 recs.push({color:C.neg,text:`Planned surplus is ${fmtS(totalAccumulatedBalance)} — you're drawing down your buffer, even if you stay on budget. Review your largest spending categories.`});
               }
 
-              // Monthly surplus routing
+              // Monthly surplus routing — telling a student to route borrowed
+              // money into a savings goal is actively wrong advice, so that
+              // recommendation is replaced rather than supplemented.
               if(moSurplus>50){
                 const unroutedGoals=(data.savingsGoals||[]).filter(g=>(g.saved||0)<g.targetAmount);
-                if(unroutedGoals.length>0){
+                if(surplusBorrowed){
+                  recs.push({color:C.blue,text:`${fmt(moSurplus)}/mo is left over, but it's borrowed. Borrowing less next term costs you nothing; saving it costs you interest.`});
+                } else if(unroutedGoals.length>0){
                   recs.push({color:C.teal,text:`${fmt(moSurplus)}/mo surplus unrouted. Adding it to "${unroutedGoals[0].label}" funds it ${fmt(moSurplus*12)} faster per year.`});
                 } else {
                   recs.push({color:C.teal,text:`${fmt(moSurplus)}/mo surplus available. Consider routing it to a new goal — residency interview travel costs $3–5k on average.`});

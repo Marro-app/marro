@@ -356,6 +356,20 @@ export function cashReceived(loan) {
 }
 
 /**
+ * The same "cash that actually lands" figure as `cashReceived`, but always a
+ * NUMBER so it can be summed. `cashReceived` deliberately returns null when
+ * there's no fee or no amount (its job is deciding whether to render an
+ * explanatory line); this one is the arithmetic version, used by the aid math
+ * in `src/lib/aid.js` and by `estimateRefunds` below. Lives here rather than in
+ * aid.js so loans.js never has to import from a module that imports it back.
+ */
+export function loanCashLanded(loan) {
+  const gross = (loan?.disbursements || []).reduce((a, d) => a + (Number(d.amount) || 0), 0);
+  if (gross <= 0) return 0;
+  return gross * (1 - effectiveFeePct(loan));
+}
+
+/**
  * Interest that has built up so far, as of `asOf` (an ISO date) — SIMPLE
  * daily interest (`principal × rate/365 × days`) per disbursement, summed.
  *
@@ -604,22 +618,73 @@ export function computeRunway({ readings, plannedMonthlyBurn, upcomingRefunds, g
  * garbage start date contributes a refund with a null date (`isEstimate:
  * true`) rather than a confidently wrong one.
  */
-export function estimateRefunds(years) {
+export function estimateRefunds(years, loans = []) {
   const refunds = [];
   for (const y of years || []) {
-    const net = Math.max((Number(y.grant) || 0) - (Number(y.tuitionFees) || 0) - (Number(y.healthIns) || 0), 0);
-    if (net <= 0) continue;
-    const half = net / 2;
+    const grant = Number(y.grant) || 0;
     const term = y.label || `${y.startDate ? y.startDate.slice(0, 4) : 'unknown'}`;
-    if (!isPlausibleDate(y.startDate)) {
-      refunds.push({ term: `${term}-fall`, amount: half, date: null, windowStart: null, windowEnd: null, isEstimate: true });
-      refunds.push({ term: `${term}-spring`, amount: half, date: null, windowStart: null, windowEnd: null, isEstimate: true });
-      continue;
+    const startYear = isPlausibleDate(y.startDate) ? toDate(y.startDate).getFullYear() : null;
+
+    // Every gross inflow this year, with its own date: the grant arriving in
+    // the usual two term halves, plus each committed loan disbursement on the
+    // real date the student entered. Loans in current-balance mode are money
+    // that landed in a past year, so they're not incoming cash here.
+    const loanEvents = [];
+    if (startYear != null) {
+      for (const l of loans || []) {
+        if (l.status !== 'accepted' && l.status !== 'disbursed') continue;
+        if (l.asOfDate != null && l.asOfBalance != null) continue;
+        if (Number(l.academicYear) !== startYear) continue;
+        const feeMult = 1 - effectiveFeePct(l);
+        for (const d of l.disbursements || []) {
+          const amt = (Number(d.amount) || 0) * feeMult;
+          if (amt <= 0 || !isPlausibleDate(d.date)) continue;
+          loanEvents.push({
+            term: `${l.name || term}-loan`, gross: amt, date: d.date,
+            // A fallback date the student never confirmed is a guess, and
+            // anything derived from it must read as approximate.
+            isEstimate: !d.dateConfirmed,
+          });
+        }
+      }
     }
-    const fallDate = addDays(y.startDate, 10);
-    const springDate = addMonths(y.startDate, 5);
-    refunds.push({ term: `${term}-fall`, amount: half, date: fallDate, windowStart: addDays(fallDate, -7), windowEnd: addDays(fallDate, 7), isEstimate: false });
-    refunds.push({ term: `${term}-spring`, amount: half, date: springDate, windowStart: addDays(springDate, -7), windowEnd: addDays(springDate, 7), isEstimate: false });
+
+    const grantEvents = [];
+    if (grant > 0) {
+      if (!isPlausibleDate(y.startDate)) {
+        grantEvents.push({ term: `${term}-fall`, gross: grant / 2, date: null, isEstimate: true });
+        grantEvents.push({ term: `${term}-spring`, gross: grant / 2, date: null, isEstimate: true });
+      } else {
+        const fallDate = addDays(y.startDate, 10);
+        const springDate = addMonths(y.startDate, 5);
+        grantEvents.push({ term: `${term}-fall`, gross: grant / 2, date: fallDate, isEstimate: false });
+        grantEvents.push({ term: `${term}-spring`, gross: grant / 2, date: springDate, isEstimate: false });
+      }
+    }
+
+    const events = [...grantEvents, ...loanEvents];
+    const totalGross = events.reduce((a, e) => a + e.gross, 0);
+    if (totalGross <= 0) continue;
+
+    // Only what's LEFT after the school takes tuition/fees/insurance ever
+    // reaches the student's account. Scaling every inflow by the same ratio
+    // spreads those costs across the terms (roughly how it really works: each
+    // term's disbursement pays that term's bill, the remainder is refunded)
+    // and guarantees the refunds sum to exactly the money-to-you figure. NOT
+    // scaling would be a serious error — a $50k loan disbursement would be
+    // modelled as $50k of spendable inflow when only ~$17k reaches the student.
+    const net = Math.max(totalGross - (Number(y.tuitionFees) || 0) - (Number(y.healthIns) || 0), 0);
+    if (net <= 0) continue;
+    const scale = net / totalGross;
+
+    for (const e of events) {
+      refunds.push({
+        term: e.term, amount: e.gross * scale, date: e.date,
+        windowStart: e.date ? addDays(e.date, -7) : null,
+        windowEnd: e.date ? addDays(e.date, 7) : null,
+        isEstimate: e.isEstimate,
+      });
+    }
   }
   return refunds.sort((a, b) => (a.date || '9999') < (b.date || '9999') ? -1 : 1);
 }

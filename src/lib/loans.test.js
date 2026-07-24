@@ -6,6 +6,7 @@ import {
   projectDebtAtGraduation, computeRunway, estimateRefunds, loanReturnWindows,
   refundPlaybookTrigger, returnSavingsAtGraduation, classifyCushionSource,
 } from './loans.js';
+import { DAYS_PER_MONTH } from './constants.js';
 
 // A minimal, valid loan — override fields per test.
 const makeLoan = (over = {}) => ({
@@ -446,6 +447,97 @@ describe('estimateRefunds', () => {
     expect(refunds.every((r) => r.date === null && r.isEstimate === true)).toBe(true);
     const missing = estimateRefunds([{ label: 'No date', grant: 40000, tuitionFees: 10000, healthIns: 0, startDate: null }]);
     expect(missing.every((r) => r.date === null && r.isEstimate === true)).toBe(true);
+  });
+});
+
+describe('estimateRefunds — loan money is incoming cash too', () => {
+  const year = { id: 0, label: 'Year 1', grant: 5000, tuitionFees: 34000, healthIns: 4200, startDate: '2025-08-01' };
+  const privateLoan = (over = {}) => makeLoan({
+    type: 'private', subtype: 'private', academicYear: 2025, status: 'disbursed',
+    disbursements: [
+      { id: 'd1', date: '2025-08-05', amount: 25000, dateConfirmed: true },
+      { id: 'd2', date: '2026-01-10', amount: 25000, dateConfirmed: true },
+    ],
+    ...over,
+  });
+
+  it('adds loan disbursements on their own real dates', () => {
+    const refunds = estimateRefunds([year], [privateLoan()]);
+    expect(refunds.map((r) => r.date)).toEqual(['2025-08-05', '2025-08-11', '2026-01-01', '2026-01-10']);
+  });
+
+  it('scales every inflow so the year sums to what actually reaches the student', () => {
+    // Gross in = 5000 grant + 50000 loans = 55000; school takes 38200; so
+    // 16800 reaches the account and the refunds must total exactly that.
+    const refunds = estimateRefunds([year], [privateLoan()]);
+    const total = refunds.reduce((a, r) => a + r.amount, 0);
+    expect(total).toBeCloseTo(16800, 6);
+  });
+
+  it('does NOT model a disbursement as fully spendable — tuition comes out first', () => {
+    // The regression this scaling exists to prevent: a naive implementation
+    // would report the full 25000 disbursement as incoming spendable cash.
+    const refunds = estimateRefunds([year], [privateLoan()]);
+    const fallLoan = refunds.find((r) => r.date === '2025-08-05');
+    expect(fallLoan.amount).toBeLessThan(25000);
+    expect(fallLoan.amount).toBeCloseTo(25000 * (16800 / 55000), 6); // ≈7636
+  });
+
+  it('takes the origination fee off before counting loan cash as inflow', () => {
+    const federal = makeLoan({
+      academicYear: 2025, status: 'disbursed', subtype: 'directUnsubGrad',
+      disbursements: [{ id: 'd1', date: '2025-08-05', amount: 50000, dateConfirmed: true }],
+    });
+    const noCosts = { ...year, grant: 0, tuitionFees: 0, healthIns: 0 };
+    const [r] = estimateRefunds([noCosts], [federal]);
+    expect(r.amount).toBeCloseTo(50000 * (1 - FEDERAL_ORIGINATION_FEE), 6);
+  });
+
+  it('marks a disbursement whose date was never confirmed as an estimate', () => {
+    const loan = privateLoan({ disbursements: [{ id: 'd1', date: '2025-08-05', amount: 25000, dateConfirmed: false }] });
+    const [r] = estimateRefunds([{ ...year, grant: 0, tuitionFees: 0, healthIns: 0 }], [loan]);
+    expect(r.isEstimate).toBe(true);
+  });
+
+  it('ignores offered loans, other years, and current-balance loans', () => {
+    const noCosts = { ...year, grant: 0, tuitionFees: 0, healthIns: 0 };
+    expect(estimateRefunds([noCosts], [privateLoan({ status: 'offered' })])).toEqual([]);
+    expect(estimateRefunds([noCosts], [privateLoan({ academicYear: 2031 })])).toEqual([]);
+    expect(estimateRefunds([noCosts], [privateLoan({ asOfBalance: 100, asOfDate: '2026-01-01' })])).toEqual([]);
+  });
+
+  it('lets loans create a refund in a year where grants alone were swallowed by costs', () => {
+    // Grants (5000) < costs (38200), so the grants-only model yielded nothing.
+    expect(estimateRefunds([year], [])).toEqual([]);
+    expect(estimateRefunds([year], [privateLoan()]).length).toBeGreaterThan(0);
+  });
+});
+
+describe('computeRunway — a loan landing mid-window must not read as negative burn', () => {
+  const gradDate = '2029-05-15';
+
+  it('nets an expected loan disbursement out of the measured spending pace', () => {
+    // Balance jumps 4000 → 22000 because 20000 landed on the 15th. Real
+    // spending was 2000. Without netting, burn reads as -18000/mo ("growing").
+    const readings = [
+      { id: 'r1', date: '2026-09-01', spendable: 4000, savings: 0 },
+      { id: 'r2', date: '2026-10-01', spendable: 22000, savings: 0 },
+    ];
+    const upcomingRefunds = [{ term: 'loan', amount: 20000, date: '2026-09-15', isEstimate: false }];
+    const r = computeRunway({ readings, plannedMonthlyBurn: 3000, upcomingRefunds, gradDate, today: '2026-10-02' });
+    expect(r.burn.source).toBe('measured');
+    expect(r.burn.amount).toBeGreaterThan(0);                        // spending, not "growing"
+    expect(r.burn.amount).toBeCloseTo((2000 / 30) * DAYS_PER_MONTH, 6); // 30-day window → ~2029/mo
+  });
+
+  it('without the disbursement accounted for, the same readings look like growth', () => {
+    // Documents exactly what breaks if loans stop reaching upcomingRefunds.
+    const readings = [
+      { id: 'r1', date: '2026-09-01', spendable: 4000, savings: 0 },
+      { id: 'r2', date: '2026-10-01', spendable: 22000, savings: 0 },
+    ];
+    const r = computeRunway({ readings, plannedMonthlyBurn: 3000, upcomingRefunds: [], gradDate, today: '2026-10-02' });
+    expect(r.state).toBe('growing');
   });
 });
 

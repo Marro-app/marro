@@ -49,8 +49,15 @@ export function buildMockState() {
     ...blankYearFields(),
     tuitionFees: 34000,
     healthIns: 4200,
-    grant: 42000,       // total aid (incl. health ins) — realistic med-school scholarship
-    otherIncome: i === 0 ? 3000 : 0,
+    // Grants and scholarships ONLY — money that isn't repaid. Loan money is no
+    // longer typed in here: it comes from `loans` below (see src/lib/aid.js), so
+    // leaving the old combined $42,000 "total aid" figure here would double-count
+    // the loans and roughly double this student's spendable.
+    grant: 5000,
+    // A few hundred a month of tutoring is realistic while in med school; the
+    // old $3,000/mo made earned income dwarf the loans, which hid the
+    // borrowed-money states entirely.
+    otherIncome: i === 0 ? 300 : 0,
     housing: 1800,
     housingNote: 'Studio near campus, shared utilities',
     livingAllowance: 2600,
@@ -58,6 +65,39 @@ export function buildMockState() {
     monthly: { ...BLANK_MONTHLY, housing: 1800, food: 550, transport: 120, personal: 200, books: 90, exams: i === 1 ? 350 : 0, savings: 150, social: 180, subs: 0 },
     monthlyOverrides: {},
   }));
+
+  // Years 2–4 borrow the same way real med students do: a Direct Unsubsidized
+  // loan at the annual grad cap plus a Grad PLUS to cover the rest. Generated
+  // rather than hand-written so the 4-year overview is coherent (each year has
+  // spending money) instead of showing $0 and a runaway cumulative deficit.
+  // Year 1's loans stay hand-authored above — they demo the offer/accepted
+  // split, the HPSL interest-free path, and the Grad PLUS fee.
+  const baseYear = new Date().getFullYear() - 1;
+  const laterYearLoans = [1, 2, 3].flatMap((offset) => {
+    const ay = baseYear + offset;
+    return [
+      {
+        id: `ln_mock_unsub_y${offset + 1}`, name: `Year ${offset + 1} federal loan`,
+        type: 'federal', subtype: 'directUnsubGrad', academicYear: ay, rate: null, status: 'disbursed',
+        offeredAmount: 40500,
+        disbursements: [
+          { id: `db_mock_u${offset}a`, amount: 20250, date: `${ay}-08-05`, dateConfirmed: true },
+          { id: `db_mock_u${offset}b`, amount: 20250, date: `${ay + 1}-01-10`, dateConfirmed: true },
+        ],
+        feePct: null, notes: '', asOfBalance: null, asOfDate: null,
+      },
+      {
+        id: `ln_mock_plus_y${offset + 1}`, name: `Year ${offset + 1} Grad PLUS loan`,
+        type: 'federal', subtype: 'gradPLUS', academicYear: ay, rate: null, status: 'disbursed',
+        offeredAmount: 30000,
+        disbursements: [
+          { id: `db_mock_p${offset}a`, amount: 15000, date: `${ay}-08-05`, dateConfirmed: true },
+          { id: `db_mock_p${offset}b`, amount: 15000, date: `${ay + 1}-01-10`, dateConfirmed: true },
+        ],
+        feePct: null, notes: '', asOfBalance: null, asOfDate: null,
+      },
+    ];
+  });
 
   const state = {
     ...JSON.parse(JSON.stringify(DEFAULT_STATE)),
@@ -113,6 +153,30 @@ export function buildMockState() {
         asOfBalance: null,
         asOfDate: null,
       },
+      {
+        // Grad PLUS covers the gap between the grant + Direct Unsub cap and the
+        // real cost of attendance — the common med-school reality. Its higher
+        // 4.228% fee also exercises the fee-reduction path in the aid math, and
+        // together the loans make this year's spending money ~90% borrowed, so
+        // the "surplus is borrowed, not green" states have something to show.
+        id: 'ln_mock_gradplus_1',
+        name: 'Grad PLUS loan',
+        type: 'federal',
+        subtype: 'gradPLUS',
+        academicYear: new Date().getFullYear() - 1,
+        rate: null, // resolved from the Grad PLUS rate table for that year
+        status: 'disbursed',
+        offeredAmount: 22000,
+        disbursements: [
+          { id: 'db_mock_3a', amount: 11000, date: `${new Date().getFullYear() - 1}-08-05`, dateConfirmed: true },
+          { id: 'db_mock_3b', amount: 11000, date: `${new Date().getFullYear()}-01-10`, dateConfirmed: true },
+        ],
+        feePct: null,
+        notes: '',
+        asOfBalance: null,
+        asOfDate: null,
+      },
+      ...laterYearLoans,
     ],
 
     // ── Balance readings: two points 30+ days apart with a realistic decline

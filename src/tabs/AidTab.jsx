@@ -6,6 +6,7 @@ import { Icon } from '../components/icons.jsx';
 import { DateField } from '../components/pickers.jsx';
 import { useApp } from '../context/AppContext.js';
 import { useEscClose, useGridColumnCount } from '../lib/hooks.js';
+import { yearAidBreakdown } from '../lib/aid.js';
 
 // Aid & Detail — per-year grant/cost cards + the multi-year overview table.
 // No private state besides the collapse/expand set for the year cards (item 4,
@@ -13,8 +14,8 @@ import { useEscClose, useGridColumnCount } from '../lib/hooks.js';
 // remove-year modals stay App-level chrome (triggered here via setShowAddYear /
 // setConfirmYearRemove).
 export function AidTab(){
-  const { data, subsMo, dismissed, dismiss, setYrF, upd, ay,
-          annGrant, annTuition, annHlth, annDisburse,
+  const { data, subsMo, dismissed, dismiss, setYrF, upd, ay, setTab,
+          annGrant, annTuition, annHlth, annDisburse, annLoanCash, strayLoans,
           setConfirmYearRemove, setShowAddYear, totDisburse, totSpend } = useApp();
 
   // "How your grant works" note — was stuck showing every reload (dismissal
@@ -83,8 +84,20 @@ export function AidTab(){
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:8,fontVariantNumeric:"tabular-nums"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:16,fontSize:12}}>
-              <span style={{color:C.textMid}}>Total aid</span>
+              <span style={{color:C.textMid}}>Grants &amp; scholarships</span>
               <span style={{color:C.text,fontWeight:600}}>{fmt(annGrant)}</span>
+            </div>
+            {/* Derived from the Loans tab, never typed here — one source of
+                truth, so a loan is entered once and shows up everywhere. */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:16,fontSize:12}}>
+              <span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>
+                Loans
+                <button type="button" className="txt-act" onClick={()=>setTab("loans")}
+                  style={{border:"none",background:"transparent",color:C.teal,fontSize:11,fontWeight:600,cursor:"pointer",padding:0}}>
+                  edit on Loans tab
+                </button>
+              </span>
+              <span style={{color:C.text,fontWeight:600}}>{fmt(annLoanCash)}</span>
             </div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:16,fontSize:12}}>
               <span style={{color:C.textMid}}>Tuition &amp; fees</span>
@@ -119,10 +132,11 @@ export function AidTab(){
           track from overflowing viewports narrower than 300px. */}
       <div ref={yearsGridRef} style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,300px),1fr))",gap:16,alignItems:"start"}}>
         {data.years.map((y,i)=>{
-          const g=Number(y.grant)||0,tf=Number(y.tuitionFees)||0,hi=Number(y.healthIns)||0;
-          const rawGap=g-tf-hi; // unfloored — negative means costs exceed aid
-          const disb=Math.max(g-tf-hi,0),oth=(Number(y.otherIncome)||0)*12;
-          const moD=(disb+oth)/12,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
+          const b=yearAidBreakdown(y,data.loans||[]);
+          const g=b.totalAid; // grants + loans — what this year's aid adds up to
+          const rawGap=b.rawGap; // unfloored — negative means costs exceed aid
+          const disb=b.sentToYou,oth=b.otherIncomeAnnual;
+          const moD=b.moSpendable,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
           const expanded = expandedYears.has(y.id);
           // Item 8 — flag overlapping year ranges. Years are stored in order, so
           // the only neighbors that can overlap are i-1 (ends after this one
@@ -178,7 +192,7 @@ export function AidTab(){
                     </div>
                   )}
                   {[
-                    {label:"Total aid (annual)",   field:"grant",       note:"Includes health insurance. May include loans you'll repay — loan tracking is coming soon."},
+                    {label:"Grants & scholarships (annual)", field:"grant", note:"Money you don't pay back. Includes health insurance. Add loans on the Loans tab — Marro counts them here automatically."},
                     {label:"Tuition & fees",            field:"tuitionFees", note:"paid directly to school"},
                     {label:"Health insurance",          field:"healthIns",   note:"school-covered, deducted from grant"},
                     {label:"Housing (monthly)",         field:null,          value:y.monthly.housing||0, note:"per month", isHousing:true},
@@ -197,6 +211,22 @@ export function AidTab(){
                       <div style={{fontSize:10,color:C.gray,marginTop:1}}>{note}</div>
                     </div>
                   ))}
+                  {/* Read-only: loans are owned by the Loans tab. Rendered as
+                      plain text with no input affordance so it never reads as
+                      a second place to type the same number. */}
+                  <div style={{padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                      <span style={{fontSize:12,color:C.textMid}}>Loans (annual)</span>
+                      <span style={{fontSize:12,fontWeight:600,color:C.text,paddingRight:8}}>{fmt(b.loanCash)}</span>
+                    </div>
+                    <div style={{fontSize:10,color:C.gray,marginTop:1}}>
+                      From your loans for this year, after the fee.{" "}
+                      <button type="button" className="txt-act" onClick={()=>setTab("loans")}
+                        style={{border:"none",background:"transparent",color:C.teal,fontSize:10,fontWeight:600,cursor:"pointer",padding:0}}>
+                        Edit on the Loans tab
+                      </button>
+                    </div>
+                  </div>
                   <div style={{marginTop:12,padding:"10px 12px",background:C.tealLight,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.tealMid}`,borderRadius:8,fontSize:12}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:3,alignItems:"center"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Sent to you/yr <InfoTip text="Aid left over after tuition and fees — the part that hits your bank account for living costs."/></span><strong style={{color:C.teal}}>{fmt(disb)}</strong></div>
                     <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid}}>Monthly spendable</span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
@@ -234,10 +264,11 @@ export function AidTab(){
               {(()=>{
                 let cum=0;
                 return data.years.map(y=>{
-                  const g=Number(y.grant)||0,tf=Number(y.tuitionFees)||0,hi=Number(y.healthIns)||0;
-                  const rawGap=g-tf-hi; // unfloored — negative means costs exceed aid
-                  const disb=Math.max(g-tf-hi,0),oth=(Number(y.otherIncome)||0)*12;
-                  const moD=(disb+oth)/12,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
+                  const b=yearAidBreakdown(y,data.loans||[]);
+                  const g=b.totalAid,tf=b.tuitionFees,hi=b.healthIns;
+                  const rawGap=b.rawGap; // unfloored — negative means costs exceed aid
+                  const disb=b.sentToYou,oth=b.otherIncomeAnnual;
+                  const moD=b.moSpendable,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
                   cum+=moS*12;
                   return <tr key={y.id}>
                     <td style={{padding:"8px",fontWeight:600,whiteSpace:"nowrap",fontSize:11,color:C.text}}>{y.label}</td>
@@ -259,13 +290,37 @@ export function AidTab(){
         </ScrollX>
         <div style={{marginTop:10,padding:"8px 12px",background:totDisburse-totSpend>=0?C.tealLight:C.negLight,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${totDisburse-totSpend>=0?C.tealMid:C.negMid}`,borderRadius:8,fontSize:12,color:totDisburse-totSpend>=0?C.teal:C.neg,fontWeight:600}}>
           {data.years.length}-year net: {fmtS(totDisburse-totSpend)}
+          {/* The old copy here said "most med students borrow to bridge this —
+              that's what the loans are for." That's wrong now: the loans the
+              student entered are already counted above, so a shortfall means
+              they'd need to borrow MORE than they've recorded. */}
           {totDisburse-totSpend<0 && (
             <div style={{marginTop:6,fontSize:11.5,fontWeight:400,color:C.textMid,lineHeight:1.5}}>
-              Most med students borrow to bridge this — that&apos;s what the loans are for. Your aid office can help you plan it.
+              Your plan spends more than your aid and loans cover. You&apos;d need to borrow more, or trim your budget — your aid office can help you plan it.
             </div>
           )}
         </div>
       </Card>
+
+      {/* Committed loan money that belongs to no year on this tab — surfaced
+          rather than silently dropped from spending money. Usually a mistyped
+          school year, or a loan added before its year existed. */}
+      {strayLoans?.length>0 && (
+        <Card>
+          <div role="alert" style={{fontSize:12,color:C.text,lineHeight:1.6}}>
+            <strong style={{color:C.amber}}>Some loan money isn&apos;t counted yet.</strong>
+            <div style={{marginTop:4}}>
+              {strayLoans.map(l=>l.name||"Unnamed loan").join(", ")} {strayLoans.length===1?"is":"are"} set to a school year
+              that doesn&apos;t match any year below, so {strayLoans.length===1?"its":"their"} money isn&apos;t in your
+              spendable total. Fix the school year on the{" "}
+              <button type="button" className="txt-act" onClick={()=>setTab("loans")}
+                style={{border:"none",background:"transparent",color:C.teal,fontSize:12,fontWeight:600,cursor:"pointer",padding:0}}>
+                Loans tab
+              </button>, or add the missing year here.
+            </div>
+          </div>
+        </Card>
+      )}
 
     </div>
   );
