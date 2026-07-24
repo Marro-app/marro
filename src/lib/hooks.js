@@ -41,3 +41,24 @@ export const useEdgeFade = (ref, deps=[]) => {
   },[check, ...deps]);
   return fade;
 };
+
+// Live column count of a CSS grid (auto-fill/auto-fit), read off the computed
+// `grid-template-columns` track list — used to detect when a trailing "add new"
+// dashed tile has landed alone on its own row (no card beside it) so it can span
+// the full row instead of sitting stranded at one column's width. Responsive:
+// recomputes on resize since auto-fill's column count depends on viewport width.
+export const useGridColumnCount = (ref) => {
+  const [count, setCount] = useState(1);
+  useEffect(() => {
+    const el = ref.current; if (!el) return;
+    const check = () => {
+      const cols = getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean);
+      setCount(cols.length || 1);
+    };
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return count;
+};

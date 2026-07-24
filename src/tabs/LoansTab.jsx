@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { C } from '../lib/theme.js';
 import { fmt, todayStr, sanitizeMoneyInput } from '../lib/format.js';
 import { Card, SectionTitle, XBtn, Banner, EmptyState, ChoiceGroup, InfoTip } from '../components/primitives.jsx';
+import { Icon } from '../components/icons.jsx';
 import { DateField } from '../components/pickers.jsx';
 import { useApp } from '../context/AppContext.js';
 import { radioProps } from '../lib/ui-helpers.js';
@@ -10,6 +11,7 @@ import {
   loanPrincipal, cashReceived, loanOfferedAmount, projectDebtAtGraduation, loanTypeKey,
   estimateRefunds, computeRunway, loanReturnWindows, refundNudgeState,
 } from '../lib/loans.js';
+import { useGridColumnCount } from '../lib/hooks.js';
 import { disbFallbackDate, DAYS_PER_MONTH, DEFAULT_SAVINGS_APY, HYSA_RATE_RANGE_COPY, FDIC_INSURANCE_CAP } from '../lib/constants.js';
 
 // Loans tab — Phase 2 ("Loans, Debt & Runway"), commits 4 + 6 (Refund Playbook).
@@ -56,7 +58,7 @@ const blankLoan = () => {
 const LOAN_TYPE_OPTIONS = [
   { key: 'directUnsubGrad', type: 'federal', label: 'Federal — Direct Unsubsidized (most common)' },
   { key: 'gradPLUS', type: 'federal', label: 'Federal — Grad PLUS' },
-  { key: 'directUnsubUndergrad', type: 'federal', label: 'Federal — from college (undergrad)' },
+  { key: 'directUnsubUndergrad', type: 'federal', label: 'Federal — from undergrad, before med school' },
   { key: 'hpsl', type: 'private', label: 'School health-professions loan (HPSL / Primary Care / LDS — often 5%)' },
   { key: 'private', type: 'private', label: 'Private' },
   { key: 'otherUserRate', type: 'private', label: "Other / I'll enter my rate" },
@@ -260,7 +262,12 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
           <select id={`ln-type-${loan.id}`} value={pickerKeyFor(loan)} aria-label="Loan type"
             onChange={(e) => {
               const opt = LOAN_TYPE_OPTIONS.find((o) => o.key === e.target.value);
-              patch((l) => { l.subtype = opt.key; l.type = opt.type; });
+              // Clear any explicit fee override on type change — it's typed against the
+              // OLD type's fee field (which may now be hidden entirely, e.g. switching a
+              // Grad PLUS loan to Private), so a stale value would keep silently reducing
+              // "cash received" for a type that's supposed to be fee-free. Falls back to
+              // the new type's own default (0 for private/HRSA, standard fee for federal).
+              patch((l) => { l.subtype = opt.key; l.type = opt.type; l.feePct = null; });
             }}
             style={inputStyle({ width: '100%' })}>
             {LOAN_TYPE_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
@@ -436,9 +443,20 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
             onChange={(e) => { const t = cleanNumInput(e); setPctText(t); const n = Number(t); patch((l) => { l.rate = t === '' ? null : (isNaN(n) ? l.rate : n / 100); }); }}
             style={inputStyle({ width: 90 })} />
           <span style={{ fontSize: 12, color: C.text }}>%</span>
-          {pctText !== '' && !rateHigh && <span style={{ fontSize: 11, color: C.teal }} aria-hidden="true">✓</span>}
+          {pctText !== '' && !rateHigh && !(rateOverridden && hasSetRate) && <span style={{ fontSize: 11, color: C.teal }} aria-hidden="true">✓</span>}
         </div>
         {rateHigh && <div role="alert" style={{ fontSize: 11, color: C.amber, marginTop: 4 }}>That seems high — double-check?</div>}
+        {/* #6 — the override warning used to live only behind the "i" tooltip, easy
+            to miss. Now surfaced the same way as the "seems high" check above: a
+            visible inline alert the moment the typed rate differs from the fixed
+            rate, naming the exact number being replaced. No blocking confirm click —
+            this is a reversible text field, so a modal would be disproportionate
+            friction; an always-visible warning is enough to catch a stray keystroke. */}
+        {rateOverridden && hasSetRate && !rateHigh && (
+          <div role="alert" style={{ fontSize: 11, color: C.amber, marginTop: 4, lineHeight: 1.5 }}>
+            This replaces the fixed {statPct}% rate for this loan type. Only do this if your paperwork shows something different — clear the field to use {statPct}% again.
+          </div>
+        )}
         {!rateOverridden && !hasSetRate && (
           <div style={{ fontSize: 11, color: C.text, marginTop: 4, lineHeight: 1.5 }}>
             Enter the rate from your loan paperwork.
@@ -473,16 +491,19 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
       </div>
 
       {/* ── More options (#9) ──
-          The WHOLE row is one full-width button, so clicking anywhere along it —
-          not just on the chevron — toggles the section. Keyboard-operable with a
+          The WHOLE row is one button, extended past the card's own 20px side
+          padding (negative margin + matching padding added back) so there's no
+          dead strip between the visible row and the card edge — the founder hit
+          exactly that gap clicking near the chevron. Keyboard-operable with a
           correct aria-expanded/aria-controls; the chevron is decorative. */}
       <button type="button" onClick={toggleMore} aria-expanded={moreOpen} aria-controls={`ln-more-${loan.id}`}
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, width: '100%',
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+          width: 'calc(100% + 40px)', margin: '0 -20px', boxSizing: 'border-box',
           background: 'none', border: 'none', color: C.text, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-          padding: '12px 0 4px', minHeight: 44, textAlign: 'left' }}>
+          padding: '12px 20px 4px', minHeight: 44, textAlign: 'left' }}>
         <span>{moreOpen ? 'Hide options' : 'More options'}</span>
-        <span aria-hidden="true" style={{ fontSize: 11, color: C.textMid, transition: 'transform .15s',
-          transform: moreOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+        <Icon name="chevron" size={14} color={C.textMid} style={{ transition: 'transform .15s',
+          transform: moreOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }} />
       </button>
       {moreOpen && (
         <div id={`ln-more-${loan.id}`} style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -566,7 +587,11 @@ function BalanceCheckin({ data, upd }) {
         About how much do you have available for living costs right now?
       </SectionTitle>
       <form onSubmit={onSubmit} style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <div>
+        {/* #5 — each field's width now tracks its own label (min 170/130px) instead
+            of a fixed 130px input sitting under a wider label, which left the
+            "Amount in your checking / cash" label overhanging well past the input's
+            right edge — the clumped, overflowing look the founder flagged. */}
+        <div style={{ flex: '1 1 170px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
             <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor="bal-spendable">Amount in your checking / cash</label>
             <InfoTip text="What's in your checking/spending account today. Aid or loan money counts once it's landed in your account." />
@@ -574,15 +599,15 @@ function BalanceCheckin({ data, upd }) {
           <input id="bal-spendable" type="number" min="0" value={spendable} placeholder="$0" required
             aria-label="Amount in your checking / cash, across all accounts you spend from"
             onChange={(e) => { setSpendable(cleanNumInput(e)); setConfirming(false); }}
-            style={inputStyle({ width: 130 })} />
+            style={inputStyle({ width: '100%' })} />
         </div>
-        <div>
+        <div style={{ flex: '1 1 130px' }}>
           <label style={labelStyle} htmlFor="bal-savings">Set aside in savings</label>
           <input id="bal-savings" type="number" min="0" value={savings} placeholder="$0"
             aria-label="Set aside in savings, optional"
-            onChange={(e) => setSavings(cleanNumInput(e))} style={inputStyle({ width: 130 })} />
+            onChange={(e) => setSavings(cleanNumInput(e))} style={inputStyle({ width: '100%' })} />
         </div>
-        <button type="submit" className="btn-pop" style={{ padding: '8px 18px', minHeight: 36, borderRadius: 8, border: `1px solid ${C.teal}`, background: C.teal, color: C.bg, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+        <button type="submit" className="btn-pop" style={{ flexShrink: 0, padding: '8px 18px', minHeight: 36, borderRadius: 8, border: `1px solid ${C.teal}`, background: C.teal, color: C.bg, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
           Save
         </button>
       </form>
@@ -769,8 +794,14 @@ export function LoansTab() {
   const { data, upd, moSpend, refundNudgeConfirmed, setRefundNudgeConfirmed } = useApp();
   const [moreOpenIds, setMoreOpenIds] = useState(() => new Set());
   const toggleMore = (id) => setMoreOpenIds((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const loansGridRef = useRef(null);
+  const loansGridCols = useGridColumnCount(loansGridRef);
 
   const loans = data.loans || [];
+  // True when the trailing "Add loan" tile lands alone on a new row (no loan
+  // card beside it) — it should then span the full row instead of sitting
+  // stranded at one column's width.
+  const addLoanAlone = loans.length % loansGridCols === 0;
   const gradDate = data.years?.[data.years.length - 1]?.endDate || null;
   const proj = projectDebtAtGraduation(loans, gradDate);
   const counted = loans.filter((l) => l.status === 'accepted' || l.status === 'disbursed');
@@ -848,13 +879,13 @@ export function LoansTab() {
         </Card>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 14 }}>
+      <div ref={loansGridRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 14 }}>
         {loans.map((loan, i) => (
           <LoanCard key={loan.id} loan={loan} idx={i} data={data} upd={upd}
             moreOpen={moreOpenIds.has(loan.id)} toggleMore={() => toggleMore(loan.id)} />
         ))}
         <button type="button" aria-label="Add loan" onClick={addLoan}
-          style={{ width: '100%', font: 'inherit', background: 'transparent', border: `2px dashed ${C.border}`, borderRadius: 12, minHeight: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', color: C.text, transition: 'border-color 0.15s, color 0.15s' }}
+          style={{ gridColumn: addLoanAlone ? '1 / -1' : undefined, width: '100%', font: 'inherit', background: 'transparent', border: `2px dashed ${C.border}`, borderRadius: 12, minHeight: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', color: C.text, transition: 'border-color 0.15s, color 0.15s' }}
           onMouseEnter={(e) => { e.currentTarget.style.borderColor = C.teal; e.currentTarget.style.color = C.teal; }}
           onMouseLeave={(e) => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.text; }}>
           <span style={{ fontSize: 24, fontWeight: 300, lineHeight: 1 }}>+</span>
