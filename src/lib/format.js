@@ -30,6 +30,24 @@ export const DEFAULT_CATS = [
   {id:"subs",     label:"Subscriptions",  autoCalc:true},
 ];
 
+// A category's color slot, keyed to its IDENTITY, not its position in the list.
+// Colours used to be `CHART_COLORS[listIndex]`, so dragging a category to a new
+// slot made it adopt that slot's colour — a category's colour visibly jumped on
+// every reorder. Now each default category owns its DEFAULT_CATS slot forever,
+// and custom categories get stable slots after the defaults ordered by id (the
+// `cat_<timestamp>` ids are monotonic, so creation order is stable and adding a
+// new one never recolours the existing ones). Every surface that colours a
+// category — the budget list, the pie, the legend, the line chart, weekly bars —
+// must use THIS, or the list and the charts will disagree.
+export function catColorIndex(catId, cats) {
+  const di = DEFAULT_CATS.findIndex(c => c.id === catId);
+  if (di >= 0) return di;
+  const customs = (cats || []).map(c => c.id)
+    .filter(id => !DEFAULT_CATS.some(d => d.id === id)).sort();
+  const ci = customs.indexOf(catId);
+  return DEFAULT_CATS.length + (ci < 0 ? 0 : ci);
+}
+
 export const MONTH_NAMES = ["Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul"];
 export const MONTH_FULL = ["August","September","October","November","December","January","February","March","April","May","June","July"];
 

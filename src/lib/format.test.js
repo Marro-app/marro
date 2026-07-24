@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
-  fmt, fmtS, fmtD, fmtA, fmtSA, moTotal, subMonthlyTotal,
+  fmt, fmtS, fmtD, fmtA, fmtSA, moTotal, subMonthlyTotal, catColorIndex, DEFAULT_CATS,
   generateYearConfigs, yr2, blankYearFields, BLANK_MONTHLY,
   getMonday, getSunday, fmtWeekLabel, daysUntil, getYearMonthStr, todayStr,
   sanitizeMoneyInput, MAX_QUICK_ADD_AMOUNT,
@@ -231,5 +231,32 @@ describe('todayStr', () => {
     vi.setSystemTime(new Date('2026-07-01T09:30:00'));
     expect(todayStr()).toBe('2026-07-01');
     vi.useRealTimers();
+  });
+});
+
+describe('catColorIndex — colours follow the category, not its list position', () => {
+  const cats = [
+    { id: 'food' }, { id: 'transport' }, { id: 'personal' },
+    { id: 'cat_100', label: 'Coffee' }, { id: 'cat_200', label: 'Gym' },
+  ];
+  it('gives each default category its fixed DEFAULT_CATS slot', () => {
+    expect(catColorIndex('food', cats)).toBe(DEFAULT_CATS.findIndex(c => c.id === 'food'));
+    expect(catColorIndex('savings', cats)).toBe(DEFAULT_CATS.findIndex(c => c.id === 'savings'));
+  });
+  it('is INDEPENDENT of the order the categories appear in the list (the drag-recolour bug)', () => {
+    const reordered = [cats[2], cats[0], cats[4], cats[1], cats[3]];
+    for (const c of cats) {
+      expect(catColorIndex(c.id, reordered)).toBe(catColorIndex(c.id, cats));
+    }
+  });
+  it('assigns custom categories stable slots after the defaults, ordered by id', () => {
+    // cat_100 sorts before cat_200, so they take the first two post-default slots.
+    expect(catColorIndex('cat_100', cats)).toBe(DEFAULT_CATS.length + 0);
+    expect(catColorIndex('cat_200', cats)).toBe(DEFAULT_CATS.length + 1);
+  });
+  it('does not recolour existing customs when a new one is added', () => {
+    const withNew = [...cats, { id: 'cat_300', label: 'Pets' }];
+    expect(catColorIndex('cat_100', withNew)).toBe(catColorIndex('cat_100', cats));
+    expect(catColorIndex('cat_200', withNew)).toBe(catColorIndex('cat_200', cats));
   });
 });

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { C, CHART_COLORS } from '../lib/theme.js';
-import { fmt, fmtS, fmtD, fmtA, fmtSA, fmtDay, fmtWeekLabel, todayStr, getMonday, getSunday, MONTH_NAMES, MONTH_FULL } from '../lib/format.js';
+import { fmt, fmtS, fmtD, fmtA, fmtSA, fmtDay, fmtWeekLabel, todayStr, getMonday, getSunday, MONTH_NAMES, MONTH_FULL, catColorIndex } from '../lib/format.js';
 import { WEEKS_PER_MONTH } from '../lib/constants.js';
 import { Card, SectionTitle, Banner, MetricTile, ProgressBar, Pill, EmptyState, XBtn, Modal } from '../components/primitives.jsx';
 import { CatIcon } from '../components/icons.jsx';
@@ -340,7 +340,7 @@ export function WeeklyTab(){
                         {spent>0 && <Pill ok={!over} warn={over} sm>{over?`+${fmtD(spent-wkB)} over`:`${fmtD(wkB-spent)} left`}</Pill>}
                       </div>
                     </div>
-                    <ProgressBar value={spent} max={wkB} color={over?C.neg:CHART_COLORS[i%CHART_COLORS.length]}/>
+                    <ProgressBar value={spent} max={wkB} color={over?C.neg:CHART_COLORS[catColorIndex(cat.id,cats)%CHART_COLORS.length]}/>
                   </div>
                 );
               })}
@@ -356,7 +356,7 @@ export function WeeklyTab(){
                   const cat=cats.find(c=>c.id===e.catId)||{label:"Other"};
                   return (
                     <div key={e.id} style={{display:"flex",alignItems:"center",gap:12,padding:"9px 0",borderBottom:`1px solid ${C.border}`}}>
-                      <CatIcon name={cat.icon||e.catId} color={CHART_COLORS[cats.findIndex(c=>c.id===e.catId)%CHART_COLORS.length]||C.gray}/>
+                      <CatIcon name={cat.icon||e.catId} color={CHART_COLORS[catColorIndex(e.catId,cats)%CHART_COLORS.length]||C.gray}/>
                       <div style={{flex:1}}>
                         <div style={{fontSize:13,fontWeight:500,color:C.text}}>{cat.label}</div>
                         <div style={{fontSize:11,color:C.gray,marginTop:1}}>{fmtDay(e.date)}{e.note?" · "+e.note:""}</div>

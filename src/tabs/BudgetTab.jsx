@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { C, CHART_COLORS, tipProps } from '../lib/theme.js';
-import { fmt, fmtS, MONTH_NAMES, MONTH_FULL, sanitizeMoneyInput, cleanNumEvent } from '../lib/format.js';
+import { fmt, fmtS, MONTH_NAMES, MONTH_FULL, sanitizeMoneyInput, cleanNumEvent, catColorIndex } from '../lib/format.js';
 import { USMLE_STEP_FEE_ESTIMATE } from '../lib/constants.js';
 import { Card, SectionTitle, Divider, InfoTip, Pill, XBtn, Modal } from '../components/primitives.jsx';
 import { Icon, CatIcon, CatIconPicker, ChangeIconButton } from '../components/icons.jsx';
@@ -216,7 +216,7 @@ export function BudgetTab(){
                       <span aria-hidden="true">⠿</span>
                     </button>
                   )}
-                  <CatIcon name={cat.icon||cat.id} color={CHART_COLORS[i%CHART_COLORS.length]}/>
+                  <CatIcon name={cat.icon||cat.id} color={CHART_COLORS[catColorIndex(cat.id,cats)%CHART_COLORS.length]}/>
                   <div style={{flex:1,minWidth:0}}>
                     <span style={{fontSize:13,color:C.text}}>{cat.id==="subs"?"Fixed monthly costs":cat.label}</span>
                     {cat.id==="subs" && (
