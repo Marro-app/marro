@@ -195,7 +195,29 @@ describe('projectDebtAtGraduation', () => {
   });
 
   it('an empty loans list returns a zeroed, estimate-flagged result rather than crashing', () => {
-    expect(projectDebtAtGraduation([], gradDate)).toEqual({ total: 0, byLoan: [], isEstimate: true });
+    expect(projectDebtAtGraduation([], gradDate)).toEqual({ total: 0, byLoan: [], isEstimate: true, hasInferred: false });
+  });
+
+  it('basis: a federal loan with confirmed rate + dates is exact, not an estimate', () => {
+    const { byLoan, hasInferred } = projectDebtAtGraduation([makeLoan({ academicYear: 2025 })], gradDate);
+    expect(byLoan[0].basis).toBe('exact');
+    expect(byLoan[0].isEstimate).toBe(false);
+    expect(hasInferred).toBe(false);
+  });
+
+  it("basis: a fully-filled private loan is 'entered' (exact for the typed rate), not an inferred estimate", () => {
+    const priv = makeLoan({ id: 'p1', type: 'private', rate: 0.095, disbursements: [{ id: 'd1', date: '2025-09-01', amount: 10000 }] });
+    const { byLoan, isEstimate, hasInferred } = projectDebtAtGraduation([priv], gradDate);
+    expect(byLoan[0].basis).toBe('entered');
+    expect(byLoan[0].isEstimate).toBe(true);   // still not government-verified
+    expect(hasInferred).toBe(false);           // ...but nothing was actually guessed
+  });
+
+  it("basis: a private loan with a guessed date is a real 'estimate'", () => {
+    const priv = makeLoan({ id: 'p1', type: 'private', rate: 0.095, disbursements: [{ id: 'd1', date: null, amount: 10000 }] });
+    const { byLoan, hasInferred } = projectDebtAtGraduation([priv], gradDate);
+    expect(byLoan[0].basis).toBe('estimate');
+    expect(hasInferred).toBe(true);
   });
 
   it('the award-letter offer never inflates what you owe — projection runs off the accepted amount only', () => {

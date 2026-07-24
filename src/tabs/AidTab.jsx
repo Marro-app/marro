@@ -111,7 +111,7 @@ export function AidTab(){
             )}
             <div style={{height:1,background:C.border,margin:"4px 0"}}/>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:16}}>
-              <span style={{fontSize:12,fontWeight:600,color:C.text}}>You keep for living costs</span>
+              <span style={{fontSize:12,fontWeight:600,color:C.text,display:"inline-flex",alignItems:"center",gap:4}}>You keep for living costs <InfoTip text="Grants and loans, minus tuition, fees, and health insurance. This is the money that reaches your account each year — it does not include your checking balance."/></span>
               <span style={{fontSize:14,fontWeight:700,color:C.teal}}>{fmt(annDisburse)}</span>
             </div>
           </div>
@@ -228,8 +228,8 @@ export function AidTab(){
                     </div>
                   </div>
                   <div style={{marginTop:12,padding:"10px 12px",background:C.tealLight,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.tealMid}`,borderRadius:8,fontSize:12}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3,alignItems:"center"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Sent to you/yr <InfoTip text="Aid left over after tuition and fees — the part that hits your bank account for living costs."/></span><strong style={{color:C.teal}}>{fmt(disb)}</strong></div>
-                    <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid}}>Monthly spendable</span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3,alignItems:"center"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Sent to you/yr <InfoTip text="Your grants and loans for the year, minus tuition, fees, and health insurance — the part that reaches your account for living costs. It does not include your checking balance; that's a separate real-world number you enter on the Loans tab."/></span><strong style={{color:C.teal}}>{fmt(disb)}</strong></div>
+                    <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Monthly spendable <InfoTip text="Sent to you for the year, plus other income, divided evenly across 12 months."/></span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
                   </div>
                   {rawGap<0 && (
                     <div role="alert" style={{marginTop:8,padding:"10px 12px",background:C.dangerLight,border:`1px solid ${C.dangerMid}`,borderRadius:8,fontSize:12,color:C.danger,fontWeight:600}}>
@@ -241,7 +241,11 @@ export function AidTab(){
             </Card>
           );
         })}
-        <button type="button" aria-label="Add year" onClick={()=>setShowAddYear(true)} style={{gridColumn:addYearAlone?"1 / -1":undefined,width:"100%",font:"inherit",background:"transparent",border:`2px dashed ${C.border}`,borderRadius:12,minHeight:120,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,cursor:"pointer",color:C.gray,transition:"border-color 0.15s, color 0.15s"}}
+        {/* Alone on its row → full width + a comfortable 120px target. Beside a
+            year card → stretch to that card's height (alignSelf) with no fixed
+            minHeight, so it no longer looms larger than the collapsed card next
+            to it. The grid's alignItems:"start" is overridden per-item here. */}
+        <button type="button" aria-label="Add year" onClick={()=>setShowAddYear(true)} style={{gridColumn:addYearAlone?"1 / -1":undefined,alignSelf:addYearAlone?undefined:"stretch",width:"100%",font:"inherit",background:"transparent",border:`2px dashed ${C.border}`,borderRadius:12,minHeight:addYearAlone?120:88,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,cursor:"pointer",color:C.gray,transition:"border-color 0.15s, color 0.15s"}}
           onMouseEnter={e=>{e.currentTarget.style.borderColor=C.teal;e.currentTarget.style.color=C.teal;}}
           onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.gray;}}>
           <span style={{fontSize:24,fontWeight:300,lineHeight:1}}>+</span>
