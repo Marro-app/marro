@@ -365,7 +365,7 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
           )}
           <div style={{ fontSize: 11, color: C.text, marginBottom: 10, lineHeight: 1.5 }}>
             {isFederal
-              ? <>Don&apos;t have your numbers? Log into studentaid.gov → Dashboard → click a loan for its exact amounts, dates, and rate.</>
+              ? <>Don&apos;t have your numbers? Log into <a href="https://studentaid.gov" target="_blank" rel="noopener noreferrer" style={{ color: C.teal, fontWeight: 600 }}>studentaid.gov</a> → Dashboard → click a loan for its exact amounts, dates, and rate.</>
               : awardFraming
                 ? <>Don&apos;t have your numbers? Check your award letter or ask your school&apos;s financial aid office for the exact amounts and dates.</>
                 : <>Don&apos;t have your numbers? Check your lender&apos;s website or welcome packet for the exact amounts, dates, and rate.</>}

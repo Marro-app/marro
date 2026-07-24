@@ -27,10 +27,6 @@ export function AidTab(){
   const panelRef = useRef(null);
   const yearsGridRef = useRef(null);
   const yearsGridCols = useGridColumnCount(yearsGridRef);
-  // True when the trailing "Add year" tile lands alone on a new row (no year
-  // card beside it) — it should then span the full row instead of sitting
-  // stranded at one column's width.
-  const addYearAlone = data.years.length % yearsGridCols === 0;
   const aidNoteOpen = !dismissed["aidnote"];
   const closeAidNote = () => {
     const active = document.activeElement;
@@ -58,6 +54,20 @@ export function AidTab(){
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
+  // "Add year" should span the whole bottom row only when it actually STARTS a
+  // fresh row. A plain `years.length % cols` count gets this wrong because an
+  // EXPANDED year card spans all columns (gridColumn 1 / -1) and forces its own
+  // row — so we walk the cards in order, resetting to column 0 after any
+  // full-width card, and check where the next slot lands. col === 0 → the tile
+  // begins an empty row (alone → full width); otherwise it fills the leftover
+  // column beside a card and just stretches to that card's height.
+  const cols = Math.max(1, yearsGridCols);
+  let addYearCol = 0;
+  for (const y of data.years) {
+    if (expandedYears.has(y.id)) addYearCol = 0;            // full-width card → next item starts a new row
+    else addYearCol = (addYearCol + 1) % cols;
+  }
+  const addYearAlone = addYearCol === 0;
 
   // Item 8 — friendly full date for overlap messages. ISO "YYYY-MM-DD" strings
   // sort/compare correctly as plain strings, so the overlap checks below just
@@ -137,6 +147,11 @@ export function AidTab(){
           const rawGap=b.rawGap; // unfloored — negative means costs exceed aid
           const disb=b.sentToYou,oth=b.otherIncomeAnnual;
           const moD=b.moSpendable,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
+          // A year with no grants AND no loans entered isn't "short" — it just
+          // hasn't been filled in yet. Showing a tiny "-$6/mo short" (really a
+          // subscription with no income behind it) reads as a broken forecast,
+          // so future/blank years say "not set up yet" until aid or loans exist.
+          const notSetUp = b.totalAid <= 0;
           const expanded = expandedYears.has(y.id);
           // Item 8 — flag overlapping year ranges. Years are stored in order, so
           // the only neighbors that can overlap are i-1 (ends after this one
@@ -171,7 +186,9 @@ export function AidTab(){
                 <span style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                   <span style={{fontSize:11.5,color:C.textMid,whiteSpace:"nowrap"}}>Total aid <strong style={{color:C.text}}>{fmt(g)}</strong></span>
                   <span style={{fontSize:11.5,color:C.textMid,whiteSpace:"nowrap"}}>Sent to you <strong style={{color:C.teal}}>{fmt(disb)}</strong></span>
-                  <Pill ok={moS>=0} warn={moS<0}>{fmtS(moS)}/mo{moS<0?" short":" left over"}</Pill>
+                  {notSetUp
+                    ? <Pill neutral>Not set up yet</Pill>
+                    : <Pill ok={moS>=0} warn={moS<0}>{fmtS(moS)}/mo{moS<0?" short":" left over"}</Pill>}
                 </span>
               </button>
 
@@ -273,18 +290,22 @@ export function AidTab(){
                   const rawGap=b.rawGap; // unfloored — negative means costs exceed aid
                   const disb=b.sentToYou,oth=b.otherIncomeAnnual;
                   const moD=b.moSpendable,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
-                  cum+=moS*12;
+                  // Blank years (no grants or loans yet) don't count as a real
+                  // shortfall — no ⚠, no "-$6/mo", and they don't drag down the
+                  // running cumulative. They read as "—" until they're filled in.
+                  const notSetUp = b.totalAid <= 0;
+                  if(!notSetUp) cum+=moS*12;
                   return <tr key={y.id}>
                     <td style={{padding:"8px",fontWeight:600,whiteSpace:"nowrap",fontSize:11,color:C.text}}>{y.label}</td>
                     <td style={{padding:"8px",color:C.neg,fontWeight:600}}>
                       {g>0?fmt(g):"TBD"}
-                      {rawGap<0 && <span title={`Costs exceed aid by ${fmt(Math.abs(rawGap))} this year`} style={{marginLeft:4,color:C.danger}} aria-label={`Warning: costs exceed aid by ${fmt(Math.abs(rawGap))} this year`}>⚠</span>}
+                      {!notSetUp && rawGap<0 && <span title={`Costs exceed aid by ${fmt(Math.abs(rawGap))} this year`} style={{marginLeft:4,color:C.danger}} aria-label={`Warning: costs exceed aid by ${fmt(Math.abs(rawGap))} this year`}>⚠</span>}
                     </td>
                     <td style={{padding:"8px",color:C.gray}}>{fmt(tf+hi)}</td>
-                    <td style={{padding:"8px",color:C.teal,fontWeight:600}}>{fmt(disb)}</td>
-                    <td style={{padding:"8px",fontWeight:600,color:C.text}}>{fmt(moD)}</td>
+                    <td style={{padding:"8px",color:C.teal,fontWeight:600}}>{notSetUp?"—":fmt(disb)}</td>
+                    <td style={{padding:"8px",fontWeight:600,color:C.text}}>{notSetUp?"—":fmt(moD)}</td>
                     <td style={{padding:"8px",color:C.text}}>{fmt(moSp)}</td>
-                    <td style={{padding:"8px",fontWeight:600,color:moS>=0?C.teal:C.neg}}>{fmtS(moS)}</td>
+                    <td style={{padding:"8px",fontWeight:600,color:notSetUp?C.gray:(moS>=0?C.teal:C.neg)}}>{notSetUp?"—":fmtS(moS)}</td>
                     <td style={{padding:"8px",fontWeight:700,color:cum>=0?C.teal:C.neg}}>{fmtS(cum)}</td>
                   </tr>;
                 });

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { C, CHART_COLORS } from '../lib/theme.js';
+import { catColorIndex } from '../lib/format.js';
 import { useEscClose } from '../lib/hooks.js';
 import { Card, SectionTitle } from '../components/primitives.jsx';
 import { Icon, CatIcon, CatIconPicker, ChangeIconButton } from '../components/icons.jsx';
@@ -26,7 +27,7 @@ export function CustomizeTab(){
                     button and a scrim + pencil surfaces on hover/focus; click to swap */}
                 <div style={{position:"relative",flexShrink:0}}>
                   <ChangeIconButton onClick={()=>setEditIconCat(editIconCat===cat.id?null:cat.id)} ariaLabel={"Change icon for "+cat.label} expanded={editIconCat===cat.id}>
-                    <CatIcon name={cat.icon||cat.id} color={CHART_COLORS[cats.findIndex(c=>c.id===cat.id)%CHART_COLORS.length]}/>
+                    <CatIcon name={cat.icon||cat.id} color={CHART_COLORS[catColorIndex(cat.id,cats)%CHART_COLORS.length]}/>
                   </ChangeIconButton>
                   {editIconCat===cat.id && <>
                     <div onClick={()=>setEditIconCat(null)} style={{position:"fixed",inset:0,zIndex:99}}/>
