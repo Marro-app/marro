@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { C, CHART_COLORS, tipProps } from '../lib/theme.js';
-import { fmt, fmtS, MONTH_NAMES, MONTH_FULL, sanitizeMoneyInput, cleanNumEvent, catColorIndex } from '../lib/format.js';
+import { fmt, fmtS, fmtDay, MONTH_NAMES, MONTH_FULL, sanitizeMoneyInput, cleanNumEvent, catColorIndex } from '../lib/format.js';
 import { USMLE_STEP_FEE_ESTIMATE } from '../lib/constants.js';
 import { Card, SectionTitle, Divider, InfoTip, Pill, XBtn, Modal } from '../components/primitives.jsx';
 import { Icon, CatIcon, CatIconPicker, ChangeIconButton } from '../components/icons.jsx';
@@ -18,7 +18,7 @@ import { useApp } from '../context/AppContext.js';
 export function BudgetTab(){
   const { data, cats, ay, yr, yrStartYear, selMonth, setSelMonth, subs, subsMo, disabledCats,
           moSpend, moSpendable, moSurplus, runningBalance, totalAccumulatedBalance,
-          priorYearsCarryover, annDisburse, annOther, aidBreakdown, allEntriesFlat,
+          priorYearsCarryover, annDisburse, annOther, aidBreakdown, safeToSpend, safeToSpendMo, allEntriesFlat,
           getMonthVal, spentInMonth, unbudgetedCats, unbudgetedTotal, promoteToBudget,
           toggleMonthCat, setMo, reorderCats, addCat,
           newCatName, setNewCatName, newCatIcon, setNewCatIcon, iconPickOpen, setIconPickOpen } = useApp();
@@ -38,6 +38,9 @@ export function BudgetTab(){
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [showSubscriptions, setShowSubscriptions] = useState(false);
   const [showHealthChecks, setShowHealthChecks] = useState(false);
+  const [showSafeMath, setShowSafeMath] = useState(false);
+  // Month the current school year ends in — labels the "to last through X" row.
+  const yearEndMonth = yr?.endDate ? new Date(yr.endDate+"T12:00:00").toLocaleDateString("en-US",{month:"long"}) : "the year";
   const [barHover, setBarHover] = useState(null);
   const barDim = i => barHover!=null && barHover!==i ? 0.35 : 1;
   const barMove = s => setBarHover(s && s.isTooltipActive && s.activeTooltipIndex!=null ? s.activeTooltipIndex : null);
@@ -287,15 +290,74 @@ export function BudgetTab(){
                 {l:"Aid and loans sent to you", v:fmt(annDisburse)+"/yr",    c:C.teal,
                  tip:"What's left of your grants and loans after tuition, fees, and health insurance come out — the money that actually reaches your account for living costs."},
                 {l:"Other income",              v:fmt(annOther)+"/yr",       c:C.text},
-                {l:"Monthly spending money",    v:fmt(moSpendable)+"/mo",    c:C.teal,bold:true,
-                 tip:"Your aid and loans sent to you, plus any other income, spread evenly across the 12 months of the school year."},
+                // The one "how much can I spend" number (src/lib/aid.js →
+                // availableMoney). Balance-anchored once a check-in exists, so it
+                // MOVES as the balance moves — which is exactly why it needs the
+                // disclosure below it: a number that changes on its own reads as
+                // arbitrary without the arithmetic behind it.
+                // In the final month a "/mo" rate is misleading — it reads as a
+                // sustainable monthly pace when it's really the whole remaining
+                // balance for a few weeks. Say what it actually is instead.
+                {id:"safe",
+                 l:safeToSpend.monthsLeft<=1 && safeToSpend.basis==="balance" ? "Left for the rest of the year" : "Safe to spend",
+                 v:safeToSpend.monthsLeft<=1 && safeToSpend.basis==="balance" ? fmt(safeToSpend.available) : fmt(safeToSpendMo)+"/mo",
+                 c:C.teal,bold:true},
                 {l:"Monthly plan",              v:fmt(moSpend)+"/mo",        c:C.text},
                 {l:surplusBorrowed?"Left over (borrowed)":"Monthly surplus",
                  v:fmtS(moSurplus)+"/mo",     c:moSurplus<0?C.neg:(surplusBorrowed?C.blue:C.green),bold:true},
               ].map(r=>(
-                <div key={r.l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
-                  <span style={{color:C.gray,display:"inline-flex",alignItems:"center",gap:4}}>{r.l}{r.tip && <InfoTip text={r.tip} />}</span>
-                  <span style={{fontWeight:r.bold?700:500,color:r.c}}>{r.v}</span>
+                <div key={r.id||r.l}>
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:r.id==="safe"?"none":`1px solid ${C.border}`,fontSize:12}}>
+                    <span style={{color:C.gray,display:"inline-flex",alignItems:"center",gap:4}}>{r.l}{r.tip && <InfoTip text={r.tip} />}</span>
+                    <span style={{fontWeight:r.bold?700:500,color:r.c}}>{r.v}</span>
+                  </div>
+                  {r.id==="safe" && (
+                    <div style={{borderBottom:`1px solid ${C.border}`,paddingBottom:4}}>
+                      {/* Disclosure, not a tooltip: the founder's standing note is
+                          that things hidden behind an "i" may as well not exist.
+                          Real <button> + aria-expanded/aria-controls, and the panel
+                          stays mounted so the target never dangles (same pattern as
+                          the Health checks disclosure below). */}
+                      <button type="button" id="safe-math-btn" onClick={()=>setShowSafeMath(s=>!s)}
+                        aria-expanded={showSafeMath} aria-controls="safe-math-panel"
+                        style={{display:"flex",alignItems:"center",gap:6,width:"100%",minHeight:44,background:"none",border:"none",padding:"2px 0",cursor:"pointer",font:"inherit",textAlign:"left",color:C.gray,fontSize:11}}>
+                        <Icon name="chevron" size={11} style={{transform:showSafeMath?"rotate(180deg)":"none",transition:"transform .15s",color:C.gray,flexShrink:0}}/>
+                        How is this worked out?
+                      </button>
+                      {/* NOT using the shared .collapse-panel grid trick: its
+                          0fr→1fr track never resolves in this app (verified in
+                          browser — the Health checks disclosure is stuck at 0px
+                          height too, a pre-existing bug). A plain hidden toggle
+                          is reliable and still a correct disclosure: the button
+                          carries aria-expanded/aria-controls, and `hidden` keeps
+                          the collapsed content out of the a11y tree entirely. */}
+                      <div id="safe-math-panel" role="region" aria-labelledby="safe-math-btn" hidden={!showSafeMath}>
+                        <div>
+                          <div style={{paddingBottom:8,fontSize:11,color:C.gray,lineHeight:1.6}}>
+                            {safeToSpend.basis==="balance" ? (
+                              <>
+                                {[["In your accounts",fmt(safeToSpend.onHand)],
+                                  ["Still to arrive",fmt(safeToSpend.stillToArrive)],
+                                  [`To last through ${yearEndMonth}`,`${safeToSpend.monthsLeft} ${safeToSpend.monthsLeft===1?"month":"months"}`],
+                                ].map(([k,v])=>(
+                                  <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}>
+                                    <span>{k}</span><span style={{color:C.text}}>{v}</span>
+                                  </div>
+                                ))}
+                                <div style={{marginTop:4,paddingTop:4,borderTop:`1px solid ${C.border}`}}>
+                                  {safeToSpend.monthsLeft<=1
+                                    ? <>Your school year is nearly over, so this is what&apos;s left for the rest of it rather than a monthly pace. Next year&apos;s aid and loans start it fresh.</>
+                                    : <>Your balance from {safeToSpend.asOf ? fmtDay(safeToSpend.asOf) : "your last check-in"}, plus money still coming, shared across the months left. Update your balance on the Loans tab to keep it accurate.</>}
+                                </div>
+                              </>
+                            ) : (
+                              <>Based on your full year&apos;s aid and loans, spread across 12 months. Add your current balance on the Loans tab and Marro will use what you actually have instead.</>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
               <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0 2px",fontSize:13,fontWeight:700}}>

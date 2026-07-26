@@ -508,14 +508,14 @@ export function projectDebtAtGraduation(loans, gradDate) {
 // collapses same-date duplicates (two devices checking in the same day) down
 // to whichever one comes LAST in the input array — the freshest write wins,
 // mirroring how the sync engine's own last-write-wins scalar fields behave.
-function normalizeReadings(readings, today) {
+export function normalizeReadings(readings, today) {
   const kept = (readings || []).filter((r) => r && r.date && r.date <= today);
   const byDate = new Map();
   for (const r of kept) byDate.set(r.date, r); // later array entries overwrite earlier ones sharing a date
   return Array.from(byDate.values()).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
-const readingTotal = (r) => (Number(r.spendable) || 0) + (Number(r.savings) || 0);
+export const readingTotal = (r) => (Number(r.spendable) || 0) + (Number(r.savings) || 0);
 
 /**
  * "How long will my money last?" — the Runway tile's engine.

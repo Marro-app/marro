@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  yearStartYearOf, loanCountsForYear, loanCashLanded, loanCashForYear,
+  yearStartYearOf, loanCountsForYear, loanCashLanded, loanCashForYear, availableMoney,
   unmatchedLoans, yearAidBreakdown,
 } from './aid.js';
 
@@ -255,5 +255,101 @@ describe('yearAidBreakdown — loanShare drives the "never green" rule', () => {
     const b = yearAidBreakdown(year, loans, 2025);
     expect(b.loanCash).toBe(0);
     expect(b.isLoanFunded).toBe(false);
+  });
+});
+
+// ── The one formula: availableMoney ─────────────────────────────────────────
+describe('availableMoney — projection fallback (the degenerate case)', () => {
+  const year = makeYear({ grant: 42000, tuitionFees: 34000, healthIns: 4200, otherIncome: 300 });
+
+  it('with no readings, reproduces the old aid ÷ 12 behaviour exactly', () => {
+    const a = availableMoney({ year, loans: [], readings: [], today: '2025-12-01' });
+    expect(a.basis).toBe('projection');
+    expect(a.monthsLeft).toBe(12);
+    expect(a.onHand).toBe(0);
+    // sentToYou 3800 + otherIncome 3600 = 7400/yr
+    expect(a.perMonth).toBeCloseTo(7400 / 12, 6);
+    expect(a.perMonth).toBeCloseTo(yearAidBreakdown(year, []).moSpendable, 6);
+  });
+
+  it('falls back to projection for a year that is NOT the current one, even with readings', () => {
+    const future = makeYear({ startDate: '2030-08-01', endDate: '2031-08-15', grant: 12000 });
+    const readings = [{ id: 'r', date: '2025-12-01', spendable: 9999, savings: 9999 }];
+    const a = availableMoney({ year: future, loans: [], readings, today: '2025-12-01' });
+    expect(a.basis).toBe('projection');
+    expect(a.onHand).toBe(0); // a future year has no "current balance"
+  });
+
+  it('ignores a stale reading from before this year started', () => {
+    const readings = [{ id: 'r', date: '2025-06-01', spendable: 5000, savings: 0 }]; // year starts 2025-08-01
+    const a = availableMoney({ year, loans: [], readings, today: '2025-12-01' });
+    expect(a.basis).toBe('projection');
+  });
+});
+
+describe('availableMoney — balance-anchored (the corrected mid-year number)', () => {
+  // The founder walkthrough scenario, hand-checked:
+  //   grants 5000 + loans 50000 - tuition 34000 - health 4200 = 16800 reaches her
+  //   arriving in two halves; on Dec 1 the fall half has landed and been partly spent
+  const year = makeYear({ grant: 5000, tuitionFees: 34000, healthIns: 4200, otherIncome: 0 });
+  const loans = [makeLoan({
+    type: 'private', subtype: 'private',
+    disbursements: [
+      { id: 'd1', date: '2025-08-05', amount: 25000, dateConfirmed: true },
+      { id: 'd2', date: '2026-01-10', amount: 25000, dateConfirmed: true },
+    ],
+  })];
+  const readings = [{ id: 'r1', date: '2025-12-01', spendable: 3000, savings: 500 }];
+
+  it('anchors on the real balance and counts only money that has NOT landed yet', () => {
+    const a = availableMoney({ year, loans, readings, today: '2025-12-01' });
+    expect(a.basis).toBe('balance');
+    expect(a.onHand).toBe(3500);                    // 3000 checking + 500 savings
+    expect(a.stillToArrive).toBeCloseTo(16800 / 2, 6); // only the spring half (~8400)
+    expect(a.available).toBeCloseTo(3500 + 8400, 6);
+  });
+
+  it('divides by the months REMAINING, not a flat 12', () => {
+    const a = availableMoney({ year, loans, readings, today: '2025-12-01' });
+    expect(a.monthsLeft).toBe(8);                    // Dec → Aug 15
+    expect(a.perMonth).toBeCloseTo(11900 / 8, 6);    // $1,487.50 — the plan's hand-check
+  });
+
+  it('does NOT double-count the money that already landed', () => {
+    // The fall half (8400) is inside the 3500 that's left of it — counting it
+    // again would report 20300 available when only 16800 ever existed.
+    const a = availableMoney({ year, loans, readings, today: '2025-12-01' });
+    expect(a.available).toBeLessThan(16800);
+  });
+
+  it('self-corrects downward when the student has overspent', () => {
+    const broke = [{ id: 'r1', date: '2025-12-01', spendable: 1200, savings: 0 }];
+    const a = availableMoney({ year, loans, readings: broke, today: '2025-12-01' });
+    expect(a.perMonth).toBeCloseTo((1200 + 8400) / 8, 6); // $1,200/mo, tighter
+    expect(a.perMonth).toBeLessThan(11900 / 8);
+  });
+
+  it('counts other income only for the months still ahead', () => {
+    const withIncome = { ...year, otherIncome: 100 };
+    const a = availableMoney({ year: withIncome, loans, readings, today: '2025-12-01' });
+    expect(a.available).toBeCloseTo(3500 + 8400 + 100 * 8, 6);
+  });
+});
+
+describe('availableMoney — monthsLeft guards', () => {
+  const year = makeYear({ grant: 12000 });
+  const readings = [{ id: 'r', date: '2026-08-01', spendable: 1000, savings: 0 }];
+
+  it('never returns 0 months in the final month (no divide-by-zero)', () => {
+    // Year ends 2026-08-15; today is inside the last month.
+    const a = availableMoney({ year, loans: [], readings, today: '2026-08-10' });
+    expect(a.monthsLeft).toBe(1);
+    expect(Number.isFinite(a.perMonth)).toBe(true);
+  });
+
+  it('caps at 12 months even at the very start of the year', () => {
+    const start = [{ id: 'r', date: '2025-08-01', spendable: 1000, savings: 0 }];
+    const a = availableMoney({ year, loans: [], readings: start, today: '2025-08-01' });
+    expect(a.monthsLeft).toBeLessThanOrEqual(12);
   });
 });

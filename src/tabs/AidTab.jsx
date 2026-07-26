@@ -246,7 +246,7 @@ export function AidTab(){
                   </div>
                   <div style={{marginTop:12,padding:"10px 12px",background:C.tealLight,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.tealMid}`,borderRadius:8,fontSize:12}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:3,alignItems:"center"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Sent to you/yr <InfoTip text="Your grants and loans for the year, minus tuition, fees, and health insurance — the part that reaches your account for living costs. It does not include your checking balance; that's a separate real-world number you enter on the Loans tab."/></span><strong style={{color:C.teal}}>{fmt(disb)}</strong></div>
-                    <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Monthly spendable <InfoTip text="Sent to you for the year, plus other income, divided evenly across 12 months."/></span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
+                    <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Safe to spend <InfoTip text="Sent to you for this year, plus other income, spread evenly across 12 months. On the Budget tab this adjusts to your actual balance once you check one in."/></span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
                   </div>
                   {rawGap<0 && (
                     <div role="alert" style={{marginTop:8,padding:"10px 12px",background:C.dangerLight,border:`1px solid ${C.dangerMid}`,borderRadius:8,fontSize:12,color:C.danger,fontWeight:600}}>
@@ -277,7 +277,7 @@ export function AidTab(){
         <ScrollX className="scrollx" style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead><tr>
-              {["Year","Total aid","School costs","Sent to you/yr","Spendable/mo","Budget/mo","Surplus/mo","Cumulative"].map(h=>
+              {["Year","Total aid","School costs","Sent to you/yr","Safe to spend/mo","Budget/mo","Surplus/mo","Cumulative"].map(h=>
                 <th key={h} style={{textAlign:"left",fontSize:10,color:C.gray,padding:"6px 8px",borderBottom:`1px solid ${C.border}`,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
               )}
             </tr></thead>

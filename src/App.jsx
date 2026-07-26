@@ -9,7 +9,7 @@ import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
 import { fmt, fmtS, fmtD, fmtDay, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr } from './lib/format.js';
 import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState, classifyCushionSource } from './lib/loans.js';
-import { yearAidBreakdown, unmatchedLoans } from './lib/aid.js';
+import { yearAidBreakdown, unmatchedLoans, availableMoney } from './lib/aid.js';
 import { WEEKS_PER_MONTH, USMLE_STEP_FEE_ESTIMATE } from './lib/constants.js';
 import { BRANDS, BRAND_DOMAINS, getBrandDomain, getBrand } from './lib/brands.js';
 import { US_MED_SCHOOLS, degreeForSchool, DO_DUAL, dualOptionsForSchool } from './lib/schools.js';
@@ -76,42 +76,52 @@ let markedSessionDecided = false;
 // Founder decision: a "growing" balance built from unspent LOAN money isn't
 // real savings (it's borrowed cash sitting at about 8% interest), so that case
 // must NOT read as "Growing ✓" the way genuine non-loan income does.
+// Founder call (2026-07-26): "Runway" is VC jargon a med student shouldn't have
+// to decode. The tile now leads with the DATE their money runs out — the fact
+// they actually want — under the label "Lasts until". Only three of the seven
+// states carry a run-out date, so each state returns its own `label`: the states
+// with no date fall back to "Money left" rather than reading "Lasts until / $0".
 function runwayTileDisplay(runway, cushionSource) {
   switch (runway.state) {
     case 'unanchored':
-      return { value: '—', sub: 'add your balance to see this', color: C.gray };
+      return { label: 'Money left', value: '—', sub: 'add your balance to see this', color: C.gray };
     case 'growing':
-      if (cushionSource === 'own') return { value: 'Saving more than you spend ✓', sub: 'your balance grows a little each month', color: C.green };
-      return { value: 'Extra loan money', sub: 'you may be able to return some — see your Loans tab', color: C.blue };
+      if (cushionSource === 'own') return { label: 'Money left', value: 'Saving more than you spend ✓', sub: 'your balance grows a little each month', color: C.green };
+      return { label: 'Money left', value: 'Extra loan money', sub: 'you may be able to return some — see your Loans tab', color: C.blue };
     case 'through_graduation':
       return {
-        value: 'On track ✓', color: C.green,
-        sub: 'your money lasts through graduation',
+        label: 'Lasts until', value: 'Graduation', color: C.green,
+        sub: `${fmt(runway.spendable)} left — enough the whole way`,
         detail: runway.savings > 0 ? `You have ${fmt(runway.savings)} in savings on top of this.` : undefined,
       };
     case 'overdrawn':
       return {
-        value: '$0', color: C.amber, alert: true,
+        label: 'Money left', value: '$0', color: C.amber, alert: true,
         sub: runway.coveredBySavings ? 'overdrawn — your savings covers it' : 'overdrawn — no savings to fall back on yet',
       };
     case 'gap':
       return {
-        value: fmt(runway.spendable), color: C.amber, alert: true,
-        sub: 'short before your next refund',
+        label: 'Lasts until', value: fmtDay(runway.runOutDate), color: C.amber, alert: true,
+        sub: `${fmt(runway.spendable)} left — short before your next refund`,
         detail: `You run out about ${runway.gapDays} days before your next refund (around ${fmtDay(runway.nextRefund.date)}). Cutting about ${fmt(runway.trimPerMonthToClose)}/mo would close the gap.${runway.savings > 0 ? ` You also have ${fmt(runway.savings)} in savings if you need it.` : ''}`,
       };
     case 'counting_down': {
-      if (runway.basicallyOnTrack) return { value: fmt(runway.spendable), sub: "you're basically on track ✓", color: C.green };
+      if (runway.basicallyOnTrack) {
+        return {
+          label: 'Lasts until', value: fmtDay(runway.runOutDate), color: C.green,
+          sub: `${fmt(runway.spendable)} left — you're basically on track ✓`,
+        };
+      }
       return {
-        value: fmt(runway.spendable), color: C.text,
-        sub: `your money lasts until around ${fmtDay(runway.runOutDate)}`,
+        label: 'Lasts until', value: fmtDay(runway.runOutDate), color: C.text,
+        sub: `${fmt(runway.spendable)} left at your current pace`,
         detail: runway.savings > 0 ? `You have ${fmt(runway.savings)} in savings on top of this.` : undefined,
       };
     }
     case 'graduated':
-      return { value: '—', sub: 'all done — congrats!', color: C.teal };
+      return { label: 'Money left', value: '—', sub: 'all done — congrats!', color: C.teal };
     default:
-      return { value: '—', sub: 'add your balance to see this', color: C.gray };
+      return { label: 'Money left', value: '—', sub: 'add your balance to see this', color: C.gray };
   }
 }
 
@@ -605,7 +615,17 @@ export function App() {
   const annLoanCash = aidBreakdown.loanCash;
   const annDisburse = aidBreakdown.sentToYou;
   const annOther    = aidBreakdown.otherIncomeAnnual;
+  // The YEAR-PLAN number: this year's aid spread evenly over 12 months. Still the
+  // right basis for anything that projects across the WHOLE year (running balance,
+  // year-end net, the Charts bars) or that describes a year other than this one.
   const moSpendable = aidBreakdown.moSpendable;
+  // The "what can I actually spend now" number — balance-anchored once the student
+  // has checked in a balance, otherwise identical to moSpendable (see availableMoney
+  // in src/lib/aid.js). Deliberately a SEPARATE binding rather than redefining
+  // moSpendable: feeding a remaining-months figure into a whole-year projection
+  // would silently double-count and inflate the year-end net.
+  const safeToSpend   = availableMoney({ year: yr, loans: data.loans||[], readings: data.balanceReadings||[], today: todayStr() });
+  const safeToSpendMo = safeToSpend.perMonth;
   // Month-disabled categories
   const monthKey = ay+"-"+MONTH_NAMES[selMonth];
   const disabledCats = data.monthDisabled?.[monthKey]||[];
@@ -657,9 +677,17 @@ export function App() {
   const unbudgetedCats = cats.filter(c=>!c.locked && !c.autoCalc && disabledCats.includes(c.id) && spentInMonth(c.id,selMonth)>0);
   const unbudgetedTotal = unbudgetedCats.reduce((a,c)=>a+spentInMonth(c.id,selMonth),0);
 
+  // Stays on the YEAR-PLAN number, deliberately. This row is labelled "/mo" and
+  // feeds the same mental model as Projected leftover (plan vs. plan). Deriving
+  // it from the balance-anchored figure made it spike in the final month, when
+  // `monthsLeft` collapses to 1 and the remaining balance stops being a monthly
+  // rate — see the "Left for the rest of the year" reframing in BudgetTab.
   const moSurplus = Math.round(moSpendable - moSpend - unbudgetedTotal);  // this month's net (auto)
 
-  // Per-month net = spendable - planned budget - unbudgeted spending
+  // Per-month net = spendable - planned budget - unbudgeted spending.
+  // Uses the YEAR-PLAN number on purpose: this is summed across all 12 months to
+  // build the running balance / year-end net, so a remaining-months figure would
+  // be counted once per month and inflate the total.
   const monthNetFor = (mi) => {
     const mn=MONTH_NAMES[mi];
     const disM=data.monthDisabled?.[ay+"-"+mn]||[];
@@ -733,6 +761,8 @@ export function App() {
   const currentWeekStart = getMonday(new Date());
   const currentWeekEnd   = getSunday(currentWeekStart);
   const currentEntries   = data.currentWeekEntries||[];
+  // Year-plan based for the same reason as moSurplus: a weekly allowance derived
+  // from the final month's remaining balance would spike at year end.
   const weeklyBudget     = moSpendable/WEEKS_PER_MONTH;
   const archives         = [...(data.weeklyArchive||[])].sort((a,b)=>b.weekStart.localeCompare(a.weekStart));
 
@@ -1005,7 +1035,8 @@ export function App() {
     nyStart, setNyStart, nyEnd, setNyEnd, yearUndo, setYearUndo,
     // derived financial memos
     yr, yrStartYear, subs, subsMo, annGrant, annTuition, annHlth, annDisburse,
-    annOther, annLoanCash, aidBreakdown, strayLoans, moSpendable, monthKey, disabledCats, moSpend, allEntriesFlat,
+    annOther, annLoanCash, aidBreakdown, strayLoans, moSpendable, safeToSpend, safeToSpendMo,
+    monthKey, disabledCats, moSpend, allEntriesFlat,
     spentInMonth, unbudgetedCats, unbudgetedTotal, moSurplus, monthNetFor,
     runningBalance, curYrNet, priorYearsCarryover, totalAccumulatedBalance,
     totDisburse, totSpend, getMonthValIdx, getMonthVal, weeklyBudget,
@@ -1403,11 +1434,11 @@ export function App() {
            caps at 320px like a normal card. ── */}
       <div style={{display:"flex",gap:10,marginBottom:SHOW_PHASE2_TILES?10:20,flexWrap:"wrap"}}>
         {SHOW_PHASE2_TILES && (()=>{ const rt=runwayTileDisplay(runway, cushionSource); return (
-          <MetricTile label="Runway" value={rt.value} sub={rt.sub} color={rt.color}
+          <MetricTile label={rt.label} value={rt.value} sub={rt.sub} color={rt.color}
             role={rt.alert?"alert":undefined} ariaLive={rt.alert?"assertive":undefined}
             subIcon={rt.detail
               ? <InfoTip text={rt.detail} tone={rt.alert?"warn":"info"}
-                  label={rt.alert?"Runway warning — full detail":"Runway — more detail"}/>
+                  label={rt.alert?"Money warning — full detail":"Your money — more detail"}/>
               : undefined}/>
         ); })()}
         {SHOW_PHASE2_TILES

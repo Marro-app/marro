@@ -1,4 +1,4 @@
-import { loanCashLanded } from './loans.js';
+import { loanCashLanded, estimateRefunds, normalizeReadings, readingTotal } from './loans.js';
 
 export { loanCashLanded };
 
@@ -134,5 +134,113 @@ export function yearAidBreakdown(year, loans, yearStartYear) {
     grants, loanCash, totalAid, schoolCosts, tuitionFees, healthIns,
     rawGap, sentToYou, otherIncomeAnnual, moSpendable,
     loanShare, isLoanFunded: loanShare > 0.5,
+  };
+}
+
+// ── The one "how much can I spend" formula ──────────────────────────────────
+//
+// Marro used to answer this question with TWO numbers computed from different
+// bases, which could tell contradictory stories on the same screen:
+//
+//   "Monthly spending money" = year's aid ÷ 12   — pure projection. Never looked
+//        at the bank balance, so it stayed frozen all year even after half the
+//        money was spent.
+//   The runway tile               — anchored on the latest balance check-in.
+//
+// On Dec 1 a student could be told "$1,400/mo to spend" (as if a full year of
+// money were still ahead) while the runway said her cash ran out in February.
+//
+// `availableMoney` is the single definition both now derive from:
+//
+//     Available = money on hand + money still to arrive before year end
+//     PerMonth  = Available ÷ months remaining
+//
+// The old projection is this same formula's DEGENERATE CASE, which is why this
+// unifies rather than adding a rival number: for a future year (or a user who
+// hasn't entered a balance yet) there is nothing "on hand", everything is
+// "still to arrive", and 12 months remain — giving back exactly `aid ÷ 12`.
+//
+// Crucially, past spending never has to be reconstructed: whatever was spent is
+// simply no longer in the balance. That is what makes a mid-year signup — and
+// months the student never tracked — work correctly for free.
+
+/** Whole months from `today` to the year's end, floored at 1 (a 0 would divide by zero in the final month). */
+function monthsRemaining(today, endDate) {
+  const t = new Date(today + 'T12:00:00');
+  const e = new Date(endDate + 'T12:00:00');
+  const months = (e.getFullYear() - t.getFullYear()) * 12 + (e.getMonth() - t.getMonth());
+  return Math.max(1, Math.min(12, months));
+}
+
+/**
+ * How much this student actually has to live on, and what that works out to per
+ * month. See the block comment above for why this replaced two rival numbers.
+ *
+ * `basis` tells the UI which story to tell, and must never be guessed at:
+ *   - 'balance'    — anchored on a real check-in. `onHand` is money in the
+ *                    account right now; `stillToArrive` is only what hasn't
+ *                    landed yet, so nothing is double-counted.
+ *   - 'projection' — no usable check-in for THIS year (a brand-new user, or a
+ *                    future year being planned). Falls back to the full-year
+ *                    figure, i.e. the app's original behaviour, unchanged.
+ *
+ * Anchoring is deliberately limited to the year containing `today`: a future
+ * year has no "current balance", and a reading from BEFORE this year started is
+ * stale (it describes a prior year's money) — either would invent money that
+ * isn't there.
+ */
+export function availableMoney({ year, loans, readings, today }) {
+  const y = year || {};
+  const breakdown = yearAidBreakdown(y, loans);
+  const fullYear = breakdown.sentToYou + breakdown.otherIncomeAnnual;
+
+  // The projection fallback — also the answer for every year that isn't the
+  // current one. Identical to the pre-2026-07-26 behaviour by construction.
+  const projection = {
+    onHand: 0,
+    stillToArrive: fullYear,
+    available: fullYear,
+    monthsLeft: 12,
+    perMonth: fullYear / 12,
+    basis: 'projection',
+    asOf: null,
+    breakdown,
+  };
+
+  const isCurrentYear = !!(y.startDate && y.endDate && today >= y.startDate && today <= y.endDate);
+  if (!isCurrentYear || !today) return projection;
+
+  const sorted = normalizeReadings(readings, today);
+  const latest = sorted[sorted.length - 1] || null;
+  // A reading from before this year began describes a PRIOR year's money.
+  if (!latest || latest.date < y.startDate) return projection;
+
+  const onHand = readingTotal(latest);
+
+  // Money that genuinely hasn't landed yet. estimateRefunds already models the
+  // real dated inflows — grant halves at term start plus each loan disbursement
+  // on the date the student entered — and scales them so a year's inflows sum
+  // to exactly what reaches the account. Counting only those dated AFTER the
+  // check-in is what keeps already-landed money from being counted twice (it's
+  // already inside `onHand`).
+  const stillToArrive = estimateRefunds([y], loans || [])
+    .filter((r) => r.date && r.date > latest.date && r.date <= y.endDate)
+    .reduce((a, r) => a + r.amount, 0);
+
+  // Other income is earned month by month rather than landing in lumps, so only
+  // the months still ahead can be counted.
+  const monthsLeft = monthsRemaining(today, y.endDate);
+  const otherIncomeAhead = (Number(y.otherIncome) || 0) * monthsLeft;
+
+  const available = Math.max(0, onHand + stillToArrive + otherIncomeAhead);
+  return {
+    onHand,
+    stillToArrive: stillToArrive + otherIncomeAhead,
+    available,
+    monthsLeft,
+    perMonth: available / monthsLeft,
+    basis: 'balance',
+    asOf: latest.date,
+    breakdown,
   };
 }
