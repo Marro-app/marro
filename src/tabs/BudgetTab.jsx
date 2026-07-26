@@ -234,11 +234,16 @@ export function BudgetTab(){
                   style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`,
                     position:"relative",
                     // Resting rows stay TRANSPARENT so the card's glass material
-                    // shows through — only the dragged row needs an opaque fill so
-                    // it reads as lifted above the ones it passes over. (Painting
-                    // every row solid C.bg flattened the whole list to black — the
-                    // "lost the glass look" regression from the drag rework.)
-                    background:isDragging?C.bg:"transparent",
+                    // shows through. (Painting every row solid flattened the list
+                    // to black — the "lost the glass look" regression.) The dragged
+                    // row still has to hide the rows it slides over, but filling it
+                    // with the PAGE background made it a flat black slab sitting on
+                    // the glass card. A blurred elevated surface occludes just as
+                    // well and reads as a lifted row, matching the material the
+                    // rest of the app uses.
+                    background:isDragging?C.surfaceMid:"transparent",
+                    backdropFilter:isDragging?"blur(24px) saturate(160%)":undefined,
+                    WebkitBackdropFilter:isDragging?"blur(24px) saturate(160%)":undefined,
                     // The dragged row rides the pointer and lifts above the list;
                     // every other row slides to open the gap. Transitions are
                     // suppressed on the dragged row (it must track the pointer
