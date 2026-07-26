@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { C, CHART_COLORS, tipProps } from '../lib/theme.js';
 import { fmt, fmtS, fmtDay, MONTH_NAMES, MONTH_FULL, sanitizeMoneyInput, cleanNumEvent, catColorIndex } from '../lib/format.js';
@@ -60,13 +60,49 @@ export function BudgetTab(){
   // can't be exercised by the test suite.
   const shiftFor = (i) => rowShift(i, drag);
 
+  // Pointer tracking lives on WINDOW, not on the grip button. The button-plus-
+  // setPointerCapture version could strand a drag: if the capture call threw on
+  // a stale pointer id, or the pointerup landed on another element (easy when
+  // picking rows up and dropping them quickly), `endDrag` never ran — so `drag`
+  // stayed set and every row kept its offset permanently, leaving rows visibly
+  // overlapping and one stranded at the bottom of the card. Window listeners
+  // can't miss the release, and the effect's cleanup is a second guarantee.
+  // Window listeners are attached SYNCHRONOUSLY in startDrag, not from an
+  // effect. An effect only runs after React re-renders, so a fast press-and-
+  // release fired before the listeners existed and nothing caught the release —
+  // the drag was stranded and every row kept its offset. They call through a ref
+  // so the handlers are always the current render's (never a stale `reorderCats`).
+  const handlersRef = useRef({});
+  const listenersRef = useRef(null);
+  const attachDragListeners = () => {
+    if (listenersRef.current) return;
+    const onMove = (e) => handlersRef.current.moveDrag(e);
+    const onEnd = () => handlersRef.current.endDrag();
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onEnd);
+    window.addEventListener('pointercancel', onEnd);
+    listenersRef.current = { onMove, onEnd };
+  };
+  const detachDragListeners = () => {
+    const l = listenersRef.current;
+    if (!l) return;
+    window.removeEventListener('pointermove', l.onMove);
+    window.removeEventListener('pointerup', l.onEnd);
+    window.removeEventListener('pointercancel', l.onEnd);
+    listenersRef.current = null;
+  };
+
   const startDrag = (e, cat, idx) => {
     if (e.button != null && e.button !== 0) return;
+    if (dragRef.current) return;                       // ignore a second press mid-drag
     const heights = reorderableCats.map(c => rowRefs.current.get(c.id)?.offsetHeight || 0);
-    const st = { id: cat.id, fromIdx: idx, toIdx: idx, dy: 0, startY: e.clientY, heights };
+    // Snapshot the id order too, so endDrag never has to read a `reorderableCats`
+    // that may have been re-derived since the drag began.
+    const order = reorderableCats.map(c => c.id);
+    const st = { id: cat.id, fromIdx: idx, toIdx: idx, dy: 0, startY: e.clientY, heights, order };
     dragRef.current = st;
+    attachDragListeners();
     setDrag(st);
-    e.currentTarget.setPointerCapture(e.pointerId);
   };
 
   const moveDrag = (e) => {
@@ -82,7 +118,8 @@ export function BudgetTab(){
     const st = dragRef.current;
     if (!st) return;
     dragRef.current = null;
-    const target = reorderableCats[st.toIdx];
+    detachDragListeners();
+    const targetId = st.order[st.toIdx];
     // On release two things land in the same frame: the list REORDERS (so the
     // row is already at its new slot in the DOM) and every transform resets to
     // 0. With transitions live, the row animates from its dragged offset on top
@@ -93,7 +130,7 @@ export function BudgetTab(){
     // committed, not that the browser has painted it.
     setSettling(true);
     setDrag(null);
-    if (target && st.toIdx !== st.fromIdx) reorderCats(st.id, target.id);
+    if (targetId && st.toIdx !== st.fromIdx) reorderCats(st.id, targetId);
     // rAF is throttled to zero in a backgrounded tab, which would leave
     // `settling` stuck on and silently disable the slide animation for the rest
     // of the session — so a timer backstops it.
@@ -102,6 +139,19 @@ export function BudgetTab(){
     requestAnimationFrame(() => requestAnimationFrame(clear));
     setTimeout(clear, 120);
   };
+
+  // Point the window listeners at THIS render's handlers. Must sit below their
+  // declarations (they're `const` — reading them earlier hits the temporal dead
+  // zone and crashes the tab on first paint).
+  handlersRef.current = { moveDrag, endDrag };
+
+  // Last-resort safety: if this tab unmounts mid-drag (tab switch, navigation),
+  // drop the listeners and the half-finished drag rather than leaving both behind.
+  useEffect(() => () => {
+    detachDragListeners();
+    dragRef.current = null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Plan vs actual — the one chart Phase 1 keeps on Home (ported from the hidden Charts tab)
   const budgetVsActual = MONTH_NAMES.map((m,mi)=>{
@@ -199,12 +249,12 @@ export function BudgetTab(){
                     boxShadow:isDragging?"0 8px 24px rgba(0,0,0,0.28)":"none",
                     borderRadius:isDragging?10:0,
                     cursor:isDragging?"grabbing":undefined}}>
+                  {/* Only the PRESS is handled on the grip — move/release are
+                      tracked on window for the life of the drag (see the effect
+                      above), so a release outside it can't strand the drag. */}
                   {!isAuto && (
                     <button type="button" className="xbtn"
                       onPointerDown={e=>startDrag(e,cat,i)}
-                      onPointerMove={moveDrag}
-                      onPointerUp={endDrag}
-                      onPointerCancel={endDrag}
                       onKeyDown={e=>{
                         if(e.key==="ArrowUp"){e.preventDefault();moveCat(-1);}
                         else if(e.key==="ArrowDown"){e.preventDefault();moveCat(1);}
