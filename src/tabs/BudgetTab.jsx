@@ -31,6 +31,10 @@ export function BudgetTab(){
   // appeared to lift. Tracking pointer deltas ourselves lets the whole row move
   // and the other rows slide out of the way, instead of a static drop-line.
   const [drag, setDrag] = useState(null);
+  // True for the couple of frames right after a drop, while the reordered rows
+  // paint at their final positions — see endDrag for why transitions must be off
+  // during that window.
+  const [settling, setSettling] = useState(false);
   const dragRef = useRef(null);
   const rowRefs = useRef(new Map());
   const reduceMotion = typeof window!=="undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -102,9 +106,25 @@ export function BudgetTab(){
     const st = dragRef.current;
     if (!st) return;
     dragRef.current = null;
-    setDrag(null);
     const target = reorderableCats[st.toIdx];
+    // On release two things land in the same frame: the list REORDERS (so the
+    // row is already at its new slot in the DOM) and every transform resets to
+    // 0. With transitions live, the row animates from its dragged offset on top
+    // of a position it has already moved to — it travels twice and reads as a
+    // spike. `settling` kills transitions for the frames where that reset
+    // paints, so rows simply land where they belong; normal sliding resumes
+    // straight after. Two rAFs because the first only guarantees the style is
+    // committed, not that the browser has painted it.
+    setSettling(true);
+    setDrag(null);
     if (target && st.toIdx !== st.fromIdx) reorderCats(st.id, target.id);
+    // rAF is throttled to zero in a backgrounded tab, which would leave
+    // `settling` stuck on and silently disable the slide animation for the rest
+    // of the session — so a timer backstops it.
+    let done = false;
+    const clear = () => { if (!done) { done = true; setSettling(false); } };
+    requestAnimationFrame(() => requestAnimationFrame(clear));
+    setTimeout(clear, 120);
   };
 
   // Plan vs actual — the one chart Phase 1 keeps on Home (ported from the hidden Charts tab)
@@ -198,7 +218,7 @@ export function BudgetTab(){
                     // suppressed on the dragged row (it must track the pointer
                     // exactly, with no lag) and honor Reduce Motion elsewhere.
                     transform:isDragging?`translateY(${drag.dy}px) scale(1.02)`:`translateY(${rowShift(i)}px)`,
-                    transition:isDragging||reduceMotion?"none":"transform .18s cubic-bezier(.2,.8,.2,1)",
+                    transition:isDragging||reduceMotion||settling?"none":"transform .18s cubic-bezier(.2,.8,.2,1)",
                     zIndex:isDragging?20:1,
                     boxShadow:isDragging?"0 8px 24px rgba(0,0,0,0.28)":"none",
                     borderRadius:isDragging?10:0,
