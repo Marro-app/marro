@@ -8,6 +8,7 @@ import { Icon, CatIcon, CatIconPicker, ChangeIconButton } from '../components/ic
 import { MonthPicker } from '../components/pickers.jsx';
 import { SubscriptionsTab } from './SubscriptionsTab.jsx';
 import { useApp } from '../context/AppContext.js';
+import { targetIndexFor, rowShift } from '../lib/reorder.js';
 
 // Budget — the monthly plan (per-category budgets for the selected month), cash
 // flow, health checks, running balance, and notes, plus the add-category and
@@ -53,36 +54,11 @@ export function BudgetTab(){
   // ArrowUp/ArrowDown need the same ordered, filtered list).
   const reorderableCats = cats.filter(c=>!c.locked && !disabledCats.includes(c.id));
 
-  // Where the dragged row would land, given how far it's travelled: walk outward
-  // from its original slot, crossing a neighbour once we've passed that
-  // neighbour's midpoint. Row heights vary (the subscriptions row carries a
-  // subtitle), so they're measured at drag start rather than assumed uniform.
-  const targetIndexFor = (fromIdx, dy, heights) => {
-    let idx = fromIdx, acc = 0;
-    if (dy > 0) {
-      for (let i = fromIdx + 1; i < heights.length; i++) {
-        acc += heights[i];
-        if (dy > acc - heights[i] / 2) idx = i; else break;
-      }
-    } else if (dy < 0) {
-      for (let i = fromIdx - 1; i >= 0; i--) {
-        acc += heights[i];
-        if (-dy > acc - heights[i] / 2) idx = i; else break;
-      }
-    }
-    return idx;
-  };
-
-  // How far a NON-dragged row slides to open the gap. Only rows between the
-  // dragged row's origin and its current target move, each by exactly the
-  // dragged row's height, so the list reads as one continuous shift.
-  const rowShift = (i) => {
-    if (!drag || i === drag.fromIdx) return 0;
-    const { fromIdx, toIdx, heights } = drag;
-    if (fromIdx < toIdx && i > fromIdx && i <= toIdx) return -heights[fromIdx];
-    if (fromIdx > toIdx && i >= toIdx && i < fromIdx) return heights[fromIdx];
-    return 0;
-  };
+  // Reorder geometry (target row + how far the others slide) lives in
+  // src/lib/reorder.js so it can be unit-tested — it has caused two visual bugs
+  // already (a spike on drop, then rubber-banding neighbours) and this file
+  // can't be exercised by the test suite.
+  const shiftFor = (i) => rowShift(i, drag);
 
   const startDrag = (e, cat, idx) => {
     if (e.button != null && e.button !== 0) return;
@@ -97,7 +73,7 @@ export function BudgetTab(){
     const st = dragRef.current;
     if (!st) return;
     const dy = e.clientY - st.startY;
-    const next = { ...st, dy, toIdx: targetIndexFor(st.fromIdx, dy, st.heights) };
+    const next = { ...st, dy, toIdx: targetIndexFor(st.fromIdx, dy, st.heights, st.toIdx) };
     dragRef.current = next;
     setDrag(next);
   };
@@ -217,7 +193,7 @@ export function BudgetTab(){
                     // every other row slides to open the gap. Transitions are
                     // suppressed on the dragged row (it must track the pointer
                     // exactly, with no lag) and honor Reduce Motion elsewhere.
-                    transform:isDragging?`translateY(${drag.dy}px) scale(1.02)`:`translateY(${rowShift(i)}px)`,
+                    transform:isDragging?`translateY(${drag.dy}px) scale(1.02)`:`translateY(${shiftFor(i)}px)`,
                     transition:isDragging||reduceMotion||settling?"none":"transform .18s cubic-bezier(.2,.8,.2,1)",
                     zIndex:isDragging?20:1,
                     boxShadow:isDragging?"0 8px 24px rgba(0,0,0,0.28)":"none",
