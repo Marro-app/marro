@@ -663,6 +663,31 @@ export function App() {
   cats.forEach(c => { rawMonthly[c.id] = disabledCats.includes(c.id) ? 0 : (c.id==="subs" ? subsMo : getMonthVal(c.id)); });
   const moSpend     = moTotal(rawMonthly);
 
+  // Planned spend for ANY month of this year — same rules as getMonthVal (month
+  // override wins, subscriptions are derived, month-disabled categories drop
+  // out) but for an arbitrary month rather than the one being viewed.
+  const plannedForMonth = (mi) => {
+    const mk = MONTH_NAMES[mi];
+    const ov = yr.monthlyOverrides?.[mk];
+    const disM = data.monthDisabled?.[ay+"-"+mk] || [];
+    let total = 0;
+    cats.forEach(c => {
+      if (disM.includes(c.id)) return;
+      if (c.id === "subs") { total += subsMo; return; }
+      total += (ov && ov[c.id] !== undefined) ? ov[c.id] : (Number(yr.monthly[c.id])||0);
+    });
+    return total;
+  };
+  // Burn rate for the header's "Lasts until" tile. Deliberately keyed to the
+  // month containing TODAY, never `selMonth`: the tile is a global "how long
+  // will my money last", but it used to read whichever month you happened to be
+  // browsing in the Monthly plan card. With per-month plans that differ, simply
+  // paging Nov → Dec → Jan made the run-out date jump around, which read as the
+  // math being broken. (Only visible when the burn falls back to the plan — with
+  // two balance check-ins ≥14 days apart, computeRunway measures it instead.)
+  const curMonthIdx = (new Date().getMonth() - 7 + 12) % 12;
+  const runwayPlannedBurn = plannedForMonth(curMonthIdx);
+
   // Spent in a given academic month (sums all dated entries in that calendar month)
   const allEntriesFlat = [...(data.currentWeekEntries||[]), ...((data.weeklyArchive||[]).flatMap(a=>a.entries||[]))];
   const spentInMonth = (catId, mIdx) => {
@@ -750,7 +775,7 @@ export function App() {
   // the Aid tab rather than silently dropped from spending money.
   const strayLoans = unmatchedLoans(data.loans||[], data.years);
   const debtProjection = projectDebtAtGraduation(data.loans||[], gradDate);
-  const runway = computeRunway({ readings: data.balanceReadings||[], plannedMonthlyBurn: moSpend, upcomingRefunds, gradDate, today });
+  const runway = computeRunway({ readings: data.balanceReadings||[], plannedMonthlyBurn: runwayPlannedBurn, upcomingRefunds, gradDate, today });
   // A4 (Phase 2.6 Package A): only meaningful for the tile's "growing" state
   // — cheap to compute regardless, since classifyCushionSource is pure math
   // over data already loaded here.
@@ -1035,7 +1060,7 @@ export function App() {
     nyStart, setNyStart, nyEnd, setNyEnd, yearUndo, setYearUndo,
     // derived financial memos
     yr, yrStartYear, subs, subsMo, annGrant, annTuition, annHlth, annDisburse,
-    annOther, annLoanCash, aidBreakdown, strayLoans, moSpendable, safeToSpend, safeToSpendMo,
+    annOther, annLoanCash, aidBreakdown, strayLoans, moSpendable, safeToSpend, safeToSpendMo, runwayPlannedBurn,
     monthKey, disabledCats, moSpend, allEntriesFlat,
     spentInMonth, unbudgetedCats, unbudgetedTotal, moSurplus, monthNetFor,
     runningBalance, curYrNet, priorYearsCarryover, totalAccumulatedBalance,

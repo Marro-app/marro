@@ -800,7 +800,7 @@ function RefundPlaybook({ data, upd, moSpend, refundNudgeConfirmed, setRefundNud
 }
 
 export function LoansTab() {
-  const { data, upd, moSpend, refundNudgeConfirmed, setRefundNudgeConfirmed } = useApp();
+  const { data, upd, moSpend, runwayPlannedBurn, refundNudgeConfirmed, setRefundNudgeConfirmed } = useApp();
   const [moreOpenIds, setMoreOpenIds] = useState(() => new Set());
   const toggleMore = (id) => setMoreOpenIds((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const loansGridRef = useRef(null);
@@ -840,7 +840,7 @@ export function LoansTab() {
 
   return (
     <div role="tabpanel" id="tab-panel" aria-labelledby="tab-loans" tabIndex={0} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <RefundPlaybook data={data} upd={upd} moSpend={moSpend} refundNudgeConfirmed={refundNudgeConfirmed} setRefundNudgeConfirmed={setRefundNudgeConfirmed} />
+      <RefundPlaybook data={data} upd={upd} moSpend={runwayPlannedBurn ?? moSpend} refundNudgeConfirmed={refundNudgeConfirmed} setRefundNudgeConfirmed={setRefundNudgeConfirmed} />
       <ReminderBanner data={data} upd={upd} />
 
       {loans.length === 0 && (
