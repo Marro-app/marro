@@ -52,7 +52,16 @@ export function BudgetTab(){
   // Visible, reorderable categories for this month — shared by the plan list
   // and its drag/keyboard reorder logic (both mouse-drag drop targets and
   // ArrowUp/ArrowDown need the same ordered, filtered list).
-  const reorderableCats = cats.filter(c=>!c.locked && !disabledCats.includes(c.id));
+  // Rows that can actually be dragged. `autoCalc` categories (Fixed monthly
+  // costs) are excluded on purpose: they're a derived total, not a budget line
+  // you set, so they're pinned to the bottom of the list. Leaving them in here
+  // was enough to break that — they had no grip so they couldn't be PICKED UP,
+  // but they still occupied a slot, so other rows could be dropped BELOW them.
+  const reorderableCats = cats.filter(c=>!c.locked && !c.autoCalc && !disabledCats.includes(c.id));
+  const pinnedCats = cats.filter(c=>!c.locked && c.autoCalc && !disabledCats.includes(c.id));
+  // Pinned rows render last, so a reorderable row's display index still equals
+  // its index in `reorderableCats` — which is what all the drag math indexes by.
+  const displayCats = [...reorderableCats, ...pinnedCats];
 
   // Reorder geometry (target row + how far the others slide) lives in
   // src/lib/reorder.js so it can be unit-tested — it has caused two visual bugs
@@ -217,7 +226,7 @@ export function BudgetTab(){
               <div style={{fontWeight:700,fontSize:14,color:C.text}}>{fmt(yr.monthly.housing||0)}<span style={{fontSize:11,fontWeight:400,color:C.gray}}>/mo</span></div>
             </div>
 
-            {reorderableCats.map((cat,i)=>{
+            {displayCats.map((cat,i)=>{
               const isAuto = cat.autoCalc===true;
               const isDragging = drag?.id===cat.id;
               const isDisabled = disabledCats.includes(cat.id);
