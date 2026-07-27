@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
-  fmt, fmtS, fmtD, fmtA, fmtSA, moTotal, subMonthlyTotal, catColorIndex, DEFAULT_CATS,
+  fmt, fmtS, fmtD, fmtA, fmtSA, moTotal, subMonthlyTotal, catColorIndex, DEFAULT_CATS, yearMonthRange,
   generateYearConfigs, yr2, blankYearFields, BLANK_MONTHLY,
   getMonday, getSunday, fmtWeekLabel, daysUntil, getYearMonthStr, todayStr,
   sanitizeMoneyInput, MAX_QUICK_ADD_AMOUNT,
@@ -258,5 +258,26 @@ describe('catColorIndex — colours follow the category, not its list position',
     const withNew = [...cats, { id: 'cat_300', label: 'Pets' }];
     expect(catColorIndex('cat_100', withNew)).toBe(catColorIndex('cat_100', cats));
     expect(catColorIndex('cat_200', withNew)).toBe(catColorIndex('cat_200', cats));
+  });
+});
+
+describe('yearMonthRange — a school year is not always 12 months', () => {
+  it('maps a full Aug–Jul year to the whole grid', () => {
+    expect(yearMonthRange({ startDate: '2026-08-01', endDate: '2027-07-31' })).toEqual({ from: 0, to: 11 });
+  });
+  it("stops at the year's real end month (Aug 2026 – May 2027 = 10 months)", () => {
+    // Jun and Jul are outside this year, so the plan must not offer them.
+    expect(yearMonthRange({ startDate: '2026-08-24', endDate: '2027-05-21' })).toEqual({ from: 0, to: 9 });
+  });
+  it('handles a year that starts late', () => {
+    expect(yearMonthRange({ startDate: '2026-09-01', endDate: '2027-05-31' })).toEqual({ from: 1, to: 9 });
+  });
+  it('falls back to the full year on missing or unparseable dates', () => {
+    expect(yearMonthRange({ startDate: null, endDate: '2027-05-21' })).toEqual({ from: 0, to: 11 });
+    expect(yearMonthRange({ startDate: 'nope', endDate: 'nope' })).toEqual({ from: 0, to: 11 });
+    expect(yearMonthRange(undefined)).toEqual({ from: 0, to: 11 });
+  });
+  it('falls back rather than inverting when the dates are backwards', () => {
+    expect(yearMonthRange({ startDate: '2027-05-01', endDate: '2026-08-01' })).toEqual({ from: 0, to: 11 });
   });
 });

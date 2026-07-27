@@ -17,7 +17,13 @@ const monthGroups = (startYear) => {
   if (!Number.isFinite(y) || y < 1900) return [{year:null, from:0, to:12}];
   return [{year:y, from:0, to:MONTH_YEAR_SPLIT}, {year:y+1, from:MONTH_YEAR_SPLIT, to:12}];
 };
-const MonthGrid = ({startYear, selectedMi, onPick}) => (
+// `range` ({from,to} inclusive, from yearMonthRange) limits which months the
+// school year actually covers. Marro's month list is a fixed Aug→Jul array, but
+// a year can be shorter — Aug 2026 – May 2027 is 10 months — and offering June
+// and July of a year the student isn't enrolled for lets them budget into
+// months that don't exist. Out-of-range months stay VISIBLE but disabled, so
+// the year's shape is legible rather than the grid silently changing size.
+const MonthGrid = ({startYear, selectedMi, onPick, range}) => (
   <>
     {monthGroups(startYear).map((g,gi)=>(
       <div key={gi} style={gi>0?{marginTop:8}:undefined}>
@@ -25,8 +31,11 @@ const MonthGrid = ({startYear, selectedMi, onPick}) => (
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:3}}>
           {MONTH_NAMES.slice(g.from,g.to).map((m,idx)=>{
             const mi=g.from+idx, sel=mi===selectedMi;
+            const off = range ? (mi < range.from || mi > range.to) : false;
             return (
-              <button key={mi} type="button" onClick={()=>onPick(mi)} aria-pressed={sel} style={{padding:"5px 2px",borderRadius:8,border:"none",fontSize:11,fontWeight:sel?700:400,background:sel?C.selBg:"transparent",color:sel?C.text:C.gray,cursor:"pointer",transition:"background 0.1s"}}>
+              <button key={mi} type="button" onClick={()=>{ if(!off) onPick(mi); }} aria-pressed={sel}
+                disabled={off} title={off?"Outside this school year's dates":undefined}
+                style={{padding:"5px 2px",borderRadius:8,border:"none",fontSize:11,fontWeight:sel?700:400,background:sel?C.selBg:"transparent",color:off?C.borderDark:(sel?C.text:C.gray),cursor:off?"not-allowed":"pointer",opacity:off?0.45:1,transition:"background 0.1s"}}>
                 {m}
               </button>
             );
@@ -37,7 +46,7 @@ const MonthGrid = ({startYear, selectedMi, onPick}) => (
   </>
 );
 
-export const MonthPicker = ({value, onChange, startYear}) => {
+export const MonthPicker = ({value, onChange, startYear, range}) => {
   const [open, setOpen] = useState(false);
   const btnRef = React.useRef(null);
   useLiftCard(open, btnRef);
@@ -50,7 +59,7 @@ export const MonthPicker = ({value, onChange, startYear}) => {
       {open && <>
         <div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
         <div style={popoverStyle(220, "right")}>
-          <MonthGrid startYear={startYear} selectedMi={value} onPick={mi=>{onChange(mi);setOpen(false);}}/>
+          <MonthGrid startYear={startYear} range={range} selectedMi={value} onPick={mi=>{onChange(mi);setOpen(false);}}/>
         </div>
       </>}
     </div>

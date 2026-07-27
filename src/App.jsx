@@ -7,7 +7,7 @@ import { setAnalyticsContext } from './lib/analytics.js';
 import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
-import { fmt, fmtS, fmtD, fmtDay, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr } from './lib/format.js';
+import { fmt, fmtS, fmtD, fmtDay, fmtDayYear, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr } from './lib/format.js';
 import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState, classifyCushionSource } from './lib/loans.js';
 import { yearAidBreakdown, unmatchedLoans, availableMoney } from './lib/aid.js';
 import { WEEKS_PER_MONTH, USMLE_STEP_FEE_ESTIMATE } from './lib/constants.js';
@@ -101,19 +101,19 @@ function runwayTileDisplay(runway, cushionSource) {
       };
     case 'gap':
       return {
-        label: 'Lasts until', value: fmtDay(runway.runOutDate), color: C.amber, alert: true,
+        label: 'Lasts until', value: fmtDayYear(runway.runOutDate), color: C.amber, alert: true,
         sub: `${fmt(runway.spendable)} left — short before your next refund`,
         detail: `You run out about ${runway.gapDays} days before your next refund (around ${fmtDay(runway.nextRefund.date)}). Cutting about ${fmt(runway.trimPerMonthToClose)}/mo would close the gap.${runway.savings > 0 ? ` You also have ${fmt(runway.savings)} in savings if you need it.` : ''}`,
       };
     case 'counting_down': {
       if (runway.basicallyOnTrack) {
         return {
-          label: 'Lasts until', value: fmtDay(runway.runOutDate), color: C.green,
+          label: 'Lasts until', value: fmtDayYear(runway.runOutDate), color: C.green,
           sub: `${fmt(runway.spendable)} left — you're basically on track ✓`,
         };
       }
       return {
-        label: 'Lasts until', value: fmtDay(runway.runOutDate), color: C.text,
+        label: 'Lasts until', value: fmtDayYear(runway.runOutDate), color: C.text,
         sub: `${fmt(runway.spendable)} left at your current pace`,
         detail: runway.savings > 0 ? `You have ${fmt(runway.savings)} in savings on top of this.` : undefined,
       };

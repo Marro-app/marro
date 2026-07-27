@@ -90,6 +90,27 @@ export const fmtS = n => { const r=Math.round(n); if(r===0) return "$0"; return 
 export const fmtD = n => "$"+Math.abs(Number(n)||0).toFixed(2);
 // Short human date for entry lists ("Jun 8") — raw ISO strings read like database output
 export const fmtDay = d => d ? new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}) : "";
+// Same as fmtDay but carries the year. A school year spans two calendar years,
+// so a bare "Nov 6" is ambiguous on anything describing a point in that span.
+export const fmtDayYear = d => d ? new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "";
+
+/**
+ * The MONTH_NAMES indices a school year actually covers, from its real dates.
+ * Marro's month list is a fixed Aug→Jul array, but a year record can be shorter
+ * (e.g. Aug 2026 – May 2027 is 10 months) — without this the Monthly plan would
+ * offer June and July of a year the student isn't enrolled for.
+ * Returns {from, to} inclusive; falls back to the full year on bad/absent dates.
+ */
+export function yearMonthRange(year) {
+  const idx = (iso) => {
+    if (!iso) return null;
+    const d = new Date(iso + "T12:00:00");
+    return Number.isNaN(d.getTime()) ? null : (d.getMonth() - 7 + 12) % 12;
+  };
+  const from = idx(year?.startDate), to = idx(year?.endDate);
+  if (from == null || to == null || to < from) return { from: 0, to: 11 };
+  return { from, to };
+}
 // Actual money (logged/imported spending): show cents only when they exist — never round real transactions
 export const fmtA = n => { const v=Math.abs(Number(n)||0); const cents=Math.round(v*100)%100!==0; return "$"+v.toLocaleString(undefined,cents?{minimumFractionDigits:2,maximumFractionDigits:2}:{maximumFractionDigits:0}); };
 export const fmtSA = n => { const v=Number(n)||0; if(Math.round(v*100)===0) return "$0"; return (v>0?"+":"-")+fmtA(v); };
