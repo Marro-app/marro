@@ -19,7 +19,7 @@ import { targetIndexFor, rowShift } from '../lib/reorder.js';
 export function BudgetTab(){
   const { data, cats, ay, yr, yrStartYear, selMonth, setSelMonth, subs, subsMo, disabledCats,
           moSpend, moSpendable, moSurplus, runningBalance, totalAccumulatedBalance,
-          priorYearsCarryover, annDisburse, annOther, aidBreakdown, safeToSpend, safeToSpendMo, runway, upd, allEntriesFlat,
+          priorYearsCarryover, annDisburse, annOther, aidBreakdown, safeToSpend, safeToSpendMo, planBase, runway, upd, allEntriesFlat,
           getMonthVal, spentInMonth, unbudgetedCats, unbudgetedTotal, promoteToBudget,
           toggleMonthCat, setMo, reorderCats, addCat,
           newCatName, setNewCatName, newCatIcon, setNewCatIcon, iconPickOpen, setIconPickOpen } = useApp();
@@ -46,10 +46,6 @@ export function BudgetTab(){
   const [confirmLean, setConfirmLean] = useState(null);
   // What the cash on hand supports until the next payment lands (src/lib/aid.js).
   const untilNext = safeToSpend?.untilNextMoney || null;
-  // What the monthly plan is measured against. When a dry spell is coming, the
-  // honest yardstick is the tighter "until your next money" figure, not the year
-  // average that would run you out before then.
-  const planBase = (untilNext && untilNext.perMonth < safeToSpendMo) ? untilNext.perMonth : safeToSpendMo;
 
   // ── Budgeting through a dry spell ──────────────────────────────────────────
   // The months between now and the next payment. Scaling these to `untilNext`

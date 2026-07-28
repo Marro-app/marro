@@ -636,6 +636,11 @@ export function App() {
   // would silently double-count and inflate the year-end net.
   const safeToSpend   = availableMoney({ year: yr, loans: data.loans||[], readings: data.balanceReadings||[], today: todayStr() });
   const safeToSpendMo = safeToSpend.perMonth;
+  // What the monthly plan is measured against. When a dry spell is coming, the
+  // honest yardstick is the tighter "until your next money" figure, not the year
+  // average that would run you out before then.
+  const planBase = (safeToSpend.untilNextMoney && safeToSpend.untilNextMoney.perMonth < safeToSpendMo)
+    ? safeToSpend.untilNextMoney.perMonth : safeToSpendMo;
   // Month-disabled categories
   const monthKey = ay+"-"+MONTH_NAMES[selMonth];
   const disabledCats = data.monthDisabled?.[monthKey]||[];
@@ -1080,7 +1085,7 @@ export function App() {
     nyStart, setNyStart, nyEnd, setNyEnd, yearUndo, setYearUndo,
     // derived financial memos
     yr, yrStartYear, subs, subsMo, annGrant, annTuition, annHlth, annDisburse,
-    annOther, annLoanCash, aidBreakdown, strayLoans, moSpendable, safeToSpend, safeToSpendMo, runwayPlannedBurn,
+    annOther, annLoanCash, aidBreakdown, strayLoans, moSpendable, safeToSpend, safeToSpendMo, planBase, runwayPlannedBurn,
     monthKey, disabledCats, moSpend, allEntriesFlat,
     spentInMonth, unbudgetedCats, unbudgetedTotal, moSurplus, monthNetFor,
     runningBalance, curYrNet, priorYearsCarryover, totalAccumulatedBalance,
@@ -1487,8 +1492,8 @@ export function App() {
               : undefined}/>
         ); })()}
         {SHOW_PHASE2_TILES
-          ? <MetricTile label="Monthly plan"  value={fmt(moSpend)} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/>
-          : <div style={{flex:"0 1 320px",minWidth:130}}><MetricTile label="Monthly plan"  value={fmt(moSpend)} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/></div>
+          ? <MetricTile label="Monthly plan"  value={fmt(moSpend)} ring={{value:moSpend,max:planBase,color:moSpend>planBase?C.neg:C.teal}} sub={planBase>0?`of ${fmt(planBase)} you can spend`:(subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending")}/>
+          : <div style={{flex:"0 1 320px",minWidth:130}}><MetricTile label="Monthly plan"  value={fmt(moSpend)} ring={{value:moSpend,max:planBase,color:moSpend>planBase?C.neg:C.teal}} sub={planBase>0?`of ${fmt(planBase)} you can spend`:(subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending")}/></div>
         }
         {SHOW_PHASE2_TILES && <MetricTile label="Debt" value={fmt(debtProjection.total)} sub={debtProjection.isEstimate?"estimate":"at graduation"}/>}
       </div>
