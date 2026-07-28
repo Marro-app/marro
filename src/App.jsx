@@ -1492,8 +1492,8 @@ export function App() {
               : undefined}/>
         ); })()}
         {SHOW_PHASE2_TILES
-          ? <MetricTile label="Monthly plan"  value={fmt(moSpend)} ring={{value:moSpend,max:planBase,color:moSpend>planBase?C.neg:C.teal}} sub={planBase>0?`of ${fmt(planBase)} you can spend`:(subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending")}/>
-          : <div style={{flex:"0 1 320px",minWidth:130}}><MetricTile label="Monthly plan"  value={fmt(moSpend)} ring={{value:moSpend,max:planBase,color:moSpend>planBase?C.neg:C.teal}} sub={planBase>0?`of ${fmt(planBase)} you can spend`:(subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending")}/></div>
+          ? <MetricTile label="Monthly plan"  value={fmt(moSpend)} progress={{value:moSpend,max:planBase,color:moSpend>planBase?C.neg:C.teal}} sub={planBase>0?`of ${fmt(planBase)} you can spend`:(subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending")}/>
+          : <div style={{flex:"0 1 320px",minWidth:130}}><MetricTile label="Monthly plan"  value={fmt(moSpend)} progress={{value:moSpend,max:planBase,color:moSpend>planBase?C.neg:C.teal}} sub={planBase>0?`of ${fmt(planBase)} you can spend`:(subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending")}/></div>
         }
         {SHOW_PHASE2_TILES && <MetricTile label="Debt" value={fmt(debtProjection.total)} sub={debtProjection.isEstimate?"estimate":"at graduation"}/>}
       </div>

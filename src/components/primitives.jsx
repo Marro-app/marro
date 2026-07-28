@@ -351,11 +351,16 @@ export const Divider = () => <div style={{height:1,background:C.border,margin:"1
 // was removed — it truncated the runway warning with an ellipsis; the overflow
 // lives behind subIcon instead), so sibling tiles stay the same height with no
 // reserved-line trick needed.
-// `ring` ({value, max, color}) draws a progress ring in the tile's top-right —
-// used by Monthly plan to show how much of what you can spend the plan uses, so
-// the figure answers "is that a lot?" without needing a second number. The ring
-// is decorative (RingProgress is aria-hidden); `sub` carries the meaning.
-export const MetricTile = ({label, value, sub, color, onClick, role, ariaLive, subIcon, ring}) => (
+// `progress` ({value, max, color}) fills a hairline along the tile's BOTTOM
+// edge, mirroring the highlight already drawn along its top. Used by Monthly
+// plan to show how much of what you can spend the plan uses, so the figure
+// answers "is that a lot?" without a second number competing with it.
+// A ring in the corner was tried first and read as a floating puck: it sat apart
+// from everything, crowded the value, and the other tiles have no such element
+// so it looked bolted on. An edge fill is the quieter, more Apple-like form
+// (chrome defers to content) and uses the full width, so it reads as a scale.
+// Purely decorative — `sub` carries the meaning, so it is never colour-only.
+export const MetricTile = ({label, value, sub, color, onClick, role, ariaLive, subIcon, progress}) => (
   <div onClick={onClick} role={role} aria-live={ariaLive} style={{
     background:"rgba(255,255,255,0.07)",
     backdropFilter:"blur(40px) saturate(180%)",
@@ -368,12 +373,12 @@ export const MetricTile = ({label, value, sub, color, onClick, role, ariaLive, s
     position:"relative", overflow:"hidden",
   }}>
     <div style={{position:"absolute",left:"8%",right:"8%",top:0,height:1,background:"linear-gradient(90deg,transparent,rgba(255,255,255,0.40),transparent)",pointerEvents:"none"}}/>
-    {ring && ring.max>0 && (
-      <div style={{position:"absolute",top:12,right:14}}>
-        <RingProgress value={ring.value} max={ring.max} size={34} color={ring.color}/>
+    {progress && progress.max>0 && (
+      <div aria-hidden="true" style={{position:"absolute",left:0,right:0,bottom:0,height:3,background:"rgba(255,255,255,0.06)"}}>
+        <div style={{width:`${Math.min(100,(progress.value/progress.max)*100)}%`,height:"100%",background:progress.color||C.teal,transition:"width .5s cubic-bezier(0.23,1,0.32,1)"}}/>
       </div>
     )}
-    <div style={{fontSize:10,color:C.gray,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600,paddingRight:ring?38:0}}>{label}</div>
+    <div style={{fontSize:10,color:C.gray,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}}>{label}</div>
     <div style={{fontSize:24,fontWeight:700,color:color||C.text,letterSpacing:"-0.02em",lineHeight:1.15,fontFamily:"'Newsreader',Georgia,serif",fontVariantNumeric:"tabular-nums lining-nums"}}>{value}</div>
     {sub && <div style={{fontSize:11,color:C.gray,marginTop:4,lineHeight:1.4,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
       <span>{sub}</span>{subIcon}</div>}
