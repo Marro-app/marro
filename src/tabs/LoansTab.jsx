@@ -546,11 +546,13 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
   );
 }
 
-function BalanceCheckin({ data, upd }) {
+function BalanceCheckin({ data, upd, runway }) {
   const readings = data.balanceReadings || [];
   const sorted = [...readings].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const last = sorted[sorted.length - 1] || null;
   const lastSavings = [...sorted].reverse().find((r) => r.savings != null);
+
+  const pace = runway?.actualPace || null;
 
   const [spendable, setSpendable] = useState('');
   const [savings, setSavings] = useState(lastSavings ? String(lastSavings.savings) : '');
@@ -641,6 +643,20 @@ function BalanceCheckin({ data, upd }) {
               </div>
             ))}
           </div>
+          {/* How the plan is actually going. This belongs here more than anywhere
+              else: it's the moment the student is looking at their real balance.
+              Shown only when there's enough history to judge (see compareToPlan). */}
+          {pace && pace.meaningful && (
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, fontSize: 11, color: C.text, lineHeight: 1.6 }}>
+              Your plan expected about <strong>{fmt(pace.expected)}</strong> by now and you checked in{' '}
+              <strong>{fmt(pace.actual)}</strong>, so you&apos;re <strong style={{ color: pace.drift < 0 ? C.amber : C.green }}>
+                {fmt(Math.abs(pace.drift))} {pace.drift < 0 ? 'over' : 'under'}
+              </strong> since {fmtDay(pace.sinceDate)}.
+              {pace.drift < 0 && pace.runOutDate
+                ? <> At that pace your money would last to <strong>{fmtDay(pace.runOutDate)}</strong> rather than <strong>{fmtDay(runway.runOutDate)}</strong>.</>
+                : <> Keep that up and your money lasts longer than your plan says.</>}
+            </div>
+          )}
         </div>
       )}
     </Card>
@@ -798,7 +814,7 @@ function RefundPlaybook({ data, upd, moSpend, refundNudgeConfirmed, setRefundNud
 }
 
 export function LoansTab() {
-  const { data, upd, moSpend, runwayPlannedBurn, refundNudgeConfirmed, setRefundNudgeConfirmed } = useApp();
+  const { data, upd, moSpend, runwayPlannedBurn, runway, refundNudgeConfirmed, setRefundNudgeConfirmed } = useApp();
   const [moreOpenIds, setMoreOpenIds] = useState(() => new Set());
   const toggleMore = (id) => setMoreOpenIds((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const loansGridRef = useRef(null);
@@ -918,7 +934,7 @@ export function LoansTab() {
         </button>
       </div>
 
-      <BalanceCheckin data={data} upd={upd} />
+      <BalanceCheckin data={data} upd={upd} runway={runway} />
     </div>
   );
 }

@@ -92,6 +92,34 @@ exactly (1) — the projection is the same formula's degenerate case, not a riva
 being a monthly rate. The Budget tab reframes it as "Left for the rest of the
 year" instead of showing a misleading `/mo`.
 
+### (3) The runway projects on the PLAN, not on measured spending
+
+`computeRunway` used to derive its burn rate from the gap between two balance
+check-ins. It now always uses `plannedMonthlyBurn` (see `runwayPlannedBurn` in
+`App.jsx`, keyed to the month containing TODAY, never the month being browsed).
+
+Why: the headline should rest on a number the student sets and can change. A
+measured rate moved the date for reasons they didn't decide, and did nothing at
+all until two check-ins existed 14+ days apart.
+
+Check-ins now answer a better question — is the plan working? `compareToPlan()`
+returns `expected` (previous balance + money landed since − plan for those days)
+against `actual`, plus the real `actualPerMonth`. It reports two separate flags,
+which must not be conflated:
+
+- `measurable` — enough history to state a pace at all (2 readings, ≥7 days)
+- `meaningful` — the gap from plan is big enough to be worth warning about
+
+`computeRunway` exposes this as `actualPace` (present whenever measurable),
+carrying its own `runOutDate` from the same `projectBalance` so the plan and
+reality projections can never diverge in method.
+
+**⚠ `growing` must keep reading the measured delta.** It used to mean "measured
+burn is ~0". With the plan always supplying a positive burn that could never fire
+again, silently killing the "Extra loan money, you may be able to return some"
+tile (a locked decision — never green when borrowed). Growth detection is now
+independent of which burn drives the projection; `loans.test.js` guards it.
+
 ---
 
 ## Phase 2: Loans, Debt & Runway (2026-07-13)

@@ -82,6 +82,15 @@ let markedSessionDecided = false;
 // states carry a run-out date, so each state returns its own `label`: the states
 // with no date fall back to "Money left" rather than reading "Lasts until / $0".
 function runwayTileDisplay(runway, cushionSource) {
+  // Spending faster than planned. The tile keeps its three lines: this REPLACES
+  // the usual sub rather than adding to it.
+  const pace = runway.actualPace;
+  const behind = (pace && pace.meaningful && pace.drift < 0 && pace.runOutDate) ? {
+    label: 'Lasts until', value: fmtDayYear(runway.runOutDate), color: C.amber, alert: true,
+    sub: 'spending faster than planned',
+    detail: `Your plan expected about ${fmt(pace.expected)} by now and you checked in ${fmt(pace.actual)}, so you're ${fmt(Math.abs(pace.drift))} over since ${fmtDay(pace.sinceDate)}. At that pace your money would last to ${fmtDayYear(pace.runOutDate)} instead of ${fmtDayYear(runway.runOutDate)}. Either lower your monthly plan or spend closer to it.`,
+  } : null;
+
   switch (runway.state) {
     case 'unanchored':
       return { label: 'Money left', value: '—', sub: 'add your balance to see this', color: C.gray };
@@ -89,6 +98,7 @@ function runwayTileDisplay(runway, cushionSource) {
       if (cushionSource === 'own') return { label: 'Money left', value: 'Saving more than you spend ✓', sub: 'your balance grows a little each month', color: C.green };
       return { label: 'Money left', value: 'Extra loan money', sub: 'you may be able to return some, see your Loans tab', color: C.blue };
     case 'through_graduation':
+      if (behind) return behind;
       return {
         label: 'Lasts until', value: 'Graduation', color: C.green,
         sub: `${fmt(runway.spendable)} left, enough the whole way`,
@@ -116,6 +126,11 @@ function runwayTileDisplay(runway, cushionSource) {
       };
     }
     case 'counting_down': {
+      // Ranked below the dry-spell warning (the 'gap' state above), which is the
+      // more urgent thing. The headline date comes from the PLAN, so if the plan
+      // isn't being followed the student has to be told, or the date quietly
+      // becomes fiction.
+      if (behind) return behind;
       if (runway.basicallyOnTrack) {
         return {
           label: 'Lasts until', value: fmtDayYear(runway.runOutDate), color: C.green,

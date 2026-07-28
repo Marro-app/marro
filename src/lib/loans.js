@@ -603,6 +603,64 @@ export function projectBalance({ startDate, startBalance, dailyBurn, inflows, ho
   return { runOutDate: addDays(cursor, Math.floor(balance / dailyBurn)), shortfalls };
 }
 
+/** Below this many days between check-ins, a comparison is noise, not a signal. */
+const DRIFT_MIN_DAYS = 7;
+/** Drift under this share of what was planned isn't worth telling anyone about. */
+const DRIFT_MIN_SHARE = 0.1;
+
+/**
+ * How the student is doing against the plan they set.
+ *
+ * The runway projects on the PLAN — the number they chose and can change (see
+ * computeRunway). That leaves an obvious question the plan can't answer: is it
+ * actually working? This answers it by comparing where the plan said they'd be
+ * to where they really are.
+ *
+ *   expected = previous balance + money that landed since − plan for those days
+ *   drift    = actual − expected      (negative means overspending)
+ *
+ * Inflows that landed BETWEEN the two check-ins have to be added, or a
+ * disbursement makes the student look like they magically underspent. Same
+ * straddle rule computeRunway uses for its own window.
+ *
+ * `meaningful` gates the whole thing: two check-ins three days apart with one
+ * big grocery run in between implies an absurd monthly pace, and a tiny drift
+ * is just life. Callers should show nothing when it's false rather than
+ * reporting a number they'd have to caveat.
+ */
+export function compareToPlan({ readings, plannedMonthlyBurn, inflows, today }) {
+  const none = { measurable: false, meaningful: false };
+  const sorted = normalizeReadings(readings, today);
+  if (sorted.length < 2) return none;
+
+  const prev = sorted[sorted.length - 2];
+  const latest = sorted[sorted.length - 1];
+  const daysElapsed = daysBetween(prev.date, latest.date);
+  if (daysElapsed < DRIFT_MIN_DAYS) return none;
+
+  const landedBetween = (inflows || [])
+    .filter((r) => r.date && r.date > prev.date && r.date <= latest.date)
+    .reduce((a, r) => a + (Number(r.amount) || 0), 0);
+
+  const plannedSpend = (Number(plannedMonthlyBurn) || 0) / DAYS_PER_MONTH * daysElapsed;
+  const expected = readingTotal(prev) + landedBetween - plannedSpend;
+  const actual = readingTotal(latest);
+  const drift = actual - expected;
+
+  // What they actually spent over the window, as a monthly rate. Floors at 0:
+  // a balance that grew is not "negative spending", it's covered by the
+  // growing state instead.
+  const actualSpend = readingTotal(prev) + landedBetween - actual;
+  const actualPerMonth = Math.max(0, (actualSpend / daysElapsed) * DAYS_PER_MONTH);
+
+  // Two separate questions, deliberately not conflated:
+  //   measurable — we have enough history to state a real pace at all.
+  //   meaningful — the gap from the plan is big enough to be worth saying.
+  // The pace is a fact either way; only the WARNING should wait on meaningful.
+  const meaningful = plannedSpend > 0 && Math.abs(drift) > plannedSpend * DRIFT_MIN_SHARE;
+  return { measurable: true, meaningful, sinceDate: prev.date, asOf: latest.date, daysElapsed, expected, actual, drift, actualPerMonth };
+}
+
 export function computeRunway({ readings, plannedMonthlyBurn, upcomingRefunds, gradDate, today }) {
   if (gradDate && gradDate <= today) return { state: 'graduated' };
 
@@ -618,27 +676,34 @@ export function computeRunway({ readings, plannedMonthlyBurn, upcomingRefunds, g
     return { state: 'overdrawn', spendable, savings, coveredBySavings: savings > 0, asOf: latest.date };
   }
 
-  // ── Burn rate: measured from real balance history when we can trust it, the student's plan otherwise ──
-  let burn;
+  // ── Burn rate: the student's PLAN, always ──────────────────────────────────
+  // This used to measure the rate from the gap between two check-ins. Founder
+  // call (2026-07-27): the headline should rest on the monthly plan instead,
+  // because that's the number the student actually sets and can change. A
+  // measured rate moved the date for reasons they didn't decide (one costly
+  // fortnight rewrote it), and it did nothing at all until two check-ins existed
+  // 14+ days apart, so the feature was dead for new users. Whether the plan is
+  // WORKING is a separate question, answered by compareToPlan below.
+  const burn = { amount: plannedMonthlyBurn ?? 0, source: 'plan', windowDays: null };
+
+  // Growth is still detected from the real balance, independently of the burn
+  // above. It has to be: `growing` used to be "measured burn is ~zero", and with
+  // the plan always supplying a positive burn that could never fire again —
+  // silently taking the "Extra loan money, you may be able to return some" tile
+  // with it, which is a locked decision (never green when borrowed).
+  const measured = compareToPlan({ readings, plannedMonthlyBurn, inflows: upcomingRefunds, today });
   if (sorted.length >= 2) {
     const prev = sorted[sorted.length - 2];
     const windowDays = daysBetween(prev.date, latest.date);
     if (windowDays >= 14) {
-      const refunds = upcomingRefunds || [];
-      // Straddle case: only refunds that landed strictly between the two
-      // readings count as "known inflow" to net back out — one dated before
-      // `prev` was already reflected in `prev`'s balance, and one dated after
-      // `latest` hasn't happened yet from this window's point of view.
-      const knownInflowsBetween = refunds
+      const landedBetween = (upcomingRefunds || [])
         .filter((r) => r.date > prev.date && r.date <= latest.date)
         .reduce((a, r) => a + (Number(r.amount) || 0), 0);
-      const delta = readingTotal(prev) - readingTotal(latest) + knownInflowsBetween;
-      burn = { amount: (delta / windowDays) * DAYS_PER_MONTH, source: 'measured', windowDays };
-    } else {
-      burn = { amount: plannedMonthlyBurn ?? 0, source: 'plan', windowDays };
+      const spentOverWindow = readingTotal(prev) - readingTotal(latest) + landedBetween;
+      if ((spentOverWindow / windowDays) * DAYS_PER_MONTH <= GROWING_EPSILON) {
+        return { state: 'growing', spendable, savings, total, burn, asOf: latest.date };
+      }
     }
-  } else {
-    burn = { amount: plannedMonthlyBurn ?? 0, source: 'plan', windowDays: null };
   }
 
   if (burn.amount <= GROWING_EPSILON) {
@@ -654,6 +719,24 @@ export function computeRunway({ readings, plannedMonthlyBurn, upcomingRefunds, g
   const shortfalls = spendableProj.shortfalls;
   const cushionExtensionDate = projectBalance({ startDate: latest.date, startBalance: total, dailyBurn, inflows: upcomingRefunds, horizon: gradDate }).runOutDate;
 
+  // What actually happens if they keep spending the way they have been. Same
+  // projection method as the headline, just fed the real pace instead of the
+  // plan, so the two can never diverge in how they were worked out. Present
+  // only when the comparison is worth showing (see compareToPlan).
+  const actualPace = measured.measurable ? {
+    perMonth: measured.actualPerMonth,
+    drift: measured.drift,
+    // Only warn when the gap from the plan is big enough to be worth saying;
+    // the pace itself is reported either way.
+    meaningful: measured.meaningful,
+    sinceDate: measured.sinceDate,
+    expected: measured.expected,
+    actual: measured.actual,
+    runOutDate: measured.actualPerMonth > GROWING_EPSILON
+      ? projectBalance({ startDate: latest.date, startBalance: spendable, dailyBurn: measured.actualPerMonth / DAYS_PER_MONTH, inflows: upcomingRefunds, horizon: gradDate }).runOutDate
+      : null,
+  } : null;
+
   // A dry spell outranks "you're fine through graduation": lasting the whole way
   // is no comfort if there's a month with $0 in it on the way there. Checked
   // BEFORE the through_graduation branch for exactly that reason.
@@ -666,7 +749,7 @@ export function computeRunway({ readings, plannedMonthlyBurn, upcomingRefunds, g
     const neededMonthlyBurn = daysUntilRefund > 0 ? (spendable / daysUntilRefund) * DAYS_PER_MONTH : 0;
     const trimPerMonthToClose = Math.max(0, burn.amount - neededMonthlyBurn);
     return {
-      state: 'gap', spendable, savings, total, burn, runOutDate, cushionExtensionDate, shortfalls,
+      state: 'gap', spendable, savings, total, burn, runOutDate, cushionExtensionDate, shortfalls, actualPace,
       gapDays: firstShort.daysShort, trimPerMonthToClose,
       nextRefund: { date: firstShort.nextInflowDate, isEstimate: firstShort.isEstimate },
       asOf: latest.date,
@@ -677,10 +760,10 @@ export function computeRunway({ readings, plannedMonthlyBurn, upcomingRefunds, g
   const basicallyOnTrack = shortfalls.length > 0;
 
   if (!gradDate || (cushionExtensionDate && cushionExtensionDate >= gradDate)) {
-    return { state: 'through_graduation', spendable, savings, total, burn, runOutDate, cushionExtensionDate, shortfalls, asOf: latest.date };
+    return { state: 'through_graduation', spendable, savings, total, burn, runOutDate, cushionExtensionDate, shortfalls, actualPace, asOf: latest.date };
   }
 
-  return { state: 'counting_down', spendable, savings, total, burn, runOutDate, cushionExtensionDate, shortfalls, ...(basicallyOnTrack ? { basicallyOnTrack: true } : {}), asOf: latest.date };
+  return { state: 'counting_down', spendable, savings, total, burn, runOutDate, cushionExtensionDate, shortfalls, actualPace, ...(basicallyOnTrack ? { basicallyOnTrack: true } : {}), asOf: latest.date };
 }
 
 // ── Refund estimates ──────────────────────────────────────────────────────────
