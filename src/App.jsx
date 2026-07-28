@@ -99,12 +99,22 @@ function runwayTileDisplay(runway, cushionSource) {
         label: 'Money left', value: '$0', color: C.amber, alert: true,
         sub: runway.coveredBySavings ? 'overdrawn — your savings covers it' : 'overdrawn — no savings to fall back on yet',
       };
-    case 'gap':
+    case 'gap': {
+      // The hero stays the date the money is ACTUALLY gone (inflows counted),
+      // and the sub SWAPS to the dry-spell warning rather than stacking under
+      // it — the tile must stay three lines (founder: "worried about too much
+      // text"). Everything specific lives in the existing `detail` InfoTip.
+      // "gets tight" carries the warning in words, so the amber isn't doing the
+      // job alone (WCAG 1.4.1).
+      const dry = runway.shortfalls?.[0];
+      const dryDate = dry ? fmtDay(dry.date) : null;
+      const guessed = runway.nextRefund?.isEstimate;
       return {
         label: 'Lasts until', value: fmtDayYear(runway.runOutDate), color: C.amber, alert: true,
-        sub: `${fmt(runway.spendable)} left — short before your next refund`,
-        detail: `You run out about ${runway.gapDays} days before your next refund (around ${fmtDay(runway.nextRefund.date)}). Cutting about ${fmt(runway.trimPerMonthToClose)}/mo would close the gap.${runway.savings > 0 ? ` You also have ${fmt(runway.savings)} in savings if you need it.` : ''}`,
+        sub: dryDate ? `money gets tight around ${dryDate}` : 'money gets tight before your next payment',
+        detail: `Your cash runs low${dryDate ? ` around ${dryDate}` : ''}, about ${runway.gapDays} days before your next money arrives (${guessed ? 'estimated ' : ''}${fmtDay(runway.nextRefund.date)}). Spending about ${fmt(runway.trimPerMonthToClose)}/mo less until then would bridge it.${runway.savings > 0 ? ` You also have ${fmt(runway.savings)} in savings if you need it.` : ''}${guessed ? ' That date is an estimate — confirm it with your aid office.' : ''}`,
       };
+    }
     case 'counting_down': {
       if (runway.basicallyOnTrack) {
         return {

@@ -23,7 +23,7 @@ const monthGroups = (startYear) => {
 // and July of a year the student isn't enrolled for lets them budget into
 // months that don't exist. Out-of-range months stay VISIBLE but disabled, so
 // the year's shape is legible rather than the grid silently changing size.
-const MonthGrid = ({startYear, selectedMi, onPick, range}) => (
+const MonthGrid = ({startYear, selectedMi, onPick, range, leanMonths}) => (
   <>
     {monthGroups(startYear).map((g,gi)=>(
       <div key={gi} style={gi>0?{marginTop:8}:undefined}>
@@ -32,11 +32,20 @@ const MonthGrid = ({startYear, selectedMi, onPick, range}) => (
           {MONTH_NAMES.slice(g.from,g.to).map((m,idx)=>{
             const mi=g.from+idx, sel=mi===selectedMi;
             const off = range ? (mi < range.from || mi > range.to) : false;
+            // A month where the money is projected to run out before the next
+            // payment. Flagged HERE because this is where budgeting actually
+            // happens — finding out from the header tile is too late.
+            const lean = !off && !!leanMonths?.has(mi);
             return (
               <button key={mi} type="button" onClick={()=>{ if(!off) onPick(mi); }} aria-pressed={sel}
-                disabled={off} title={off?"Outside this school year's dates":undefined}
-                style={{padding:"5px 2px",borderRadius:8,border:"none",fontSize:11,fontWeight:sel?700:400,background:sel?C.selBg:"transparent",color:off?C.borderDark:(sel?C.text:C.gray),cursor:off?"not-allowed":"pointer",opacity:off?0.45:1,transition:"background 0.1s"}}>
+                disabled={off}
+                title={off ? "Outside this school year's dates" : (lean ? "Money is tight this month" : undefined)}
+                // The dot is never the only signal (WCAG 1.4.1) — the accessible
+                // name carries it too.
+                aria-label={lean ? `${m} — money is tight this month` : undefined}
+                style={{position:"relative",padding:"5px 2px",borderRadius:8,border:"none",fontSize:11,fontWeight:sel?700:400,background:sel?C.selBg:"transparent",color:off?C.borderDark:(sel?C.text:C.gray),cursor:off?"not-allowed":"pointer",opacity:off?0.45:1,transition:"background 0.1s"}}>
                 {m}
+                {lean && <span aria-hidden="true" style={{position:"absolute",top:3,right:5,width:4,height:4,borderRadius:99,background:C.amber}}/>}
               </button>
             );
           })}
@@ -46,7 +55,7 @@ const MonthGrid = ({startYear, selectedMi, onPick, range}) => (
   </>
 );
 
-export const MonthPicker = ({value, onChange, startYear, range}) => {
+export const MonthPicker = ({value, onChange, startYear, range, leanMonths}) => {
   const [open, setOpen] = useState(false);
   const btnRef = React.useRef(null);
   useLiftCard(open, btnRef);
@@ -59,7 +68,7 @@ export const MonthPicker = ({value, onChange, startYear, range}) => {
       {open && <>
         <div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
         <div style={popoverStyle(220, "right")}>
-          <MonthGrid startYear={startYear} range={range} selectedMi={value} onPick={mi=>{onChange(mi);setOpen(false);}}/>
+          <MonthGrid startYear={startYear} range={range} leanMonths={leanMonths} selectedMi={value} onPick={mi=>{onChange(mi);setOpen(false);}}/>
         </div>
       </>}
     </div>

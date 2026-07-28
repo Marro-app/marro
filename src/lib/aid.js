@@ -202,6 +202,7 @@ export function availableMoney({ year, loans, readings, today }) {
     available: fullYear,
     monthsLeft: 12,
     perMonth: fullYear / 12,
+    untilNextMoney: null,
     basis: 'projection',
     asOf: null,
     breakdown,
@@ -233,12 +234,35 @@ export function availableMoney({ year, loans, readings, today }) {
   const otherIncomeAhead = (Number(y.otherIncome) || 0) * monthsLeft;
 
   const available = Math.max(0, onHand + stillToArrive + otherIncomeAhead);
+
+  // ── What the money on hand supports until the NEXT lump arrives ────────────
+  // `perMonth` averages across the whole year, which is exactly what produces a
+  // dry spell: aid lands in lumps, so spending the annual average can leave a
+  // student at $0 in November waiting on January. This second figure is the one
+  // that PREVENTS that — what the cash actually in the account supports between
+  // now and the next payment. Same shape as the Refund Playbook's `semesterNeed`
+  // (LoansTab), so the two surfaces can never disagree.
+  const nextInflow = estimateRefunds([y], loans || [])
+    .filter((r) => r.date && r.date > latest.date && r.date <= y.endDate)
+    .sort((a, b) => (a.date < b.date ? -1 : 1))[0] || null;
+  let untilNextMoney = null;
+  if (nextInflow) {
+    const monthsToNext = Math.max(1, monthsRemaining(today, nextInflow.date));
+    untilNextMoney = {
+      perMonth: (onHand + (Number(y.otherIncome) || 0) * monthsToNext) / monthsToNext,
+      date: nextInflow.date,
+      monthsToNext,
+      isEstimate: !!nextInflow.isEstimate,
+    };
+  }
+
   return {
     onHand,
     stillToArrive: stillToArrive + otherIncomeAhead,
     available,
     monthsLeft,
     perMonth: available / monthsLeft,
+    untilNextMoney,
     basis: 'balance',
     asOf: latest.date,
     breakdown,

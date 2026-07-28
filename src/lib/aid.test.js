@@ -353,3 +353,60 @@ describe('availableMoney — monthsLeft guards', () => {
     expect(a.monthsLeft).toBeLessThanOrEqual(12);
   });
 });
+
+describe('availableMoney — "until your next money" (the dry-spell preventer)', () => {
+  // grant 0 on purpose: a grant is ALSO a dated inflow (estimateRefunds splits
+  // it into term halves), so a grant would land on Jan 1 and become "the next
+  // money" ahead of the Jan 10 loan. Zeroing it isolates loan timing here; the
+  // grant-counts-too case is asserted separately at the end of this block.
+  const year = makeYear({ grant: 0, tuitionFees: 34000, healthIns: 4200, otherIncome: 0 });
+  const loans = [makeLoan({
+    type: 'private', subtype: 'private',
+    disbursements: [
+      { id: 'd1', date: '2025-08-05', amount: 25000, dateConfirmed: true },
+      { id: 'd2', date: '2026-01-10', amount: 25000, dateConfirmed: true },
+    ],
+  })];
+  const readings = [{ id: 'r1', date: '2025-12-01', spendable: 3000, savings: 500 }];
+
+  it('is based on cash ON HAND and the months until the next payment, not the year', () => {
+    const a = availableMoney({ year, loans, readings, today: '2025-12-01' });
+    expect(a.untilNextMoney.date).toBe('2026-01-10');
+    expect(a.untilNextMoney.monthsToNext).toBe(1);
+    expect(a.untilNextMoney.perMonth).toBeCloseTo(3500, 6); // $3,500 on hand over 1 month
+  });
+
+  it('is TIGHTER than the year average when the next lump is far off', () => {
+    // Same cash, but the spring money is months away — the annual average would
+    // overspend the gap, which is the whole failure mode this figure prevents.
+    const lateLoans = [makeLoan({
+      type: 'private', subtype: 'private',
+      disbursements: [
+        { id: 'd1', date: '2025-08-05', amount: 25000, dateConfirmed: true },
+        { id: 'd2', date: '2026-05-01', amount: 25000, dateConfirmed: true },
+      ],
+    })];
+    const a = availableMoney({ year, loans: lateLoans, readings, today: '2025-12-01' });
+    expect(a.untilNextMoney.monthsToNext).toBe(5);          // Dec -> May
+    expect(a.untilNextMoney.perMonth).toBeCloseTo(700, 6);  // $3,500 stretched over 5 months
+    expect(a.untilNextMoney.perMonth).toBeLessThan(a.perMonth);
+  });
+
+  it('counts a GRANT half as the next money too, not just loan disbursements', () => {
+    // The spring grant half lands Jan 1, ahead of the Jan 10 loan — so it, not
+    // the loan, is the next money the student actually sees.
+    const withGrant = { ...year, grant: 5000 };
+    const a = availableMoney({ year: withGrant, loans, readings, today: '2025-12-01' });
+    expect(a.untilNextMoney.date).toBe('2026-01-01');
+  });
+
+  it('is null when no more money is coming this year', () => {
+    const spent = [{ id: 'r1', date: '2026-02-01', spendable: 3000, savings: 0 }];
+    const a = availableMoney({ year, loans, readings: spent, today: '2026-02-01' });
+    expect(a.untilNextMoney).toBe(null);
+  });
+
+  it('is null on the projection fallback (no balance to reason from)', () => {
+    expect(availableMoney({ year, loans, readings: [], today: '2025-12-01' }).untilNextMoney).toBe(null);
+  });
+});

@@ -3,7 +3,7 @@ import {
   FEDERAL_GRAD_UNSUB_RATES, FEDERAL_GRAD_PLUS_RATES, FEDERAL_ORIGINATION_FEE, FEDERAL_GRAD_PLUS_FEE, HRSA_RATE,
   effectiveRate, isRateEstimated, effectiveFeePct, statutoryRate, isInterestDeferred,
   loanPrincipal, cashReceived, loanOfferedAmount, accruedInterest, loanTypeKey,
-  projectDebtAtGraduation, computeRunway, estimateRefunds, loanReturnWindows,
+  projectDebtAtGraduation, computeRunway, projectBalance, estimateRefunds, loanReturnWindows,
   refundPlaybookTrigger, returnSavingsAtGraduation, classifyCushionSource,
 } from './loans.js';
 import { DAYS_PER_MONTH } from './constants.js';
@@ -289,9 +289,15 @@ describe('computeRunway', () => {
     const upcomingRefunds = [{ date: '2027-01-12', amount: 14200, term: '2027-spring' }];
     const r = computeRunway({ readings, plannedMonthlyBurn: 2130.8, upcomingRefunds, gradDate, today: '2026-10-05' });
     expect(r.state).toBe('gap');
-    expect(r.runOutDate).toBe('2026-12-31');
+    // The dry spell is still caught — cash runs out 2026-12-31, 12 days early.
     expect(r.gapDays).toBe(12);
+    expect(r.shortfalls[0].date).toBe('2026-12-31');
     expect(r.trimPerMonthToClose).toBeGreaterThan(0);
+    // ...but runOutDate now counts the $14,200 landing 2027-01-12, so it's the
+    // date the money is ACTUALLY gone, not the date the current cash alone ran
+    // dry. Reporting 2026-12-31 as "you run out" contradicted Safe to spend,
+    // which had always counted that refund.
+    expect(r.runOutDate > '2027-01-12').toBe(true);
   });
 
   it('trim math floors tiny gaps (<7 days) to "basically on track" instead of an alarming gap', () => {
@@ -302,8 +308,12 @@ describe('computeRunway', () => {
     ];
     const upcomingRefunds = [{ date: '2029-03-22', amount: 5000, term: '2029-spring' }];
     const r = computeRunway({ readings: tight, plannedMonthlyBurn: 100, upcomingRefunds, gradDate: '2030-01-01', today: '2026-10-05' });
-    expect(r.state).toBe('counting_down');
-    expect(r.basicallyOnTrack).toBe(true);
+    // The 3-day dip is recorded but stays under the 7-day alarm floor, so it
+    // never becomes a 'gap'. And now that the $5,000 refund is counted, the
+    // money really does reach graduation — a more accurate answer than the
+    // pre-inflow version's 'counting_down'. Either way: not alarming.
+    expect(r.state).toBe('through_graduation');
+    expect(r.shortfalls[0].daysShort).toBeLessThan(7);
   });
 
   it('measured burn requires a ≥14-day window between readings, else falls back to the plan', () => {
@@ -983,5 +993,76 @@ describe('classifyCushionSource', () => {
     const loan = makeLoan({ academicYear: 2024, disbursements: [{ id: 'd1', date: '2024-08-05', amount: 10000 }] });
     // loanInflowAnnual = 10000, otherIncome = 1000 → share = 1000/11000 ≈ 9%, well under 25%
     expect(classifyCushionSource({ readings: [], loans: [loan], otherIncome: 1000, today })).toBe('mixed');
+  });
+});
+
+describe('projectBalance — money still coming, and the dry spells on the way', () => {
+  const base = { startDate: '2026-08-01', startBalance: 6000, dailyBurn: 100, horizon: '2027-08-01' };
+
+  it('with no inflows, it is just balance ÷ burn (the old behaviour)', () => {
+    const { runOutDate, shortfalls } = projectBalance({ ...base, inflows: [] });
+    expect(runOutDate).toBe('2026-09-30'); // 6000 / 100 = 60 days
+    expect(shortfalls).toEqual([]);
+  });
+
+  it('an inflow pushes the run-out date later', () => {
+    const withMoney = projectBalance({ ...base, inflows: [{ date: '2026-09-01', amount: 3000 }] });
+    const without = projectBalance({ ...base, inflows: [] });
+    expect(withMoney.runOutDate > without.runOutDate).toBe(true);
+  });
+
+  it('records a dry spell when the money runs out before the next inflow arrives', () => {
+    // 6000 at 100/day lasts 60 days (to Sep 30); the money lands Nov 1.
+    const { shortfalls } = projectBalance({ ...base, inflows: [{ date: '2026-11-01', amount: 9000 }] });
+    expect(shortfalls).toHaveLength(1);
+    expect(shortfalls[0].date).toBe('2026-09-30');
+    expect(shortfalls[0].nextInflowDate).toBe('2026-11-01');
+    expect(shortfalls[0].daysShort).toBe(32);
+    expect(shortfalls[0].shortBy).toBeGreaterThan(0);
+  });
+
+  it('reports NO dry spell when the money lands before the cash runs out', () => {
+    const { shortfalls } = projectBalance({ ...base, inflows: [{ date: '2026-09-01', amount: 9000 }] });
+    expect(shortfalls).toEqual([]);
+  });
+
+  it('catches a dry spell that happens even though the money lasts overall (the regression risk)', () => {
+    // This is the case that must never be silently swallowed: there IS a gap in
+    // the autumn, but the January money means the year still ends solvent.
+    const r = projectBalance({
+      startDate: '2026-08-01', startBalance: 6000, dailyBurn: 64, horizon: '2027-08-01',
+      inflows: [{ date: '2027-01-10', amount: 11611 }],
+    });
+    expect(r.shortfalls).toHaveLength(1);
+    expect(r.runOutDate > '2027-01-10').toBe(true);  // solvent well past the gap
+  });
+
+  it('records a dry spell per gap when several inflows are spaced out', () => {
+    const { shortfalls } = projectBalance({
+      startDate: '2026-08-01', startBalance: 1000, dailyBurn: 100, horizon: '2028-01-01',
+      inflows: [{ date: '2026-10-01', amount: 1000 }, { date: '2026-12-01', amount: 1000 }],
+    });
+    expect(shortfalls).toHaveLength(2);
+  });
+
+  it('ignores money landing after the horizon', () => {
+    const inside = projectBalance({ ...base, inflows: [{ date: '2026-09-01', amount: 3000 }] });
+    const beyond = projectBalance({ ...base, inflows: [{ date: '2030-01-01', amount: 3000 }] });
+    expect(beyond.runOutDate).toBe('2026-09-30');
+    expect(beyond.runOutDate < inside.runOutDate).toBe(true);
+  });
+
+  it('ignores money dated before the start, and zero/negative amounts', () => {
+    expect(projectBalance({ ...base, inflows: [{ date: '2026-01-01', amount: 5000 }] }).runOutDate).toBe('2026-09-30');
+    expect(projectBalance({ ...base, inflows: [{ date: '2026-09-01', amount: 0 }] }).runOutDate).toBe('2026-09-30');
+  });
+
+  it('carries the isEstimate flag through, so a guessed date is never shown as fact', () => {
+    const { shortfalls } = projectBalance({ ...base, inflows: [{ date: '2026-11-01', amount: 9000, isEstimate: true }] });
+    expect(shortfalls[0].isEstimate).toBe(true);
+  });
+
+  it('returns no run-out date when nothing is being spent', () => {
+    expect(projectBalance({ ...base, dailyBurn: 0, inflows: [] }).runOutDate).toBe(null);
   });
 });

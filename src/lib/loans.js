@@ -550,6 +550,59 @@ export const readingTotal = (r) => (Number(r.spendable) || 0) + (Number(r.saving
  *  - a gap of under 7 days between "runs out" and "next refund" is floored to
  *    "basically on track" rather than alarming the student over pocket change.
  */
+/**
+ * Walk a balance forward through the money still to arrive, and report BOTH
+ * things a student needs to know:
+ *
+ *   runOutDate — when the money is genuinely gone, i.e. after the last inflow.
+ *   shortfalls — every stretch where the balance hits zero while more money is
+ *                still coming. These are the dry spells: aid arrives in lumps,
+ *                so spending the annual average can leave someone at $0 in
+ *                November waiting on a January disbursement.
+ *
+ * This replaced a single division (`balance / dailyBurn`) that ignored inflows
+ * entirely, so the tile claimed a student ran out in November when January's
+ * disbursement was already scheduled — contradicting "Safe to spend", which
+ * did count it. Both numbers now come from the same walk.
+ *
+ * The balance floors at zero rather than going negative: you cannot spend money
+ * you do not have, so the stretch after a shortfall resumes from the inflow.
+ */
+export function projectBalance({ startDate, startBalance, dailyBurn, inflows, horizon }) {
+  const shortfalls = [];
+  let balance = Math.max(0, Number(startBalance) || 0);
+  let cursor = startDate;
+
+  const ahead = (inflows || [])
+    .filter((r) => r.date && r.date > startDate && (!horizon || r.date <= horizon) && (Number(r.amount) || 0) > 0)
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+
+  if (!(dailyBurn > 0)) return { runOutDate: null, shortfalls };
+
+  for (const inf of ahead) {
+    const days = daysBetween(cursor, inf.date);
+    const wouldSpend = days * dailyBurn;
+    if (balance < wouldSpend) {
+      // Runs dry before this money lands — record how early, and by how much.
+      const dryDate = addDays(cursor, Math.floor(balance / dailyBurn));
+      shortfalls.push({
+        date: dryDate,
+        nextInflowDate: inf.date,
+        daysShort: daysBetween(dryDate, inf.date),
+        shortBy: wouldSpend - balance,
+        isEstimate: !!inf.isEstimate,
+      });
+      balance = 0;
+    } else {
+      balance -= wouldSpend;
+    }
+    balance += Number(inf.amount) || 0;
+    cursor = inf.date;
+  }
+
+  return { runOutDate: addDays(cursor, Math.floor(balance / dailyBurn)), shortfalls };
+}
+
 export function computeRunway({ readings, plannedMonthlyBurn, upcomingRefunds, gradDate, today }) {
   if (gradDate && gradDate <= today) return { state: 'graduated' };
 
@@ -593,29 +646,41 @@ export function computeRunway({ readings, plannedMonthlyBurn, upcomingRefunds, g
   }
 
   const dailyBurn = burn.amount / DAYS_PER_MONTH;
-  const runOutDate = addDays(latest.date, Math.floor(spendable / dailyBurn));
-  const cushionExtensionDate = addDays(latest.date, Math.floor(total / dailyBurn));
+  // `runOutDate` counts the money still to arrive (see projectBalance), so it's
+  // the date the student ACTUALLY runs out — not the date their current cash
+  // alone would have lasted. `shortfalls` carries the dry spells along the way.
+  const spendableProj = projectBalance({ startDate: latest.date, startBalance: spendable, dailyBurn, inflows: upcomingRefunds, horizon: gradDate });
+  const runOutDate = spendableProj.runOutDate;
+  const shortfalls = spendableProj.shortfalls;
+  const cushionExtensionDate = projectBalance({ startDate: latest.date, startBalance: total, dailyBurn, inflows: upcomingRefunds, horizon: gradDate }).runOutDate;
 
-  if (!gradDate || cushionExtensionDate >= gradDate) {
-    return { state: 'through_graduation', spendable, savings, total, burn, runOutDate, cushionExtensionDate, asOf: latest.date };
-  }
-
-  const nextRefund = (upcomingRefunds || []).find((r) => r.date > latest.date);
-  if (nextRefund && runOutDate < nextRefund.date) {
-    const gapDays = daysBetween(runOutDate, nextRefund.date);
-    if (gapDays < 7) {
-      return { state: 'counting_down', spendable, savings, total, burn, runOutDate, cushionExtensionDate, basicallyOnTrack: true, asOf: latest.date };
-    }
-    // Trim needed so `spendable` stretches exactly to the refund date instead
-    // of running dry `gapDays` early: recompute the daily rate that would
-    // make it last exactly that long, and the monthly difference from today's pace.
-    const daysUntilRefund = daysBetween(latest.date, nextRefund.date);
-    const neededMonthlyBurn = (spendable / daysUntilRefund) * DAYS_PER_MONTH;
+  // A dry spell outranks "you're fine through graduation": lasting the whole way
+  // is no comfort if there's a month with $0 in it on the way there. Checked
+  // BEFORE the through_graduation branch for exactly that reason.
+  const firstShort = shortfalls.find((s) => s.daysShort >= 7);
+  if (firstShort) {
+    // Trim needed so the money stretches to the inflow instead of running dry
+    // early: the daily rate that would last exactly that long, expressed as the
+    // monthly difference from today's pace.
+    const daysUntilRefund = daysBetween(latest.date, firstShort.nextInflowDate);
+    const neededMonthlyBurn = daysUntilRefund > 0 ? (spendable / daysUntilRefund) * DAYS_PER_MONTH : 0;
     const trimPerMonthToClose = Math.max(0, burn.amount - neededMonthlyBurn);
-    return { state: 'gap', spendable, savings, total, burn, runOutDate, cushionExtensionDate, gapDays, trimPerMonthToClose, nextRefund, asOf: latest.date };
+    return {
+      state: 'gap', spendable, savings, total, burn, runOutDate, cushionExtensionDate, shortfalls,
+      gapDays: firstShort.daysShort, trimPerMonthToClose,
+      nextRefund: { date: firstShort.nextInflowDate, isEstimate: firstShort.isEstimate },
+      asOf: latest.date,
+    };
+  }
+  // A dry spell under a week reads as noise, not a crisis — same grace the
+  // previous implementation gave.
+  const basicallyOnTrack = shortfalls.length > 0;
+
+  if (!gradDate || (cushionExtensionDate && cushionExtensionDate >= gradDate)) {
+    return { state: 'through_graduation', spendable, savings, total, burn, runOutDate, cushionExtensionDate, shortfalls, asOf: latest.date };
   }
 
-  return { state: 'counting_down', spendable, savings, total, burn, runOutDate, cushionExtensionDate, asOf: latest.date };
+  return { state: 'counting_down', spendable, savings, total, burn, runOutDate, cushionExtensionDate, shortfalls, ...(basicallyOnTrack ? { basicallyOnTrack: true } : {}), asOf: latest.date };
 }
 
 // ── Refund estimates ──────────────────────────────────────────────────────────

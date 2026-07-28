@@ -19,7 +19,7 @@ import { targetIndexFor, rowShift } from '../lib/reorder.js';
 export function BudgetTab(){
   const { data, cats, ay, yr, yrStartYear, selMonth, setSelMonth, subs, subsMo, disabledCats,
           moSpend, moSpendable, moSurplus, runningBalance, totalAccumulatedBalance,
-          priorYearsCarryover, annDisburse, annOther, aidBreakdown, safeToSpend, safeToSpendMo, allEntriesFlat,
+          priorYearsCarryover, annDisburse, annOther, aidBreakdown, safeToSpend, safeToSpendMo, runway, upd, allEntriesFlat,
           getMonthVal, spentInMonth, unbudgetedCats, unbudgetedTotal, promoteToBudget,
           toggleMonthCat, setMo, reorderCats, addCat,
           newCatName, setNewCatName, newCatIcon, setNewCatIcon, iconPickOpen, setIconPickOpen } = useApp();
@@ -44,6 +44,65 @@ export function BudgetTab(){
   const [showSubscriptions, setShowSubscriptions] = useState(false);
   const [showHealthChecks, setShowHealthChecks] = useState(false);
   const [showSafeMath, setShowSafeMath] = useState(false);
+  const [confirmLean, setConfirmLean] = useState(null);
+  // What the cash on hand supports until the next payment lands (src/lib/aid.js).
+  const untilNext = safeToSpend?.untilNextMoney || null;
+
+  // ── Budgeting through a dry spell ──────────────────────────────────────────
+  // The months between now and the next payment. Scaling these to `untilNext`
+  // is what turns the warning into a fix, so the student isn't just told they
+  // have a problem in November.
+  const monthIdxOf = (iso) => { const d = new Date(iso+"T12:00:00"); return Number.isNaN(d.getTime()) ? null : (d.getMonth()-7+12)%12; };
+  const leanMonths = (() => {
+    const out = new Set();
+    for (const s of runway?.shortfalls || []) {
+      // Only THIS year's dry spells. computeRunway projects across every year
+      // through graduation, so without this a shortfall two years out would mark
+      // months in the plan you're editing now — and the one-tap fix would write
+      // overrides for months that aren't even in that stretch.
+      if (yr?.startDate && s.date < yr.startDate) continue;
+      if (yr?.endDate && s.date > yr.endDate) continue;
+      const from = monthIdxOf(s.date), to = monthIdxOf(s.nextInflowDate);
+      if (from == null || to == null) continue;
+      // Academic months wrap (Aug=0 … Jul=11), so walk forward with modulo
+      // rather than assuming from <= to. Bounded at 12 so a bad pair can't spin.
+      for (let i = from, n = 0; n < 12; i = (i+1)%12, n++) { out.add(i); if (i === to) break; }
+    }
+    return out;
+  })();
+  // Scale the DISCRETIONARY categories to hit the target. Housing is locked by
+  // a contract and Fixed monthly costs is a derived total — neither is
+  // something a student can decide to spend less on, so neither is touched.
+  const buildLeanPlan = (target) => {
+    const flexible = cats.filter(c => !c.locked && !c.autoCalc);
+    const fixedTotal = cats.filter(c => c.locked).reduce((a,c)=>a+(Number(yr.monthly[c.id])||0),0) + subsMo;
+    const flexTotal = flexible.reduce((a,c)=>a+(Number(yr.monthly[c.id])||0),0);
+    const room = target - fixedTotal;
+    if (flexTotal <= 0) return null;
+    const factor = room / flexTotal;
+    // `possible` is false when rent and fixed costs ALONE already exceed the
+    // target — no amount of trimming groceries closes that, and applying the
+    // scale would zero out every discretionary category. Offering a "fix" that
+    // wipes the plan and still doesn't work is worse than offering none, so the
+    // action is withheld and the tooltip explains instead.
+    // factor >= 1 means the plan already fits; nothing to do either.
+    return { flexible, factor, fixedTotal, flexTotal, newFlexTotal: flexTotal*Math.max(0,factor), target,
+             possible: room > 0 && factor < 1 };
+  };
+  const leanPlan = untilNext ? buildLeanPlan(untilNext.perMonth) : null;
+  const applyLeanPlan = (plan, months) => {
+    const d = JSON.parse(JSON.stringify(data));
+    const y = d.years.find(x=>x.id===ay) || d.years[0];
+    y.monthlyOverrides = y.monthlyOverrides || {};
+    for (const mi of months) {
+      const mk = MONTH_NAMES[mi];
+      y.monthlyOverrides[mk] = { ...(y.monthlyOverrides[mk]||{}) };
+      for (const c of plan.flexible) {
+        y.monthlyOverrides[mk][c.id] = Math.round((Number(y.monthly[c.id])||0) * plan.factor);
+      }
+    }
+    upd(d);
+  };
   // Month the current school year ends in — labels the "to last through X" row.
   const yearEndMonth = yr?.endDate ? new Date(yr.endDate+"T12:00:00").toLocaleDateString("en-US",{month:"long"}) : "the year";
   const [barHover, setBarHover] = useState(null);
@@ -181,6 +240,24 @@ export function BudgetTab(){
   return (
     <>
       {showSubscriptions && <Modal title="Fixed monthly costs" onClose={()=>setShowSubscriptions(false)} width={640}><SubscriptionsTab/></Modal>}
+      {/* Overwrites budget numbers the student typed, across several months —
+          never fires straight off the tap. Shows exactly which months change
+          and the before → after, so it's a decision rather than a surprise. */}
+      {confirmLean && <Modal title="Use this for the lean months" onClose={()=>setConfirmLean(null)} width={380}>
+        <div style={{fontSize:13,color:C.textMid,marginBottom:12,lineHeight:1.6}}>
+          Sets your plan to about <strong style={{color:C.text}}>{fmt(confirmLean.target)}/mo</strong> for{" "}
+          <strong style={{color:C.text}}>{[...leanMonths].sort((a,b)=>a-b).map(mi=>MONTH_FULL[mi]).join(", ")}</strong> —
+          the months before your next payment.
+        </div>
+        <div style={{fontSize:12,color:C.gray,marginBottom:16,lineHeight:1.6}}>
+          Housing and fixed monthly costs stay as they are ({fmt(confirmLean.fixedTotal)}/mo) — those aren&apos;t yours to change.
+          Everything else scales from {fmt(confirmLean.flexTotal)} to about {fmt(confirmLean.newFlexTotal)}/mo.
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button className="btn-pop" onClick={()=>setConfirmLean(null)} style={{flex:1,padding:"10px",fontSize:13,fontWeight:500,border:`1px solid ${C.border}`,borderRadius:8,background:"transparent",color:C.gray,cursor:"pointer"}}>Cancel</button>
+          <button className="btn-fill" onClick={()=>{applyLeanPlan(confirmLean,[...leanMonths]);setConfirmLean(null);}} style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.teal,color:C.bg,cursor:"pointer"}}>Use it</button>
+        </div>
+      </Modal>}
       {confirmRemove && <Modal title="Remove category" onClose={()=>setConfirmRemove(null)} width={340}>
         <div style={{fontSize:13,color:C.textMid,marginBottom:16}}>Remove <strong>{cats.find(c=>c.id===confirmRemove)?.label}</strong> from {MONTH_FULL[selMonth]}? You can add it back anytime.</div>
         <div style={{display:"flex",gap:8}}>
@@ -213,7 +290,7 @@ export function BudgetTab(){
           <Card>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
               <SectionTitle>Monthly plan</SectionTitle>
-              <MonthPicker value={selMonth} onChange={setSelMonth} startYear={yrStartYear} range={yearMonthRange(yr)}/>
+              <MonthPicker value={selMonth} onChange={setSelMonth} startYear={yrStartYear} range={yearMonthRange(yr)} leanMonths={leanMonths}/>
             </div>
             <div style={{fontSize:11,color:C.gray,marginBottom:12}}>Set how much you <em>intend</em> to spend each month — log actual spending with <strong>Quick add</strong>.</div>
 
@@ -362,13 +439,32 @@ export function BudgetTab(){
                  l:safeToSpend.monthsLeft<=1 && safeToSpend.basis==="balance" ? "Left for the rest of the year" : "Safe to spend",
                  v:safeToSpend.monthsLeft<=1 && safeToSpend.basis==="balance" ? fmt(safeToSpend.available) : fmt(safeToSpendMo)+"/mo",
                  c:C.teal,bold:true},
+                // "Safe to spend" averages the whole year, which is what CREATES a
+                // dry spell — aid lands in lumps, so spending the average can leave
+                // you at $0 waiting on the next payment. This is the figure that
+                // prevents it: what the cash actually in your account supports
+                // between now and that payment. Only shown when it's tighter than
+                // the average, i.e. when there's genuinely something to watch.
+                ...(untilNext && untilNext.perMonth < safeToSpendMo ? [{
+                  id:"untilnext", l:"Until your next money", v:fmt(untilNext.perMonth)+"/mo", c:C.amber,
+                  tip:`What's in your account now, spread over the ${untilNext.monthsToNext} month${untilNext.monthsToNext===1?"":"s"} until your next payment${untilNext.isEstimate?" (that date is an estimate — confirm it with your aid office)":""} on ${fmtDay(untilNext.date)}. Spending at the year average instead would run you dry before then.${leanMonths.size>0 && leanPlan && !leanPlan.possible ? " Your rent and fixed costs alone come to " + fmt(leanPlan.fixedTotal) + "/mo, which is already more than this — trimming day-to-day spending can\u2019t close that on its own." : ""}`,
+                  action: (leanMonths.size>0 && leanPlan?.possible) ? "lean" : null,
+                }] : []),
                 {l:"Monthly plan",              v:fmt(moSpend)+"/mo",        c:C.text},
                 {l:surplusBorrowed?"Left over (borrowed)":"Monthly surplus",
                  v:fmtS(moSurplus)+"/mo",     c:moSurplus<0?C.neg:(surplusBorrowed?C.blue:C.green),bold:true},
               ].map(r=>(
                 <div key={r.id||r.l}>
                   <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:r.id==="safe"?"none":`1px solid ${C.border}`,fontSize:12}}>
-                    <span style={{color:C.gray,display:"inline-flex",alignItems:"center",gap:4}}>{r.l}{r.tip && <InfoTip text={r.tip} />}</span>
+                    <span style={{color:C.gray,display:"inline-flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
+                      {r.l}{r.tip && <InfoTip text={r.tip} />}
+                      {r.action==="lean" && (
+                        <button type="button" className="txt-act" onClick={()=>setConfirmLean(leanPlan)}
+                          style={{border:"none",background:"transparent",color:C.teal,fontSize:11,fontWeight:600,cursor:"pointer",padding:0}}>
+                          use for the lean months
+                        </button>
+                      )}
+                    </span>
                     <span style={{fontWeight:r.bold?700:500,color:r.c}}>{r.v}</span>
                   </div>
                   {r.id==="safe" && (

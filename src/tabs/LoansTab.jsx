@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { C } from '../lib/theme.js';
-import { fmt, todayStr, sanitizeMoneyInput } from '../lib/format.js';
+import { fmt, fmtDay, todayStr, sanitizeMoneyInput } from '../lib/format.js';
 import { Card, SectionTitle, XBtn, Banner, EmptyState, ChoiceGroup, InfoTip } from '../components/primitives.jsx';
 import { Icon } from '../components/icons.jsx';
 import { DateField } from '../components/pickers.jsx';
@@ -770,7 +770,7 @@ function RefundPlaybook({ data, upd, moSpend, refundNudgeConfirmed, setRefundNud
       <ol style={{ margin: '12px 0 0', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13, color: C.text, lineHeight: 1.55 }}>
         <li>
           {semesterNeed != null
-            ? <>This stretch needs about <strong>{fmt(semesterNeed)}</strong> ({monthsNeeded} month{monthsNeeded === 1 ? '' : 's'} × your pace of about {fmt(burnAmount)}/month).</>
+            ? <>This has to last until your next money{nextAfter?.date ? <> on <strong>{fmtDay(nextAfter.date)}</strong></> : null} — about <strong>{fmt(semesterNeed)}</strong> ({monthsNeeded} month{monthsNeeded === 1 ? '' : 's'} × your pace of about {fmt(burnAmount)}/month).</>
             : <>Add your budget and a balance check-in and Marro can estimate what this stretch needs to cover.</>}
           {' '}Many students keep about one month&apos;s worth in checking.
         </li>
