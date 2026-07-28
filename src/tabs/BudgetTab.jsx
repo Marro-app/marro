@@ -43,10 +43,13 @@ export function BudgetTab(){
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [showSubscriptions, setShowSubscriptions] = useState(false);
   const [showHealthChecks, setShowHealthChecks] = useState(false);
-  const [showSafeMath, setShowSafeMath] = useState(false);
   const [confirmLean, setConfirmLean] = useState(null);
   // What the cash on hand supports until the next payment lands (src/lib/aid.js).
   const untilNext = safeToSpend?.untilNextMoney || null;
+  // What the monthly plan is measured against. When a dry spell is coming, the
+  // honest yardstick is the tighter "until your next money" figure, not the year
+  // average that would run you out before then.
+  const planBase = (untilNext && untilNext.perMonth < safeToSpendMo) ? untilNext.perMonth : safeToSpendMo;
 
   // ── Budgeting through a dry spell ──────────────────────────────────────────
   // The months between now and the next payment. Scaling these to `untilNext`
@@ -246,11 +249,11 @@ export function BudgetTab(){
       {confirmLean && <Modal title="Use this for the lean months" onClose={()=>setConfirmLean(null)} width={380}>
         <div style={{fontSize:13,color:C.textMid,marginBottom:12,lineHeight:1.6}}>
           Sets your plan to about <strong style={{color:C.text}}>{fmt(confirmLean.target)}/mo</strong> for{" "}
-          <strong style={{color:C.text}}>{[...leanMonths].sort((a,b)=>a-b).map(mi=>MONTH_FULL[mi]).join(", ")}</strong> —
+          <strong style={{color:C.text}}>{[...leanMonths].sort((a,b)=>a-b).map(mi=>MONTH_FULL[mi]).join(", ")}</strong>,
           the months before your next payment.
         </div>
         <div style={{fontSize:12,color:C.gray,marginBottom:16,lineHeight:1.6}}>
-          Housing and fixed monthly costs stay as they are ({fmt(confirmLean.fixedTotal)}/mo) — those aren&apos;t yours to change.
+          Housing and fixed monthly costs stay as they are ({fmt(confirmLean.fixedTotal)}/mo), since those aren&apos;t yours to change.
           Everything else scales from {fmt(confirmLean.flexTotal)} to about {fmt(confirmLean.newFlexTotal)}/mo.
         </div>
         <div style={{display:"flex",gap:8}}>
@@ -292,7 +295,7 @@ export function BudgetTab(){
               <SectionTitle>Monthly plan</SectionTitle>
               <MonthPicker value={selMonth} onChange={setSelMonth} startYear={yrStartYear} range={yearMonthRange(yr)} leanMonths={leanMonths}/>
             </div>
-            <div style={{fontSize:11,color:C.gray,marginBottom:12}}>Set how much you <em>intend</em> to spend each month — log actual spending with <strong>Quick add</strong>.</div>
+            <div style={{fontSize:11,color:C.gray,marginBottom:12}}>Set how much you <em>intend</em> to spend each month. Log what you actually spend with <strong>Quick add</strong>.</div>
 
             {/* Housing — read-only */}
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:C.surface,borderRadius:8,marginBottom:10,border:`1px solid ${C.border}`}}>
@@ -426,7 +429,7 @@ export function BudgetTab(){
               {[
                 {l:"Aid and loans sent to you", v:fmt(annDisburse)+"/yr",    c:C.teal,
                  tip:"What's left of your grants and loans after tuition, fees, and health insurance come out — the money that actually reaches your account for living costs."},
-                {l:"Other income",              v:fmt(annOther)+"/yr",       c:C.text},
+                ...(annOther>0 ? [{l:"Other income", v:fmt(annOther)+"/yr", c:C.text}] : []),
                 // The one "how much can I spend" number (src/lib/aid.js →
                 // availableMoney). Balance-anchored once a check-in exists, so it
                 // MOVES as the balance moves — which is exactly why it needs the
@@ -438,7 +441,10 @@ export function BudgetTab(){
                 {id:"safe",
                  l:safeToSpend.monthsLeft<=1 && safeToSpend.basis==="balance" ? "Left for the rest of the year" : "Safe to spend",
                  v:safeToSpend.monthsLeft<=1 && safeToSpend.basis==="balance" ? fmt(safeToSpend.available) : fmt(safeToSpendMo)+"/mo",
-                 c:C.teal,bold:true},
+                 c:C.teal,bold:true,
+                 tip: safeToSpend.basis==="balance"
+                   ? `You have ${fmt(safeToSpend.onHand)} in your accounts and ${fmt(safeToSpend.stillToArrive)} still coming, which is ${fmt(safeToSpend.available)} to cover ${safeToSpend.monthsLeft} month${safeToSpend.monthsLeft===1?"":"s"} until your school year ends. Update your balance on the Loans tab to keep this accurate.`
+                   : "This is your full year's aid and loans spread over 12 months. Add your current balance on the Loans tab and Marro will use what you actually have instead."},
                 // "Safe to spend" averages the whole year, which is what CREATES a
                 // dry spell — aid lands in lumps, so spending the average can leave
                 // you at $0 waiting on the next payment. This is the figure that
@@ -450,7 +456,7 @@ export function BudgetTab(){
                   tip:`What's in your account now, spread over the ${untilNext.monthsToNext} month${untilNext.monthsToNext===1?"":"s"} until your next payment${untilNext.isEstimate?" (that date is an estimate — confirm it with your aid office)":""} on ${fmtDay(untilNext.date)}. Spending at the year average instead would run you dry before then.${leanMonths.size>0 && leanPlan && !leanPlan.possible ? " Your rent and fixed costs alone come to " + fmt(leanPlan.fixedTotal) + "/mo, which is already more than this — trimming day-to-day spending can\u2019t close that on its own." : ""}`,
                   action: (leanMonths.size>0 && leanPlan?.possible) ? "lean" : null,
                 }] : []),
-                {l:"Monthly plan",              v:fmt(moSpend)+"/mo",        c:C.text},
+                {id:"plan", l:"Monthly plan", v:`${fmt(moSpend)} of ${fmt(planBase)}`, c:C.text},
                 {l:surplusBorrowed?"Left over (borrowed)":"Monthly surplus",
                  v:fmtS(moSurplus)+"/mo",     c:moSurplus<0?C.neg:(surplusBorrowed?C.blue:C.green),bold:true},
               ].map(r=>(
@@ -467,71 +473,43 @@ export function BudgetTab(){
                     </span>
                     <span style={{fontWeight:r.bold?700:500,color:r.c}}>{r.v}</span>
                   </div>
-                  {r.id==="safe" && (
-                    <div style={{borderBottom:`1px solid ${C.border}`,paddingBottom:4}}>
-                      {/* Disclosure, not a tooltip: the founder's standing note is
-                          that things hidden behind an "i" may as well not exist.
-                          Real <button> + aria-expanded/aria-controls, and the panel
-                          stays mounted so the target never dangles (same pattern as
-                          the Health checks disclosure below). */}
-                      <button type="button" id="safe-math-btn" onClick={()=>setShowSafeMath(s=>!s)}
-                        aria-expanded={showSafeMath} aria-controls="safe-math-panel"
-                        style={{display:"flex",alignItems:"center",gap:6,width:"100%",minHeight:44,background:"none",border:"none",padding:"2px 0",cursor:"pointer",font:"inherit",textAlign:"left",color:C.gray,fontSize:11}}>
-                        <Icon name="chevron" size={11} style={{transform:showSafeMath?"rotate(180deg)":"none",transition:"transform .15s",color:C.gray,flexShrink:0}}/>
-                        How is this worked out?
-                      </button>
-                      {/* NOT using the shared .collapse-panel grid trick: its
-                          0fr→1fr track never resolves in this app (verified in
-                          browser — the Health checks disclosure is stuck at 0px
-                          height too, a pre-existing bug). A plain hidden toggle
-                          is reliable and still a correct disclosure: the button
-                          carries aria-expanded/aria-controls, and `hidden` keeps
-                          the collapsed content out of the a11y tree entirely. */}
-                      <div id="safe-math-panel" role="region" aria-labelledby="safe-math-btn" hidden={!showSafeMath}>
-                        <div>
-                          <div style={{paddingBottom:8,fontSize:11,color:C.gray,lineHeight:1.6}}>
-                            {safeToSpend.basis==="balance" ? (
-                              <>
-                                {[["In your accounts",fmt(safeToSpend.onHand)],
-                                  ["Still to arrive",fmt(safeToSpend.stillToArrive)],
-                                  [`To last through ${yearEndMonth}`,`${safeToSpend.monthsLeft} ${safeToSpend.monthsLeft===1?"month":"months"}`],
-                                ].map(([k,v])=>(
-                                  <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"2px 0"}}>
-                                    <span>{k}</span><span style={{color:C.text}}>{v}</span>
-                                  </div>
-                                ))}
-                                <div style={{marginTop:4,paddingTop:4,borderTop:`1px solid ${C.border}`}}>
-                                  {safeToSpend.monthsLeft<=1
-                                    ? <>Your school year is nearly over, so this is what&apos;s left for the rest of it rather than a monthly pace. Next year&apos;s aid and loans start it fresh.</>
-                                    : <>Your balance from {safeToSpend.asOf ? fmtDay(safeToSpend.asOf) : "your last check-in"}, plus money still coming, shared across the months left. Update your balance on the Loans tab to keep it accurate.</>}
-                                </div>
-                              </>
-                            ) : (
-                              <>Based on your full year&apos;s aid and loans, spread across 12 months. Add your current balance on the Loans tab and Marro will use what you actually have instead.</>
-                            )}
-                          </div>
-                        </div>
+                  {/* How much of what you can spend this plan uses. The number
+                      alone did not answer "is that a lot?", so the bar gives it
+                      a scale. Turns amber once the plan exceeds what is safe. */}
+                  {r.id==="plan" && planBase>0 && (
+                    <div style={{padding:"0 0 6px"}}>
+                      <div style={{height:4,borderRadius:99,background:C.surface,overflow:"hidden"}}>
+                        <div style={{height:"100%",width:`${Math.min(100,(moSpend/planBase)*100)}%`,borderRadius:99,background:moSpend>planBase?C.neg:C.teal,transition:"width .2s"}}/>
                       </div>
                     </div>
                   )}
                 </div>
               ))}
               <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0 2px",fontSize:13,fontWeight:700}}>
-                <span>Projected leftover <InfoTip text="What you'd have left if you stick to your budget — not your actual bank balance."/> <span style={{fontSize:10,color:C.gray,fontWeight:400}}>if you stay on budget · through {MONTH_FULL[selMonth]}</span></span>
+                <span>Projected leftover <InfoTip text={`This is what you'd have left by the end of ${MONTH_FULL[selMonth]} if you stick to your monthly plan. It's a forecast from your plan, not the balance in your bank account.`}/> <span style={{fontSize:10,color:C.gray,fontWeight:400}}>through {MONTH_FULL[selMonth]}</span></span>
                 <span style={{color:runningBalance>=0?C.teal:C.neg}}>{fmtS(runningBalance)}</span>
               </div>
+              {/* Moved here when the duplicate "Projected leftover" card was
+                  removed. The cushion nudge must never fire on borrowed money: a
+                  savings account pays about 4% while the loan charges about 8%,
+                  so parking it loses money. Returning it is the better move. */}
+              {totalAccumulatedBalance>moSpendable*2 && (surplusBorrowed
+                ? <div style={{marginTop:8,padding:"6px 10px",background:C.blueLight,borderRadius:8,fontSize:11,color:C.blue}}>You&apos;re holding a large cushion of borrowed money. Returning what you don&apos;t need beats saving it, because a savings account pays less than your loan charges.</div>
+                : <div style={{marginTop:8,padding:"6px 10px",background:C.greenLight,borderRadius:8,fontSize:11,color:C.green}}>You&apos;re building a healthy cushion. Consider moving some into a high-yield savings account.</div>
+              )}
+              {totalAccumulatedBalance<0 && <div style={{marginTop:8,padding:"6px 10px",background:C.negLight,borderRadius:8,fontSize:11,color:C.neg}}>Your plan spends more than you have coming in. Review your largest categories or lower a few.</div>}
               {moSurplus!==0 && (
                 <div style={{marginTop:8,padding:"10px 12px",
                   background:moSurplus<0?C.negLight:(surplusBorrowed?C.blueLight:C.greenLight),borderRadius:8,fontSize:12,
                   color:moSurplus<0?C.neg:(surplusBorrowed?C.blue:C.green),fontWeight:500}}>
                   {moSurplus<0
-                    ? `${fmt(Math.abs(moSurplus))} over budget this month — this draws down your running balance and lowers your year-end net.`
+                    ? `${fmt(Math.abs(moSurplus))} over your plan this month. That comes out of your projected leftover.`
                     : surplusBorrowed
                       // Swapped, not added: the old "surplus carries into your
                       // running balance" line is actively wrong advice when the
                       // money is borrowed at ~8%.
-                      ? `${fmt(moSurplus)} left over this month — but this is borrowed money. You can return what you don't need within 120 days of a loan being paid out to cancel its interest.`
-                      : `${fmt(moSurplus)} surplus this month — it carries into your running balance and adds to your year-end net.`}
+                      ? `${fmt(moSurplus)} left over this month, but this is borrowed money. You can return what you don't need within 120 days of a loan being paid out to cancel its interest.`
+                      : `${fmt(moSurplus)} left over this month. If you stick to your plan it carries forward into your projected leftover.`}
                 </div>
               )}
             </Card>
@@ -547,7 +525,7 @@ export function BudgetTab(){
                 ))}
               </div>
               {budgetVsActual.length===0
-                ? <div style={{textAlign:"center",padding:"28px 16px",fontSize:12,color:C.textMid,border:`1px dashed ${C.borderDark}`,borderRadius:12,background:C.surface}}>No spending logged yet — use <strong>Quick add</strong> to log an expense and it&apos;ll show up here.</div>
+                ? <div style={{textAlign:"center",padding:"28px 16px",fontSize:12,color:C.textMid,border:`1px dashed ${C.borderDark}`,borderRadius:12,background:C.surface}}>No spending logged yet. Use <strong>Quick add</strong> to log an expense and it&apos;ll show up here.</div>
                 : <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={budgetVsActual} barGap={3} barCategoryGap="32%" onMouseMove={barMove} onMouseLeave={()=>setBarHover(null)}>
                   <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
@@ -577,8 +555,12 @@ export function BudgetTab(){
               {/* Always mounted (aria-controls target never dangles) and animated
                   open/closed via the .collapse-panel grid-rows transition — so a
                   rotated chevron always corresponds to a visibly-open panel. */}
-              <div id="health-checks-panel" role="region" aria-labelledby="health-checks-btn" className={`collapse-panel${showHealthChecks?' open':''}`}>
-                <div className="collapse-inner">
+              {/* The shared .collapse-panel grid trick (0fr -> 1fr) never resolves
+                  in this app, so this panel silently opened to zero height for as
+                  long as it has shipped. Plain `hidden` toggle instead, same as
+                  the "How is this worked out?" disclosure. */}
+              <div id="health-checks-panel" role="region" aria-labelledby="health-checks-btn" hidden={!showHealthChecks}>
+                <div>
                   <div style={{paddingTop:14}}>
                   {[
                     ["Housing ratio",    moSpendable>0?Math.round((yr.monthly.housing||0)/moSpendable*100)+"%":"—", (yr.monthly.housing||0)/moSpendable<0.6,(yr.monthly.housing||0)/moSpendable<0.75,"Target <60% of spending money"],
@@ -597,25 +579,6 @@ export function BudgetTab(){
                   </div>
                 </div>
               </div>
-            </Card>
-
-            <Card>
-              <SectionTitle>Projected leftover <InfoTip text="What you'd have left if you stick to your budget — not your actual bank balance."/></SectionTitle>
-              <div style={{fontSize:26,fontWeight:700,color:totalAccumulatedBalance>=0?C.teal:C.neg,margin:"6px 0",fontFamily:"'Newsreader',Georgia,serif"}}>{fmtS(totalAccumulatedBalance)}</div>
-              <div style={{fontSize:11,color:C.gray,lineHeight:1.6}}>
-                {priorYearsCarryover!==0
-                  ? <>Prior years: <strong style={{color:priorYearsCarryover>=0?C.teal:C.neg}}>{fmtS(priorYearsCarryover)}</strong> · This year so far: <strong style={{color:runningBalance>=0?C.teal:C.neg}}>{fmtS(runningBalance)}</strong></>
-                  : <>Cumulative surplus/deficit from {MONTH_FULL[0]} through {MONTH_FULL[selMonth]}, if you stay on budget.</>
-                }
-              </div>
-              {/* "Healthy cushion → move it to a HYSA" must not fire on borrowed
-                  money: a savings account pays ~4% while the loan charges ~8%, so
-                  parking it loses money. Returning it is the better move. */}
-              {totalAccumulatedBalance>moSpendable*2 && (surplusBorrowed
-                ? <div style={{marginTop:8,padding:"6px 10px",background:C.blueLight,borderRadius:8,fontSize:11,color:C.blue}}>You&apos;re holding a large cushion of borrowed money. Returning what you don&apos;t need beats saving it — a savings account pays less than your loan charges.</div>
-                : <div style={{marginTop:8,padding:"6px 10px",background:C.greenLight,borderRadius:8,fontSize:11,color:C.green}}>You&apos;re building a healthy cushion. Consider moving some into a high-yield savings account.</div>
-              )}
-              {totalAccumulatedBalance<0 && <div style={{marginTop:8,padding:"6px 10px",background:C.negLight,borderRadius:8,fontSize:11,color:C.neg}}>You&apos;re running a cumulative deficit. Review spending or adjust your budget.</div>}
             </Card>
 
             {/* The free-text "Notes" block was removed from the UI (founder

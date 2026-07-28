@@ -318,12 +318,12 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
                   <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor={`ln-offer-${loan.id}`}>
-                    Amount offered <span style={{ fontWeight: 400, color: C.text }}>(optional)</span>
+                    Amount offered
                   </label>
-                  <InfoTip text="The full amount your award letter offered for this loan. You don't have to take all of it — record it here just for reference. It doesn't change what you owe." />
+                  <InfoTip text="The full amount your award letter offered. You don't have to take all of it. This is only for reference and doesn't change what you owe." />
                 </div>
                 <input id={`ln-offer-${loan.id}`} type="number" min="0" value={loan.offeredAmount ?? ''} placeholder="$0"
-                  aria-label="Amount offered in your award letter, optional"
+                  aria-label="Amount offered in your award letter"
                   onChange={(e) => { const v = cleanNumInput(e); patch((l) => { l.offeredAmount = v === '' ? null : Number(v) || 0; }); }}
                   style={inputStyle({ width: 150 })} />
               </div>
@@ -332,21 +332,16 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
                 <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor={`ln-amt-${loan.id}`}>
                   {awardFraming
-                    ? <>Amount you accepted <span style={{ fontWeight: 400, color: C.text }}>(what you borrow)</span></>
+                    ? <>Amount you accepted</>
                     : <>Loan amount <span style={{ fontWeight: 400, color: C.text }}>(what you’re borrowing)</span></>}
                 </label>
-                {!awardFraming && <InfoTip text="The total you're borrowing from this lender — the amount you'll pay back, plus interest. Everything Marro shows is based on this number." />}
+                {!awardFraming && <InfoTip text="The total you're borrowing from this lender. This is what you'll pay back, plus interest." />}
               </div>
               <input id={`ln-amt-${loan.id}`} type="number" min="0" value={annualTotal || ''} placeholder="$0"
-                aria-label={awardFraming ? 'Amount you accepted — what you actually borrow and pay back' : 'Loan amount — what you are borrowing and pay back'}
+                aria-label={awardFraming ? 'Amount you accepted, which is what you borrow and pay back' : 'Loan amount, which is what you borrow and pay back'}
                 onChange={(e) => setAnnual(cleanNumInput(e))} style={inputStyle({ width: 150 })} />
             </div>
           </div>
-          {awardFraming && (
-            <div style={{ fontSize: 11, color: C.text, marginBottom: 8, lineHeight: 1.5 }}>
-              You can accept less than you&apos;re offered. Everything Marro shows — what you&apos;ll owe and its interest — is based on the amount you accepted.
-            </div>
-          )}
           {awardFraming && offered != null && annualTotal > 0 && annualTotal < offered && (
             <div style={{ fontSize: 11, color: C.text, marginBottom: 10, lineHeight: 1.5 }}>
               You accepted <strong style={{ color: C.text }}>{fmt(annualTotal)}</strong> of the <strong style={{ color: C.text }}>{fmt(offered)}</strong> offered.

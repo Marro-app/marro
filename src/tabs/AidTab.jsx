@@ -121,8 +121,8 @@ export function AidTab(){
             )}
             <div style={{height:1,background:C.border,margin:"4px 0"}}/>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:16}}>
-              <span style={{fontSize:12,fontWeight:600,color:C.text,display:"inline-flex",alignItems:"center",gap:4}}>You keep for living costs <InfoTip text="Grants and loans, minus tuition, fees, and health insurance. This is the money that reaches your account each year — it does not include your checking balance."/></span>
-              <span style={{fontSize:14,fontWeight:700,color:C.teal}}>{fmt(annDisburse)}</span>
+              <span style={{fontSize:12,fontWeight:600,color:C.text,display:"inline-flex",alignItems:"center",gap:4}}>You keep <InfoTip text="What reaches your bank account each year, after your school takes tuition, fees, and health insurance. This does not include money already in your checking account."/></span>
+              <span style={{fontSize:14,fontWeight:700,color:C.teal}}>{fmt(annDisburse)}<span style={{fontSize:11,fontWeight:400,color:C.gray}}> per year</span></span>
             </div>
           </div>
         </div>
@@ -209,10 +209,10 @@ export function AidTab(){
                     </div>
                   )}
                   {[
-                    {label:"Grants & scholarships (annual)", field:"grant", note:"Money you don't pay back. Includes health insurance. Add loans on the Loans tab — Marro counts them here automatically."},
-                    {label:"Tuition & fees",            field:"tuitionFees", note:"paid directly to school"},
-                    {label:"Health insurance",          field:"healthIns",   note:"school-covered, deducted from grant"},
-                    {label:"Housing (monthly)",         field:null,          value:y.monthly.housing||0, note:"per month", isHousing:true},
+                    {label:"Grants & scholarships (annual)", field:"grant", note:"Money you don't pay back"},
+                    {label:"Tuition & fees",            field:"tuitionFees", note:""},
+                    {label:"Health insurance",          field:"healthIns",   note:""},
+                    {label:"Housing (monthly)",         field:null,          value:y.monthly.housing||0, note:"", isHousing:true},
                     {label:"Other income (monthly)",    field:"otherIncome", note:"tutoring, work, etc."},
                   ].map(({label,field,note,value,isHousing})=>(
                     <div key={label} style={{padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
@@ -245,8 +245,8 @@ export function AidTab(){
                     </div>
                   </div>
                   <div style={{marginTop:12,padding:"10px 12px",background:C.tealLight,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.tealMid}`,borderRadius:8,fontSize:12}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3,alignItems:"center"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Sent to you/yr <InfoTip text="Your grants and loans for the year, minus tuition, fees, and health insurance — the part that reaches your account for living costs. It does not include your checking balance; that's a separate real-world number you enter on the Loans tab."/></span><strong style={{color:C.teal}}>{fmt(disb)}</strong></div>
-                    <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Safe to spend <InfoTip text="Sent to you for this year, plus other income, spread evenly across 12 months. On the Budget tab this adjusts to your actual balance once you check one in."/></span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3,alignItems:"center"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Sent to you/yr <InfoTip text="What reaches your bank account this year, after your school takes tuition, fees, and health insurance."/></span><strong style={{color:C.teal}}>{fmt(disb)}</strong></div>
+                    <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Safe to spend <InfoTip text="Sent to you, divided across the months of this school year."/></span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
                   </div>
                   {rawGap<0 && (
                     <div role="alert" style={{marginTop:8,padding:"10px 12px",background:C.dangerLight,border:`1px solid ${C.dangerMid}`,borderRadius:8,fontSize:12,color:C.danger,fontWeight:600}}>
@@ -277,24 +277,22 @@ export function AidTab(){
         <ScrollX className="scrollx" style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead><tr>
-              {["Year","Total aid","School costs","Sent to you/yr","Safe to spend/mo","Budget/mo","Surplus/mo","Cumulative"].map(h=>
+              {["Year","Total aid","School costs","Sent to you/yr","Safe to spend/mo","Budget/mo","Surplus/mo"].map(h=>
                 <th key={h} style={{textAlign:"left",fontSize:10,color:C.gray,padding:"6px 8px",borderBottom:`1px solid ${C.border}`,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
               )}
             </tr></thead>
             <tbody>
               {(()=>{
-                let cum=0;
                 return data.years.map(y=>{
                   const b=yearAidBreakdown(y,data.loans||[]);
                   const g=b.totalAid,tf=b.tuitionFees,hi=b.healthIns;
                   const rawGap=b.rawGap; // unfloored — negative means costs exceed aid
                   const disb=b.sentToYou,oth=b.otherIncomeAnnual;
                   const moD=b.moSpendable,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
-                  // Blank years (no grants or loans yet) don't count as a real
-                  // shortfall — no ⚠, no "-$6/mo", and they don't drag down the
-                  // running cumulative. They read as "—" until they're filled in.
+                  // Blank years (no grants or loans yet) aren't a real shortfall:
+                  // no warning icon and no "-$6/mo". They read as a dash until
+                  // they're filled in.
                   const notSetUp = b.totalAid <= 0;
-                  if(!notSetUp) cum+=moS*12;
                   return <tr key={y.id}>
                     <td style={{padding:"8px",fontWeight:600,whiteSpace:"nowrap",fontSize:11,color:C.text}}>{y.label}</td>
                     <td style={{padding:"8px",color:C.neg,fontWeight:600}}>
@@ -306,7 +304,6 @@ export function AidTab(){
                     <td style={{padding:"8px",fontWeight:600,color:C.text}}>{notSetUp?"—":fmt(moD)}</td>
                     <td style={{padding:"8px",color:C.text}}>{fmt(moSp)}</td>
                     <td style={{padding:"8px",fontWeight:600,color:notSetUp?C.gray:(moS>=0?C.teal:C.neg)}}>{notSetUp?"—":fmtS(moS)}</td>
-                    <td style={{padding:"8px",fontWeight:700,color:cum>=0?C.teal:C.neg}}>{fmtS(cum)}</td>
                   </tr>;
                 });
               })()}

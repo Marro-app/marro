@@ -87,17 +87,17 @@ function runwayTileDisplay(runway, cushionSource) {
       return { label: 'Money left', value: '—', sub: 'add your balance to see this', color: C.gray };
     case 'growing':
       if (cushionSource === 'own') return { label: 'Money left', value: 'Saving more than you spend ✓', sub: 'your balance grows a little each month', color: C.green };
-      return { label: 'Money left', value: 'Extra loan money', sub: 'you may be able to return some — see your Loans tab', color: C.blue };
+      return { label: 'Money left', value: 'Extra loan money', sub: 'you may be able to return some, see your Loans tab', color: C.blue };
     case 'through_graduation':
       return {
         label: 'Lasts until', value: 'Graduation', color: C.green,
-        sub: `${fmt(runway.spendable)} left — enough the whole way`,
+        sub: `${fmt(runway.spendable)} left, enough the whole way`,
         detail: runway.savings > 0 ? `You have ${fmt(runway.savings)} in savings on top of this.` : undefined,
       };
     case 'overdrawn':
       return {
         label: 'Money left', value: '$0', color: C.amber, alert: true,
-        sub: runway.coveredBySavings ? 'overdrawn — your savings covers it' : 'overdrawn — no savings to fall back on yet',
+        sub: runway.coveredBySavings ? 'overdrawn, but your savings covers it' : 'overdrawn, with no savings to fall back on yet',
       };
     case 'gap': {
       // The hero stays the date the money is ACTUALLY gone (inflows counted),
@@ -119,7 +119,7 @@ function runwayTileDisplay(runway, cushionSource) {
       if (runway.basicallyOnTrack) {
         return {
           label: 'Lasts until', value: fmtDayYear(runway.runOutDate), color: C.green,
-          sub: `${fmt(runway.spendable)} left — you're basically on track ✓`,
+          sub: `${fmt(runway.spendable)} left, you're basically on track ✓`,
         };
       }
       return {
@@ -129,7 +129,7 @@ function runwayTileDisplay(runway, cushionSource) {
       };
     }
     case 'graduated':
-      return { label: 'Money left', value: '—', sub: 'all done — congrats!', color: C.teal };
+      return { label: 'Money left', value: '—', sub: 'all done, congrats!', color: C.teal };
     default:
       return { label: 'Money left', value: '—', sub: 'add your balance to see this', color: C.gray };
   }
@@ -1155,7 +1155,7 @@ export function App() {
         </div>
       </Modal>}
       {confirmDeleteAccount && <Modal title="Delete your account?" onClose={()=>{if(!deletingAccount)setConfirmDeleteAccount(false);}} width={380}>
-        <div style={{fontSize:13,color:C.textMid,marginBottom:12,lineHeight:1.6}}>This permanently deletes your account and <strong>all</strong> your Marro data — budget, weekly entries, savings, subscriptions, and profile. <strong>This cannot be undone.</strong></div>
+        <div style={{fontSize:13,color:C.textMid,marginBottom:12,lineHeight:1.6}}>This permanently deletes your account and <strong>all</strong> your Marro data: budget, weekly entries, savings, subscriptions, and profile. <strong>This cannot be undone.</strong></div>
         <div style={{fontSize:12,color:C.textMid,marginBottom:8}}>
           If you want a copy of your data first, close this and use <strong>Export my data</strong> in Settings.
         </div>
@@ -1203,7 +1203,7 @@ export function App() {
         </div>
       </Modal>}
       {confirmYearRemove!==null && <Modal title="Remove year" onClose={()=>setConfirmYearRemove(null)} width={350}>
-        <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>Remove <strong>{data.years.find(y=>y.id===confirmYearRemove)?.label}</strong>? Its budget data is kept — you can reinstate this year anytime from <strong>Add year</strong>, and its numbers come right back.</div>
+        <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>Remove <strong>{data.years.find(y=>y.id===confirmYearRemove)?.label}</strong>? Its budget data is kept. You can reinstate this year anytime from <strong>Add year</strong> and its numbers come right back.</div>
         <div style={{display:"flex",gap:8}}>
           <button className="btn-fill" onClick={()=>setConfirmYearRemove(null)} style={{flex:1.4,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.creamSoft,color:C.text,cursor:"pointer"}}>Cancel</button>
           <button className="btn-fill" onClick={()=>{removeYear(confirmYearRemove);setConfirmYearRemove(null);}} style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:`1px solid ${C.dangerMid}`,borderRadius:8,background:C.dangerLight,color:C.danger,cursor:"pointer"}}>Remove</button>
@@ -1393,7 +1393,7 @@ export function App() {
       {/* ── Offline banner ── */}
       {syncStatus==="offline" && (
         <Banner type="warn">
-          <strong>You&apos;re offline</strong> — your changes are saved on this device and will sync automatically when you reconnect.
+          <strong>You&apos;re offline.</strong> Your changes are saved on this device and will sync automatically when you reconnect.
         </Banner>
       )}
 
