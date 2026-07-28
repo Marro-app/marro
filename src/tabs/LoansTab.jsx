@@ -630,8 +630,11 @@ function BalanceCheckin({ data, upd }) {
       {sorted.length > 0 && (
         <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
           <div style={{ fontSize: 11, color: C.text, marginBottom: 8, fontWeight: 600 }}>Past check-ins</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
-            {[...sorted].reverse().map((r) => (
+          {/* Most recent 5 only. A scrolling list inside a card meant a bright
+              scrollbar cutting through the glass, and older check-ins aren't
+              what anyone comes here to read — the recent trend is. */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {[...sorted].reverse().slice(0, 5).map((r) => (
               <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '4px 0' }}>
                 <span style={{ color: C.text }}>{new Date(r.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                 <span style={{ color: C.text, fontWeight: 600 }}>{fmt(r.spendable)}{r.savings != null ? ` + ${fmt(r.savings)} savings` : ''}</span>
