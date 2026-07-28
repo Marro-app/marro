@@ -822,13 +822,23 @@ export function App() {
   const renewalsSoon = subs.filter(s=>s.active!==false&&daysUntil(s.renewal)!==null&&daysUntil(s.renewal)>0&&daysUntil(s.renewal)<=14);
 
   // ── Mutations ─────────────────────────────────────────────────────────────
-  const setMo = (yi,cid,v) => {
+  // Resolves the year by ID, not array position. Its caller passes `ay` (a year
+  // id) while every READER — `yr` above, monthNetFor, the quick-add deficit —
+  // does `years.find(y => y.id === ay)`. Those agree only while id === index,
+  // which is true on a fresh account but stops being true as soon as a year is
+  // removed or added out of order. Once they diverged, typing a budget wrote the
+  // override onto a DIFFERENT year's record: the field you were editing never
+  // changed (it read the right year, which was never written), so every category
+  // appeared frozen at 0 — and a real budget was silently altered elsewhere.
+  const setMo = (yid,cid,v) => {
     const d=JSON.parse(JSON.stringify(data));
+    const y = d.years.find(x=>x.id===yid) || d.years[0];
+    if(!y) return;
     const mk=MONTH_NAMES[selMonth];
-    if(!d.years[yi].monthlyOverrides) d.years[yi].monthlyOverrides={};
-    if(!d.years[yi].monthlyOverrides[mk]) d.years[yi].monthlyOverrides[mk]={};
+    if(!y.monthlyOverrides) y.monthlyOverrides={};
+    if(!y.monthlyOverrides[mk]) y.monthlyOverrides[mk]={};
     const minV = Math.ceil(spentInMonth(cid,selMonth));  // can't budget below logged spending
-    d.years[yi].monthlyOverrides[mk][cid]=Math.max(Number(v)||0, minV);
+    y.monthlyOverrides[mk][cid]=Math.max(Number(v)||0, minV);
     upd(d);
   };
   const setYrF = (yi,f,v) => {const d=JSON.parse(JSON.stringify(data));d.years[yi][f]=v;upd(d);};
