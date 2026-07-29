@@ -19,6 +19,13 @@
 -- safe to re-run. Additive only: does not touch or remove anything in
 -- events.sql (that file's table/policies/views are untouched and still
 -- required — run it first if you haven't).
+--
+-- SECTIONS: (1) anon insert policy, (2) service-role-only dashboard views,
+-- (3) admin-gated RPCs so the in-app Admin → Usage dashboard can read those
+-- views from the browser client (added for the founder-facing dashboard —
+-- see src/tabs/AdminTab.jsx's UsageSection). Section 3 must be run for the
+-- Usage tile/dashboard to show real data; without it the dashboard falls
+-- back to its "no data yet" empty state (the RPCs simply don't exist).
 -- ───────────────────────────────────────────────────────────────────────────
 
 -- 1. Allow anonymous (logged-out landing page) inserts ──────────────────────
@@ -100,3 +107,88 @@ order by total_count desc;
 
 comment on view public.events_last_30_days_by_name is
   'Last-30-days total_count + distinct_users per event_name, from public.events. distinct_users excludes anonymous (NULL user_id) rows by definition of COUNT(DISTINCT). Admin/service-role read only.';
+
+-- ───────────────────────────────────────────────────────────────────────────
+-- 3. Admin-gated read RPCs (client-callable) ─────────────────────────────────
+--    The views above inherit RLS from `events` and return nothing to the
+--    anon/authenticated client — by design, same as events.sql. The Admin
+--    tab's Usage dashboard still needs a client-safe way to read them, so
+--    these mirror the existing is_admin()-gated SECURITY DEFINER pattern
+--    already used for is_admin()/my_invite_quota() (supabase/invites_
+--    waitlist.sql) rather than inventing a new auth scheme or exposing a
+--    service-role endpoint for what is, start to finish, a pure read.
+--    Each checks public.is_admin() itself (never trusts the caller) and
+--    returns zero rows for a non-admin/signed-out caller — never an error,
+--    so a non-admin client just sees an empty dashboard, exactly like
+--    admin_usage_metrics() (docs: AdminTab.jsx InsightsSection). Pinned
+--    search_path=public, granted ONLY to authenticated (anonymous landing-
+--    page visitors have no reason to call these). Idempotent.
+-- ───────────────────────────────────────────────────────────────────────────
+
+-- Most/least-clicked elements: totals per (tab, el, tag) over the trailing
+-- p_days window (default 30), summed across days server-side so the client
+-- doesn't have to reduce daily rows itself. One function serves both the
+-- "most-clicked" and "least-clicked" lists — the client just sorts/slices
+-- the same result set from opposite ends.
+create or replace function public.admin_click_by_element(p_days integer default 30)
+returns table(tab text, el text, tag text, click_count bigint)
+language plpgsql security definer set search_path = public stable
+as $$
+begin
+  if not public.is_admin() then
+    return; -- empty result set for non-admins/signed-out callers
+  end if;
+  return query
+    select v.tab, v.el, v.tag, sum(v.click_count)::bigint as click_count
+    from public.events_ui_click_by_element_daily v
+    where v.day >= (current_date - greatest(coalesce(p_days, 30), 1))
+    group by v.tab, v.el, v.tag
+    order by click_count desc;
+end;
+$$;
+revoke all on function public.admin_click_by_element(integer) from public;
+grant execute on function public.admin_click_by_element(integer) to authenticated;
+comment on function public.admin_click_by_element(integer) is
+  'Admin-only (is_admin()-gated) read of events_ui_click_by_element_daily, summed per (tab, el, tag) over the trailing p_days days. Empty result for non-admins. Used by AdminTab.jsx UsageSection.';
+
+-- Daily event counts per event_name, for the activity-trend chart. Same
+-- trailing-window shape as admin_click_by_element.
+create or replace function public.admin_daily_event_counts(p_days integer default 30)
+returns table(day date, event_name text, event_count bigint)
+language plpgsql security definer set search_path = public stable
+as $$
+begin
+  if not public.is_admin() then
+    return;
+  end if;
+  return query
+    select v.day, v.event_name, v.event_count
+    from public.events_daily_counts_by_name v
+    where v.day >= (current_date - greatest(coalesce(p_days, 30), 1))
+    order by v.day asc;
+end;
+$$;
+revoke all on function public.admin_daily_event_counts(integer) from public;
+grant execute on function public.admin_daily_event_counts(integer) to authenticated;
+comment on function public.admin_daily_event_counts(integer) is
+  'Admin-only (is_admin()-gated) read of events_daily_counts_by_name over the trailing p_days days. Empty result for non-admins. Used by AdminTab.jsx UsageSection.';
+
+-- Last-30-days rollup per event_name (total_count + distinct_users) — the
+-- stat-tile source (e.g. "active users" from ui_click's distinct_users).
+create or replace function public.admin_events_last_30_days()
+returns table(event_name text, total_count bigint, distinct_users bigint)
+language plpgsql security definer set search_path = public stable
+as $$
+begin
+  if not public.is_admin() then
+    return;
+  end if;
+  return query
+    select v.event_name, v.total_count::bigint, v.distinct_users::bigint
+    from public.events_last_30_days_by_name v;
+end;
+$$;
+revoke all on function public.admin_events_last_30_days() from public;
+grant execute on function public.admin_events_last_30_days() to authenticated;
+comment on function public.admin_events_last_30_days() is
+  'Admin-only (is_admin()-gated) read of events_last_30_days_by_name. Empty result for non-admins. Used by AdminTab.jsx UsageSection stat tiles.';
