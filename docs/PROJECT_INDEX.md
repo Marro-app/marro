@@ -48,6 +48,11 @@ Don't scan the file; `grep -n` the key for the section you need. Keys are stable
 - `AI_COST_MODEL.md` — plain-language AI cost model: per-feature/user/scale cost, Haiku/Sonnet/Opus routing, cost-control levers, launch safeguards, staged pricing (read before Phase 4 AI work)
 - `FUTURE_WORK.md` — prioritized backlog
 
+## Analytics
+- **`ui_click` — automatic, zero-per-feature-instrumentation usage tracking (`src/lib/analytics.js`).** One global, delegated, capture-phase click listener (installed once from `src/main.jsx`, deferred after window `load` like Sentry) walks up from every click to the nearest interactive element (`button`, `a`, `[role="button"]`, submit/button `input`s, `summary`, `label`, or anything with `data-analytics`) and logs it — no code needed on new buttons/features for them to show up. Identifier priority: `data-analytics` attribute → `aria-label` → `name`/`id` → visible text, sanitized (digits/currency stripped, slugified, capped ~40 chars — see `docs/DATA_ETHICS.md`). Batched client-side and flushed as one multi-row insert every ~15s and on tab-hide/pagehide, not one row per click.
+- **Opt-out convention for future features**: add `data-analytics-off` to an element (or an ancestor) to exclude it and its children from click tracking. Add `data-analytics="some-label"` to override the auto-derived identifier when the default (aria-label/name/id/text) would be wrong or unstable.
+- Reuses the existing `events` table (`supabase/events.sql`) — no new table. SQL additions (anon insert policy for logged-out landing clicks + dashboard views) live in `supabase/analytics.sql`.
+
 ## Critical rules
 1. Plan first for multi-feature work; visual-verify every UI change before declaring done
 2. Credentials only in Vercel env vars — never in `index.html` (public repo; scanners revoke pushed tokens)
