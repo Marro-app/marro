@@ -134,11 +134,34 @@ describe('generateYearConfigs', () => {
     const ys = generateYearConfigs(2024, 4);
     expect(ys).toHaveLength(4);
     expect(ys[0]).toMatchObject({
-      id: 0, label: 'Year 1 — 2024-25', startDate: '2024-08-01', endDate: '2025-08-15',
+      id: 0, label: 'Year 1 — 2024-25', startDate: '2024-08-01', endDate: '2025-07-31',
     });
     expect(ys[3]).toMatchObject({ id: 3, label: 'Year 4 — 2027-28', startDate: '2027-08-01' });
     // financial fields all default to 0 for every school (no special-casing)
     expect(ys[0]).toMatchObject(blankYearFields());
+  });
+  // Bug B2: consecutive generated years must never overlap or gap — each ends
+  // the day before the next begins, so the Aid tab's overlap validator
+  // (year.endDate < nextYear.startDate) is satisfied on default data.
+  it('B2: consecutive years are contiguous — end is the day before the next start, never overlapping', () => {
+    const ys = generateYearConfigs(2024, 4);
+    for (let i = 0; i < ys.length - 1; i++) {
+      expect(ys[i].endDate < ys[i + 1].startDate).toBe(true); // no overlap
+      // and no gap: the day after this year's end is the next year's start
+      const dayAfter = new Date(ys[i].endDate + 'T12:00:00');
+      dayAfter.setDate(dayAfter.getDate() + 1);
+      expect(dayAfter.toISOString().slice(0, 10)).toBe(ys[i + 1].startDate);
+    }
+  });
+  // "Final year ends at graduation" — the last generated year ends at its
+  // school-end (July 31, the academic-year boundary), with no trailing August
+  // sliver spilling past graduation into a year the student has already left.
+  it('the final year ends at its school-end with no trailing summer', () => {
+    const ys = generateYearConfigs(2024, 4);
+    expect(ys[ys.length - 1].endDate).toBe('2028-07-31');
+  });
+  it('every generated year defaults aidThroughDate to null (aid covers the whole year)', () => {
+    for (const y of generateYearConfigs(2024, 4)) expect(y.aidThroughDate).toBe(null);
   });
   it('clamps length to at least 1', () => {
     expect(generateYearConfigs(2024, 0)).toHaveLength(1);
@@ -150,7 +173,7 @@ describe('generateYearConfigs', () => {
   it('handles the century rollover in the label suffix', () => {
     const ys = generateYearConfigs(2099, 1);
     expect(ys[0].label).toBe('Year 1 — 2099-00');
-    expect(ys[0].endDate).toBe('2100-08-15');
+    expect(ys[0].endDate).toBe('2100-07-31');
   });
 });
 

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { C, CHART_COLORS, tipProps } from '../lib/theme.js';
-import { fmt, fmtS, fmtDay, MONTH_NAMES, MONTH_FULL, sanitizeMoneyInput, cleanNumEvent, catColorIndex, yearMonthRange } from '../lib/format.js';
+import { fmt, MONTH_NAMES, MONTH_FULL, cleanNumEvent, catColorIndex, yearMonthRange } from '../lib/format.js';
 import { USMLE_STEP_FEE_ESTIMATE } from '../lib/constants.js';
 import { Card, SectionTitle, Divider, InfoTip, Pill, XBtn, Modal } from '../components/primitives.jsx';
+import { BalanceCheckin } from '../components/BalanceCheckin.jsx';
 import { Icon, CatIcon, CatIconPicker, ChangeIconButton } from '../components/icons.jsx';
 import { MonthPicker } from '../components/pickers.jsx';
 import { SubscriptionsTab } from './SubscriptionsTab.jsx';
@@ -18,8 +19,8 @@ import { targetIndexFor, rowShift } from '../lib/reorder.js';
 // Categories tab — both come from useApp().
 export function BudgetTab(){
   const { data, cats, ay, yr, yrStartYear, selMonth, setSelMonth, subs, subsMo, disabledCats,
-          moSpend, moSpendable, moSurplus, runningBalance, totalAccumulatedBalance,
-          priorYearsCarryover, annDisburse, annOther, aidBreakdown, safeToSpend, safeToSpendMo, planBase, runway, upd, allEntriesFlat,
+          moSpend, moSpendable, moSurplus,
+          aidBreakdown, safeToSpend, runway, upd, allEntriesFlat,
           getMonthVal, spentInMonth, unbudgetedCats, unbudgetedTotal, promoteToBudget,
           toggleMonthCat, setMo, reorderCats, addCat,
           newCatName, setNewCatName, newCatIcon, setNewCatIcon, iconPickOpen, setIconPickOpen } = useApp();
@@ -297,7 +298,7 @@ export function BudgetTab(){
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:C.surface,borderRadius:8,marginBottom:10,border:`1px solid ${C.border}`}}>
               <div style={{flex:1}}>
                 <div style={{fontSize:12,fontWeight:600,color:C.text}}>Housing</div>
-                <div style={{fontSize:11,color:C.gray,marginTop:1,display:"flex",alignItems:"center",gap:4}}>Fixed by housing contract <InfoTip text="Housing is set by your housing contract. Edit the rate in the Aid & Detail tab."/></div>
+                <div style={{fontSize:11,color:C.gray,marginTop:1,display:"flex",alignItems:"center",gap:4}}>Fixed by housing contract <InfoTip text="Housing is set by your housing contract. Edit the rate in the Aid & Plan tab."/></div>
               </div>
               <div style={{fontWeight:700,fontSize:14,color:C.text}}>{fmt(yr.monthly.housing||0)}<span style={{fontSize:11,fontWeight:400,color:C.gray}}>/mo</span></div>
             </div>
@@ -387,6 +388,20 @@ export function BudgetTab(){
               </div>
               <span style={{color:moSpend>moSpendable?C.neg:C.text}}>{fmt(moSpend)}/mo</span>
             </div>
+            {/* This-month room (question 3): is your plan within what's safe to spend?
+                Folded here when the Cash flow card was removed. Never green when the
+                spendable money is borrowed (founder rule) — colour AND words carry it. */}
+            {moSurplus!==0 && (
+              <div style={{marginTop:12,padding:"10px 12px",
+                background:moSurplus<0?C.negLight:(surplusBorrowed?C.blueLight:C.greenLight),borderRadius:8,fontSize:12,
+                color:moSurplus<0?C.neg:(surplusBorrowed?C.blue:C.green),fontWeight:500,lineHeight:1.5}}>
+                {moSurplus<0
+                  ? `Your plan is ${fmt(Math.abs(moSurplus))} more than what's safe to spend this month — trim a little, or it comes out of your cushion.`
+                  : surplusBorrowed
+                    ? `${fmt(moSurplus)} under what's safe to spend this month — but that money is borrowed, so returning what you don't need within 120 days cancels its interest.`
+                    : `${fmt(moSurplus)} under what's safe to spend this month — a nice bit of room.`}
+              </div>
+            )}
             {unbudgetedCats.length>0 && <div style={{marginTop:16,paddingTop:14,borderTop:`2px dashed ${C.border}`}}>
               <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
                 <span style={{fontSize:12,fontWeight:700,color:C.amber}}>Unbudgeted spending</span>
@@ -410,106 +425,6 @@ export function BudgetTab(){
           </Card>
 
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
-            <Card>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
-                <SectionTitle>Cash flow</SectionTitle>
-                <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,color:C.gray}}><Icon name="live" size={11} color={C.green} style={{animation:"marroPulse 2s infinite"}}/>Live</span>
-              </div>
-              
-              {/* A surplus built mostly from borrowed money is not wealth — it's
-                  cash sitting at ~8% that could often be returned. So when the
-                  year is loan funded, a POSITIVE surplus reads blue, never green,
-                  and the label says "borrowed" — the wording has to carry it too,
-                  since colour alone would fail WCAG 1.4.1. Same rule the Runway
-                  tile already applies via classifyCushionSource. */}
-              {[
-                {l:"Aid and loans sent to you", v:fmt(annDisburse)+"/yr",    c:C.teal,
-                 tip:"What's left of your grants and loans after tuition, fees, and health insurance come out — the money that actually reaches your account for living costs."},
-                ...(annOther>0 ? [{l:"Other income", v:fmt(annOther)+"/yr", c:C.text}] : []),
-                // The one "how much can I spend" number (src/lib/aid.js →
-                // availableMoney). Balance-anchored once a check-in exists, so it
-                // MOVES as the balance moves — which is exactly why it needs the
-                // disclosure below it: a number that changes on its own reads as
-                // arbitrary without the arithmetic behind it.
-                // In the final month a "/mo" rate is misleading — it reads as a
-                // sustainable monthly pace when it's really the whole remaining
-                // balance for a few weeks. Say what it actually is instead.
-                {id:"safe",
-                 l:safeToSpend.monthsLeft<=1 && safeToSpend.basis==="balance" ? "Left for the rest of the year" : "Safe to spend",
-                 v:safeToSpend.monthsLeft<=1 && safeToSpend.basis==="balance" ? fmt(safeToSpend.available) : fmt(safeToSpendMo)+"/mo",
-                 c:C.teal,bold:true,
-                 tip: safeToSpend.basis==="balance"
-                   ? `You have ${fmt(safeToSpend.onHand)} in your accounts and ${fmt(safeToSpend.stillToArrive)} still coming, which is ${fmt(safeToSpend.available)} to cover ${safeToSpend.monthsLeft} month${safeToSpend.monthsLeft===1?"":"s"} until your school year ends. Update your balance on the Loans tab to keep this accurate.`
-                   : "This is your full year's aid and loans spread over 12 months. Add your current balance on the Loans tab and Marro will use what you actually have instead."},
-                // "Safe to spend" averages the whole year, which is what CREATES a
-                // dry spell — aid lands in lumps, so spending the average can leave
-                // you at $0 waiting on the next payment. This is the figure that
-                // prevents it: what the cash actually in your account supports
-                // between now and that payment. Only shown when it's tighter than
-                // the average, i.e. when there's genuinely something to watch.
-                ...(untilNext && untilNext.perMonth < safeToSpendMo ? [{
-                  id:"untilnext", l:"Until your next money", v:fmt(untilNext.perMonth)+"/mo", c:C.amber,
-                  tip:`What's in your account now, spread over the ${untilNext.monthsToNext} month${untilNext.monthsToNext===1?"":"s"} until your next payment${untilNext.isEstimate?" (that date is an estimate — confirm it with your aid office)":""} on ${fmtDay(untilNext.date)}. Spending at the year average instead would run you dry before then.${leanMonths.size>0 && leanPlan && !leanPlan.possible ? " Your rent and fixed costs alone come to " + fmt(leanPlan.fixedTotal) + "/mo, which is already more than this — trimming day-to-day spending can\u2019t close that on its own." : ""}`,
-                  action: (leanMonths.size>0 && leanPlan?.possible) ? "lean" : null,
-                }] : []),
-                {id:"plan", l:"Monthly plan", v:`${fmt(moSpend)} of ${fmt(planBase)}`, c:C.text},
-                {l:surplusBorrowed?"Left over (borrowed)":"Monthly surplus",
-                 v:fmtS(moSurplus)+"/mo",     c:moSurplus<0?C.neg:(surplusBorrowed?C.blue:C.green),bold:true},
-              ].map(r=>(
-                <div key={r.id||r.l}>
-                  <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:r.id==="safe"?"none":`1px solid ${C.border}`,fontSize:12}}>
-                    <span style={{color:C.gray,display:"inline-flex",alignItems:"center",gap:4,flexWrap:"wrap"}}>
-                      {r.l}{r.tip && <InfoTip text={r.tip} />}
-                      {r.action==="lean" && (
-                        <button type="button" className="txt-act" onClick={()=>setConfirmLean(leanPlan)}
-                          style={{border:"none",background:"transparent",color:C.teal,fontSize:11,fontWeight:600,cursor:"pointer",padding:0}}>
-                          use for the lean months
-                        </button>
-                      )}
-                    </span>
-                    <span style={{fontWeight:r.bold?700:500,color:r.c}}>{r.v}</span>
-                  </div>
-                  {/* How much of what you can spend this plan uses. The number
-                      alone did not answer "is that a lot?", so the bar gives it
-                      a scale. Turns amber once the plan exceeds what is safe. */}
-                  {r.id==="plan" && planBase>0 && (
-                    <div style={{padding:"0 0 6px"}}>
-                      <div style={{height:4,borderRadius:99,background:C.surface,overflow:"hidden"}}>
-                        <div style={{height:"100%",width:`${Math.min(100,(moSpend/planBase)*100)}%`,borderRadius:99,background:moSpend>planBase?C.neg:C.teal,transition:"width .2s"}}/>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-              <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0 2px",fontSize:13,fontWeight:700}}>
-                <span>Projected leftover <InfoTip text={`This is what you'd have left by the end of ${MONTH_FULL[selMonth]} if you stick to your monthly plan. It's a forecast from your plan, not the balance in your bank account.`}/> <span style={{fontSize:10,color:C.gray,fontWeight:400}}>through {MONTH_FULL[selMonth]}</span></span>
-                <span style={{color:runningBalance>=0?C.teal:C.neg}}>{fmtS(runningBalance)}</span>
-              </div>
-              {/* Moved here when the duplicate "Projected leftover" card was
-                  removed. The cushion nudge must never fire on borrowed money: a
-                  savings account pays about 4% while the loan charges about 8%,
-                  so parking it loses money. Returning it is the better move. */}
-              {totalAccumulatedBalance>moSpendable*2 && (surplusBorrowed
-                ? <div style={{marginTop:8,padding:"6px 10px",background:C.blueLight,borderRadius:8,fontSize:11,color:C.blue}}>You&apos;re holding a large cushion of borrowed money. Returning what you don&apos;t need beats saving it, because a savings account pays less than your loan charges.</div>
-                : <div style={{marginTop:8,padding:"6px 10px",background:C.greenLight,borderRadius:8,fontSize:11,color:C.green}}>You&apos;re building a healthy cushion. Consider moving some into a high-yield savings account.</div>
-              )}
-              {totalAccumulatedBalance<0 && <div style={{marginTop:8,padding:"6px 10px",background:C.negLight,borderRadius:8,fontSize:11,color:C.neg}}>Your plan spends more than you have coming in. Review your largest categories or lower a few.</div>}
-              {moSurplus!==0 && (
-                <div style={{marginTop:8,padding:"10px 12px",
-                  background:moSurplus<0?C.negLight:(surplusBorrowed?C.blueLight:C.greenLight),borderRadius:8,fontSize:12,
-                  color:moSurplus<0?C.neg:(surplusBorrowed?C.blue:C.green),fontWeight:500}}>
-                  {moSurplus<0
-                    ? `${fmt(Math.abs(moSurplus))} over your plan this month. That comes out of your projected leftover.`
-                    : surplusBorrowed
-                      // Swapped, not added: the old "surplus carries into your
-                      // running balance" line is actively wrong advice when the
-                      // money is borrowed at ~8%.
-                      ? `${fmt(moSurplus)} left over this month, but this is borrowed money. You can return what you don't need within 120 days of a loan being paid out to cancel its interest.`
-                      : `${fmt(moSurplus)} left over this month. If you stick to your plan it carries forward into your projected leftover.`}
-                </div>
-              )}
-            </Card>
-
             {/* Plan vs actual — Phase 1's one chart, ported from the hidden Charts tab */}
             <Card>
               <SectionTitle>Plan vs actual</SectionTitle>
@@ -581,6 +496,11 @@ export function BudgetTab(){
                 call — looked cheap, rarely used). The underlying yr.notes data
                 field is left intact so existing notes still sync and nothing
                 breaks; it's simply no longer rendered here. */}
+          </div>
+          {/* Check-in form at the BOTTOM (founder: the input form doesn't belong at
+              the top — the "Vs your plan" tile up top carries its status). Full width. */}
+          <div style={{gridColumn:"1 / -1"}}>
+            <BalanceCheckin data={data} upd={upd} />
           </div>
         </div>
     </>

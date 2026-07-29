@@ -1,6 +1,67 @@
-import { loanCashLanded, estimateRefunds, normalizeReadings, readingTotal } from './loans.js';
+import { loanCashLanded, estimateRefunds, normalizeReadings, effectiveFeePct } from './loans.js';
+import { DAYS_PER_MONTH } from './constants.js';
 
 export { loanCashLanded };
+
+// ── School / summer month math (money-rework Phase 1) ────────────────────────
+// A single low-level "how many whole months between two ISO dates" helper,
+// day-based (round to nearest month via the shared DAYS_PER_MONTH) rather than
+// a naive calendar getMonth() diff. Day-based rounding is what lets a normal
+// academic year read as 12 months whether it ends July 31 (contiguous
+// generation, post-B2) or Aug 15 (a hand-entered "safe" end): both span ~365
+// days ≈ 12 months. Returns null for missing/garbage dates so callers can
+// choose their own fallback.
+const DAY_MS = 24 * 60 * 60 * 1000;
+function parseISO(iso) {
+  if (typeof iso !== 'string') return null;
+  const d = new Date(iso + 'T12:00:00');
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+function roundedMonthsBetween(a, b) {
+  const s = parseISO(a);
+  const e = parseISO(b);
+  if (!s || !e) return null;
+  return Math.round((e - s) / DAY_MS / DAYS_PER_MONTH);
+}
+
+/**
+ * The number of whole months in a year's SCHOOL period — from `startDate` to
+ * the date its aid is meant to last through (`aidThroughDate` when the student
+ * has set one, otherwise the year's `endDate`). This is the divisor for the
+ * "planned per month" figure.
+ *
+ * ⚠ Backward compatibility: `aidThroughDate` defaults to null on every year, so
+ * this falls through to `endDate` and a normal Aug→(Jul 31 | Aug 15) year lands
+ * on exactly 12 — reproducing the old flat `/12` divisor bit-for-bit for all
+ * existing/default data. It only diverges once a student deliberately enters an
+ * earlier classes-end date (e.g. Cornell's ~May, giving ~9 school months).
+ * Falls back to 12 whenever the dates are missing or nonsensical.
+ */
+export function schoolMonths(year) {
+  const y = year || {};
+  const through = y.aidThroughDate != null ? y.aidThroughDate : y.endDate;
+  const m = roundedMonthsBetween(y.startDate, through);
+  return m != null && m > 0 ? m : 12;
+}
+
+/**
+ * The uncovered summer between one year's aid-coverage end and the next year's
+ * start — the gap-detection the Plan tab's summer card keys off (money-rework
+ * §4b). Returns null (no card) when there is no real gap:
+ *   - `aidThroughDate` is null (aid covers the whole year — a 12-month school or
+ *     a funded MD-PhD year);
+ *   - there is no `nextYear` (the final/graduation year has no trailing summer);
+ *   - aid coverage runs right up to or past the next year's start.
+ * Otherwise returns { start, end, months } describing the gap.
+ */
+export function summerWindow(year, nextYear) {
+  const through = year && year.aidThroughDate;
+  if (!through) return null;
+  if (!nextYear || !nextYear.startDate) return null;
+  if (through >= nextYear.startDate) return null; // coverage reaches the next year — no gap
+  const months = Math.max(1, roundedMonthsBetween(through, nextYear.startDate) || 0);
+  return { start: through, end: nextYear.startDate, months };
+}
 
 // ── Aid + loans → spending money ────────────────────────────────────────────
 //
@@ -120,7 +181,19 @@ export function yearAidBreakdown(year, loans, yearStartYear) {
   const rawGap = totalAid - schoolCosts;
   const sentToYou = Math.max(rawGap, 0);
   const otherIncomeAnnual = (Number(y.otherIncome) || 0) * 12;
-  const moSpendable = (sentToYou + otherIncomeAnnual) / 12;
+
+  // ── School-months divisor (money-rework §4a) ───────────────────────────────
+  // The spendable money is spread over the ACTUAL school months (start →
+  // aidThroughDate), not a flat 12. `schoolMonths` is 12 for any year with a
+  // null aidThroughDate (the default), so this is a no-op on existing data and
+  // `moSpendable` keeps its exact old value; it only tightens once a student
+  // says their aid stops earlier (Cornell ~9 months). moSpendable is
+  // DELIBERATELY still the per-school-month PLAN figure that feeds the running
+  // balance — it is not the balance-anchored "remaining months" figure (that
+  // lives on availableMoney.perMonth). Keeping them separate is the
+  // double-count guard (see docs/DATA_MODEL.md "The double-count trap").
+  const months = schoolMonths(y);
+  const moSpendable = (sentToYou + otherIncomeAnnual) / months;
 
   // Share of the money the student can actually SPEND that came from borrowing.
   // Built from what reaches the account (sentToYou + other income), not from
@@ -130,9 +203,20 @@ export function yearAidBreakdown(year, loans, yearStartYear) {
   const borrowedSpendable = Math.max(Math.min(loanCash, sentToYou), 0);
   const loanShare = spendableTotal > 0 ? borrowedSpendable / spendableTotal : 0;
 
+  // No-aid / self-funded degrade (money-rework §4e): a flag the UI can read to
+  // switch to the balance-only framing when there is essentially no aid to
+  // divide (career-changer on savings, full-ride with no loans). Purely a
+  // surfaced boolean — it changes no numbers here. `hasAid` is about the aid
+  // SCAFFOLDING (grants + committed loan cash); other income is tracked apart.
+  const hasAid = totalAid > 0;
+
   return {
     grants, loanCash, totalAid, schoolCosts, tuitionFees, healthIns,
     rawGap, sentToYou, otherIncomeAnnual, moSpendable,
+    // `schoolMonths` = the divisor used above; `plannedPerMonth` is an explicit
+    // alias for moSpendable under the §5 name ("Planned per month").
+    schoolMonths: months, plannedPerMonth: moSpendable,
+    hasAid, selfFunded: !hasAid,
     loanShare, isLoanFunded: loanShare > 0.5,
   };
 }
@@ -198,12 +282,17 @@ export function availableMoney({ year, loans, readings, today }) {
   // current one. Identical to the pre-2026-07-26 behaviour by construction.
   const projection = {
     onHand: 0,
+    savings: 0,
     stillToArrive: fullYear,
     available: fullYear,
     monthsLeft: 12,
     perMonth: fullYear / 12,
     untilNextMoney: null,
     basis: 'projection',
+    // No-aid degrade flags (money-rework §4e), surfaced alongside `basis` so the
+    // UI can lean on the check-in when the aid-projection scaffolding is empty.
+    hasAid: breakdown.hasAid,
+    selfFunded: breakdown.selfFunded,
     asOf: null,
     breakdown,
   };
@@ -216,7 +305,13 @@ export function availableMoney({ year, loans, readings, today }) {
   // A reading from before this year began describes a PRIOR year's money.
   if (!latest || latest.date < y.startDate) return projection;
 
-  const onHand = readingTotal(latest);
+  // "Safe to spend" is CHECKING money only — the cash you actually spend from.
+  // Savings is deliberately NOT counted (founder call): the check-in calls it
+  // "set aside", and counting it would tell a student it's safe to spend money
+  // they've reserved. It's surfaced separately as `savings` so the UI can show it
+  // as a cushion "on top" (matching the runway tile, which already excludes it).
+  const onHand = Number(latest.spendable) || 0;
+  const savings = Number(latest.savings) || 0;
 
   // Money that genuinely hasn't landed yet. estimateRefunds already models the
   // real dated inflows — grant halves at term start plus each loan disbursement
@@ -258,13 +353,114 @@ export function availableMoney({ year, loans, readings, today }) {
 
   return {
     onHand,
+    savings,
     stillToArrive: stillToArrive + otherIncomeAhead,
     available,
     monthsLeft,
     perMonth: available / monthsLeft,
     untilNextMoney,
     basis: 'balance',
+    hasAid: breakdown.hasAid,
+    selfFunded: breakdown.selfFunded,
     asOf: latest.date,
     breakdown,
   };
+}
+
+// ── Summer fund (money-rework §4b/§4c) ───────────────────────────────────────
+// All of these are PURE calcs: they take the summer inputs as arguments and
+// never read any persisted summer state — that data shape is designed later
+// with the UI. Kept small and composable so each is independently testable.
+
+/**
+ * What the summer costs per month and in total, derived from the student's own
+ * school-year monthly plan adjusted for a summer rent that usually differs
+ * (go home → $0; away rotation → higher). The non-rent part of the plan carries
+ * over; only the housing line swaps out.
+ *
+ * @param {object} p
+ * @param {number} p.monthlyPlan  the school-year "Monthly plan" total (incl. school rent).
+ * @param {number} p.schoolRent   the rent baked into that plan (the housing line).
+ * @param {number|null} p.summerRent  the summer rent override; null = "same as school" (no change).
+ * @param {object|null} p.window   a summerWindow() result; null → no summer, returns null.
+ * @returns {{monthly:number, months:number, total:number}|null}
+ */
+export function summerFundNeed({ monthlyPlan, schoolRent = 0, summerRent = null, window }) {
+  if (!window) return null;
+  const plan = Number(monthlyPlan) || 0;
+  const baseRent = Number(schoolRent) || 0;
+  const rent = summerRent == null ? baseRent : Number(summerRent) || 0;
+  const monthly = Math.max(0, plan - baseRent + rent); // swap the rent line, keep the rest
+  const months = window.months;
+  return { monthly, months, total: monthly * months };
+}
+
+/**
+ * Money available to cover the summer, from either (or both) income shapes in
+ * the design: dated lumps (a stipend landing on specific date(s), reusing the
+ * loan-disbursement timing idea) and a steady monthly wage smoothed over the
+ * window. Only lumps dated INSIDE the summer window count toward summer
+ * resources — a July-1 stipend can't fund a June that already passed.
+ *
+ * @param {object} p
+ * @param {object|null} p.window   a summerWindow() result; null → totals are 0.
+ * @param {Array} p.lumps          [{amount, date}] dated one-off summer income.
+ * @param {number} p.monthlyWage   steady take-home per month over the window.
+ * @returns {{lumpTotal:number, wageTotal:number, total:number}}
+ */
+export function summerResources({ window, lumps = [], monthlyWage = 0 }) {
+  if (!window) return { lumpTotal: 0, wageTotal: 0, total: 0 };
+  const lumpTotal = (lumps || [])
+    .filter((l) => l && l.date && l.date >= window.start && l.date <= window.end)
+    .reduce((a, l) => a + (Number(l.amount) || 0), 0);
+  const wageTotal = (Number(monthlyWage) || 0) * window.months;
+  return { lumpTotal, wageTotal, total: lumpTotal + wageTotal };
+}
+
+/**
+ * Need vs. resources for the summer: the shortfall (what's still uncovered) or
+ * the surplus. Composed from summerFundNeed() + summerResources() outputs so
+ * each piece stays independently testable.
+ */
+export function summerShortfall({ need, resources }) {
+  const needTotal = need ? Number(need.total) || 0 : 0;
+  const resTotal = resources ? Number(resources.total) || 0 : 0;
+  return {
+    need: needTotal,
+    resources: resTotal,
+    shortfall: Math.max(0, needTotal - resTotal),
+    surplus: Math.max(0, resTotal - needTotal),
+  };
+}
+
+/**
+ * Date-based routing (money-rework §4c): split committed loan cash (net of fee)
+ * into what lands in the SCHOOL window vs the SUMMER window, purely by each
+ * disbursement's date. A disbursement dated inside the summer window feeds the
+ * summer fund; everything else feeds the school-year fund. With a null window
+ * (no summer), all cash routes to school. This is how "borrowed extra for
+ * summer research" — a loan with a summer-dated disbursement — routes to summer
+ * automatically with no new data field.
+ *
+ * Mirrors loanCashForYear's gates (accepted/disbursed only; current-balance
+ * loans excluded — that money landed in a past year), so school+summer always
+ * sums to exactly the year's landed loan cash.
+ */
+export function routeLoanCashBySummer(loans, window) {
+  let school = 0;
+  let summer = 0;
+  for (const l of loans || []) {
+    if (!l) continue;
+    if (l.status !== 'accepted' && l.status !== 'disbursed') continue;
+    if (l.asOfDate != null && l.asOfBalance != null) continue;
+    const feeMult = 1 - effectiveFeePct(l);
+    for (const d of l.disbursements || []) {
+      const cash = (Number(d.amount) || 0) * feeMult;
+      if (cash <= 0) continue;
+      const inSummer = window && d.date && d.date >= window.start && d.date < window.end;
+      if (inSummer) summer += cash;
+      else school += cash;
+    }
+  }
+  return { school, summer };
 }

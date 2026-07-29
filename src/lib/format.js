@@ -1,7 +1,12 @@
 import { USMLE_STEP_FEE_ESTIMATE } from './constants.js';
 
 export const BLANK_MONTHLY = {housing:0,food:0,transport:0,personal:0,books:0,exams:0,savings:0,social:0,subs:0};
-export const blankYearFields = () => ({ tuitionFees:0, healthIns:0, grant:0, otherIncome:0, housing:0, housingNote:"", livingAllowance:0, notes:"" });
+// `aidThroughDate` (money-rework Phase 1): the date this year's aid is meant to
+// last through — classes end / aid stops. `null` = aid covers the WHOLE year
+// (no summer gap), which is the default so every existing year keeps dividing
+// its aid over a full ~12 months exactly as before (see yearAidBreakdown's
+// school-months divisor in src/lib/aid.js, which reproduces /12 when it's null).
+export const blankYearFields = () => ({ tuitionFees:0, healthIns:0, grant:0, otherIncome:0, housing:0, housingNote:"", livingAllowance:0, notes:"", aidThroughDate:null });
 
 // Tier-1 heuristic academic-year date provider. Budgeting needs the ~12-month
 // financial boundary, not day-precision, so we anchor each year near Aug 1.
@@ -13,7 +18,16 @@ export function generateYearConfigs(startYear, lengthYears){
   const out = [];
   for(let i=0;i<n;i++){
     const sy = startYear + i;
-    out.push({ id:i, label:`Year ${i+1} — ${sy}-${yr2(sy+1)}`, ...blankYearFields(), startDate:`${sy}-08-01`, endDate:`${sy+1}-08-15` });
+    // Bug B2 (money-rework): consecutive years used to end `${sy+1}-08-15`
+    // while the next started `${sy+1}-08-01`, a two-week OVERLAP that tripped
+    // the Aid tab's own overlap validator on default data. Each year now ends
+    // the day before the next starts (`${sy+1}-07-31` — the last day of the
+    // Aug→Jul academic-month array), so consecutive years neither overlap nor
+    // gap. The FINAL year has no next year to butt against, so this same
+    // school-end date (July 31, no trailing August sliver into a year the
+    // student has already graduated out of) IS its graduation-side end: with
+    // no nextYear, summerWindow() returns null for it and no summer is implied.
+    out.push({ id:i, label:`Year ${i+1} — ${sy}-${yr2(sy+1)}`, ...blankYearFields(), startDate:`${sy}-08-01`, endDate:`${sy+1}-07-31` });
   }
   return out;
 }

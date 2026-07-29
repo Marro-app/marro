@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { C } from '../lib/theme.js';
 import { fmt, fmtDay, todayStr, sanitizeMoneyInput } from '../lib/format.js';
 import { Card, SectionTitle, XBtn, Banner, EmptyState, ChoiceGroup, InfoTip } from '../components/primitives.jsx';
@@ -11,7 +11,6 @@ import {
   loanPrincipal, cashReceived, loanOfferedAmount, projectDebtAtGraduation, loanTypeKey,
   estimateRefunds, computeRunway, loanReturnWindows, refundNudgeState,
 } from '../lib/loans.js';
-import { useGridColumnCount } from '../lib/hooks.js';
 import { disbFallbackDate, DAYS_PER_MONTH, DEFAULT_SAVINGS_APY, HYSA_RATE_RANGE_COPY, FDIC_INSURANCE_CAP } from '../lib/constants.js';
 
 // Loans tab — Phase 2 ("Loans, Debt & Runway"), commits 4 + 6 (Refund Playbook).
@@ -157,7 +156,7 @@ function SegButton({ active, onClick, children, ariaLabel }) {
   );
 }
 
-function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
+function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore, projRow }) {
   const [pctText, setPctText] = useState(loan.rate != null ? String(Math.round(loan.rate * 1000) / 10) : '');
   const annualTotal = (loan.disbursements || []).reduce((a, d) => a + (Number(d.amount) || 0), 0);
   const offered = loanOfferedAmount(loan);
@@ -211,6 +210,28 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
   const myWindows = isFederalReturn ? loanReturnWindows([loan], todayStr()) : [];
   const returnWindow = myWindows.length ? myWindows.reduce((a, b) => (b.daysLeft < a.daysLeft ? b : a)) : null;
 
+  // ── Collapsed one-line summary (§3c) ──
+  // Both figures are REUSED, never recomputed here, so the row and the
+  // debt-breakdown card at the top of the tab can never disagree:
+  //   • "at graduation" = this loan's own row in `projectDebtAtGraduation`
+  //     (`projRow.total`), the exact per-loan number the breakdown headline sums.
+  //   • "borrowed"       = `projRow.principal` (which is `loanPrincipal`), the
+  //     accepted/face amount — the same helper the breakdown uses. Falls back to
+  //     `loanPrincipal(loan)` for an uncounted ("offered") loan with no proj row.
+  const borrowed = projRow ? projRow.principal : loanPrincipal(loan);
+  const gradTotal = projRow ? projRow.total : null;
+  // Auto-expand so nothing incomplete can hide: reuse the SAME per-loan `basis`
+  // the debt-breakdown card computes — `basis === 'estimate'` means Marro had to
+  // infer a rate or a money-arrival date (see projectDebtAtGraduation). A loan
+  // with no proj row (still only "offered") or nothing entered yet ($0) also
+  // opens, so a freshly-added loan lands ready to fill instead of hidden.
+  const isIncomplete = (projRow ? projRow.basis === 'estimate' : true) || borrowed <= 0;
+  // Every card is collapsible. An incomplete/estimate loan just DEFAULTS to open (so a
+  // freshly-added or unfinished loan lands ready to fill) — but it still gets a chevron
+  // and can be collapsed, same as any other card. Per-card local state, keyed by loan id.
+  const [open, setOpen] = useState(isIncomplete);
+  const isExpanded = open;
+
   const patch = (fn) => { const d = JSON.parse(JSON.stringify(data)); const l = d.loans[idx]; fn(l, d); upd(d); };
 
   const setAnnual = (v) => {
@@ -244,10 +265,35 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
 
   return (
     <Card style={{ position: 'relative' }}>
-      <div style={{ position: 'absolute', top: 12, right: 12 }}>
+      <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 1 }}>
         <XBtn label={`Remove loan ${loan.name || 'entry'}`} onClick={() => { const d = JSON.parse(JSON.stringify(data)); d.loans = d.loans.filter((l) => l.id !== loan.id); upd(d); }} />
       </div>
 
+      {/* ── Collapsed summary row (§3c) ──
+          The whole row is one real <button> — keyboard-operable (Enter/Space),
+          ≥44px tall, with a visible :focus-visible ring (`.card-row-btn`, see
+          index.html). Its accessible name is the loan's name (in the text), so
+          the decorative chevron needs no separate label. aria-expanded +
+          aria-controls point at the form region below. Bled to the card edges so
+          the tap target fills the card, with right padding clearing the ✕.
+          A loan that must stay open (incomplete/estimate) renders a static
+          heading instead — there is nothing to toggle, so a dead button would be
+          the wrong affordance; the full form is always keyboard-reachable below. */}
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        aria-expanded={isExpanded} aria-controls={`ln-form-${loan.id}`}
+        style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', font: 'inherit', color: C.text,
+          width: 'calc(100% + 40px)', margin: '-18px -20px 0', boxSizing: 'border-box',
+          padding: '16px 52px 16px 20px', minHeight: 44, background: 'none', border: 'none', cursor: 'pointer' }}>
+        <Icon name="chevron" size={16} color={C.textMid} style={{ flexShrink: 0, marginTop: 2,
+          transition: 'transform .15s', transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }} />
+        <span style={{ flex: 1, fontSize: 13.5, lineHeight: 1.5 }}>
+          <strong style={{ fontWeight: 600, color: C.text }}>{loan.name || 'Untitled loan'}</strong>
+          <span style={{ color: C.text }}>{' — '}{fmt(borrowed)} borrowed{gradTotal != null ? <> · {fmt(gradTotal)} at graduation{isIncomplete && <span style={{ color: C.amber, fontWeight: 600 }}> · estimate</span>}</> : <> · <span style={{ color: C.amber, fontWeight: 600 }}>needs details</span></>}</span>
+        </span>
+      </button>
+
+      {isExpanded && (
+      <div id={`ln-form-${loan.id}`} style={{ marginTop: 14 }}>
       {/* ── Always visible: name, type, school year, amount ── */}
       <div style={{ marginBottom: 12, paddingRight: 36 }}>
         <label style={labelStyle} htmlFor={`ln-name-${loan.id}`}>Name</label>
@@ -542,126 +588,14 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
           </div>
         </div>
       )}
-    </Card>
-  );
-}
-
-function BalanceCheckin({ data, upd, runway }) {
-  const readings = data.balanceReadings || [];
-  const sorted = [...readings].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  const last = sorted[sorted.length - 1] || null;
-  const lastSavings = [...sorted].reverse().find((r) => r.savings != null);
-
-  const pace = runway?.actualPace || null;
-
-  const [spendable, setSpendable] = useState('');
-  const [savings, setSavings] = useState(lastSavings ? String(lastSavings.savings) : '');
-  const [confirming, setConfirming] = useState(false);
-
-  const needsConfirm = (n) => {
-    if (!last) return false;
-    const prev = Number(last.spendable) || 0;
-    if (Math.abs(n - prev) > 20000) return true;
-    if (prev > 0 && (n > prev * 3 || n < prev / 3)) return true;
-    return false;
-  };
-
-  const save = () => {
-    const n = Number(spendable);
-    if (isNaN(n)) return;
-    const d = JSON.parse(JSON.stringify(data));
-    d.balanceReadings = [...(d.balanceReadings || []), {
-      id: `br_${Date.now()}`, date: todayStr(), spendable: n,
-      savings: savings === '' ? null : Number(savings),
-    }];
-    upd(d);
-    setSpendable('');
-    setConfirming(false);
-  };
-
-  const onSubmit = (e) => {
-    e.preventDefault();
-    const n = Number(spendable);
-    if (isNaN(n) || spendable === '') return;
-    if (!confirming && needsConfirm(n)) { setConfirming(true); return; }
-    save();
-  };
-
-  return (
-    <Card>
-      <SectionTitle sub="No bank login, no linking accounts — just the number you see when you check your balance.">
-        About how much do you have available for living costs right now?
-      </SectionTitle>
-      <form onSubmit={onSubmit} style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        {/* #5 — each field's width now tracks its own label (min 170/130px) instead
-            of a fixed 130px input sitting under a wider label, which left the
-            "Amount in your checking / cash" label overhanging well past the input's
-            right edge — the clumped, overflowing look the founder flagged. */}
-        <div style={{ flex: '1 1 170px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
-            <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor="bal-spendable">Amount in your checking / cash</label>
-            <InfoTip text="What's in your checking/spending account today. Aid or loan money counts once it's landed in your account." />
-          </div>
-          <input id="bal-spendable" type="number" min="0" value={spendable} placeholder="$0" required
-            aria-label="Amount in your checking / cash, across all accounts you spend from"
-            onChange={(e) => { setSpendable(cleanNumInput(e)); setConfirming(false); }}
-            style={inputStyle({ width: '100%' })} />
-        </div>
-        <div style={{ flex: '1 1 130px' }}>
-          <label style={labelStyle} htmlFor="bal-savings">Set aside in savings</label>
-          <input id="bal-savings" type="number" min="0" value={savings} placeholder="$0"
-            aria-label="Set aside in savings, optional"
-            onChange={(e) => setSavings(cleanNumInput(e))} style={inputStyle({ width: '100%' })} />
-        </div>
-        <button type="submit" className="btn-pop" style={{ flexShrink: 0, padding: '8px 18px', minHeight: 36, borderRadius: 8, border: `1px solid ${C.teal}`, background: C.teal, color: C.bg, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-          Save
-        </button>
-      </form>
-      {confirming && (
-        <div role="alert" style={{ marginTop: 10 }}>
-          <Banner type="warn">
-            Big change from last time — just checking?
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <button type="button" onClick={() => setConfirming(false)} style={{ padding: '6px 12px', minHeight: 32, borderRadius: 8, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Let me fix it</button>
-              <button type="button" onClick={save} style={{ padding: '6px 12px', minHeight: 32, borderRadius: 8, border: `1px solid ${C.amber}`, background: C.amber, color: C.bg, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Yes, that’s right</button>
-            </div>
-          </Banner>
-        </div>
-      )}
-
-      {sorted.length > 0 && (
-        <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
-          <div style={{ fontSize: 11, color: C.text, marginBottom: 8, fontWeight: 600 }}>Past check-ins</div>
-          {/* Most recent 5 only. A scrolling list inside a card meant a bright
-              scrollbar cutting through the glass, and older check-ins aren't
-              what anyone comes here to read — the recent trend is. */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {[...sorted].reverse().slice(0, 5).map((r) => (
-              <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '4px 0' }}>
-                <span style={{ color: C.text }}>{new Date(r.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                <span style={{ color: C.text, fontWeight: 600 }}>{fmt(r.spendable)}{r.savings != null ? ` + ${fmt(r.savings)} savings` : ''}</span>
-              </div>
-            ))}
-          </div>
-          {/* How the plan is actually going. This belongs here more than anywhere
-              else: it's the moment the student is looking at their real balance.
-              Shown only when there's enough history to judge (see compareToPlan). */}
-          {pace && pace.meaningful && (
-            <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, fontSize: 11, color: C.text, lineHeight: 1.6 }}>
-              Your plan expected about <strong>{fmt(pace.expected)}</strong> by now and you checked in{' '}
-              <strong>{fmt(pace.actual)}</strong>, so you&apos;re <strong style={{ color: pace.drift < 0 ? C.amber : C.green }}>
-                {fmt(Math.abs(pace.drift))} {pace.drift < 0 ? 'over' : 'under'}
-              </strong> since {fmtDay(pace.sinceDate)}.
-              {pace.drift < 0 && pace.runOutDate
-                ? <> At that pace your money would last to <strong>{fmtDay(pace.runOutDate)}</strong> rather than <strong>{fmtDay(runway.runOutDate)}</strong>.</>
-                : <> Keep that up and your money lasts longer than your plan says.</>}
-            </div>
-          )}
-        </div>
+      </div>
       )}
     </Card>
   );
 }
+
+// BalanceCheckin moved to src/components/BalanceCheckin.jsx (Money Rework §3a) —
+// it's now the first card on the Budget tab, not the last on Loans.
 
 // ── 120-day return window (items 18 & 24) ────────────────────────────────────
 // The old design rendered a separate full-width banner PER open window at the
@@ -814,19 +748,17 @@ function RefundPlaybook({ data, upd, moSpend, refundNudgeConfirmed, setRefundNud
 }
 
 export function LoansTab() {
-  const { data, upd, moSpend, runwayPlannedBurn, runway, refundNudgeConfirmed, setRefundNudgeConfirmed } = useApp();
+  const { data, upd, moSpend, runwayPlannedBurn, refundNudgeConfirmed, setRefundNudgeConfirmed } = useApp();
   const [moreOpenIds, setMoreOpenIds] = useState(() => new Set());
   const toggleMore = (id) => setMoreOpenIds((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-  const loansGridRef = useRef(null);
-  const loansGridCols = useGridColumnCount(loansGridRef);
-
+  // Card expand/collapse is per-card local state inside LoanCard now (keyed by loan id),
+  // so incomplete loans default open but stay collapsible like every other card.
   const loans = data.loans || [];
-  // True when the trailing "Add loan" tile lands alone on a new row (no loan
-  // card beside it) — it should then span the full row instead of sitting
-  // stranded at one column's width.
-  const addLoanAlone = loans.length % loansGridCols === 0;
   const gradDate = data.years?.[data.years.length - 1]?.endDate || null;
   const proj = projectDebtAtGraduation(loans, gradDate);
+  // Per-loan projection rows, keyed by loan id, so each collapsed summary row can
+  // reuse the exact "at graduation" figure the breakdown headline already summed.
+  const projByLoanId = new Map(proj.byLoan.map((r) => [r.loanId, r]));
   const counted = loans.filter((l) => l.status === 'accepted' || l.status === 'disbursed');
 
   // Spell out WHY the total isn't exact. Only GENUINELY inferred data (a guessed
@@ -920,21 +852,25 @@ export function LoansTab() {
         </Card>
       )}
 
-      <div ref={loansGridRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 14 }}>
+      {/* Masonry: a multi-column flow (not a grid) so cards pack tightly and reposition
+          to fill space when one expands — no dead gap left beside a tall card. Each card
+          is wrapped with break-inside:avoid so it never splits across a column. */}
+      <div style={{ columnWidth: 320, columnGap: 14 }}>
         {loans.map((loan, i) => (
-          <LoanCard key={loan.id} loan={loan} idx={i} data={data} upd={upd}
-            moreOpen={moreOpenIds.has(loan.id)} toggleMore={() => toggleMore(loan.id)} />
+          <div key={loan.id} style={{ breakInside: 'avoid', marginBottom: 14 }}>
+            <LoanCard loan={loan} idx={i} data={data} upd={upd}
+              moreOpen={moreOpenIds.has(loan.id)} toggleMore={() => toggleMore(loan.id)}
+              projRow={projByLoanId.get(loan.id)} />
+          </div>
         ))}
-        <button type="button" aria-label="Add loan" onClick={addLoan}
-          style={{ gridColumn: addLoanAlone ? '1 / -1' : undefined, width: '100%', font: 'inherit', background: 'transparent', border: `2px dashed ${C.border}`, borderRadius: 12, minHeight: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', color: C.text, transition: 'border-color 0.15s, color 0.15s' }}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = C.teal; e.currentTarget.style.color = C.teal; }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.text; }}>
-          <span style={{ fontSize: 24, fontWeight: 300, lineHeight: 1 }}>+</span>
-          <span style={{ fontSize: 12, fontWeight: 600 }}>Add loan</span>
-        </button>
       </div>
-
-      <BalanceCheckin data={data} upd={upd} runway={runway} />
+      <button type="button" aria-label="Add loan" onClick={addLoan}
+        style={{ width: '100%', marginTop: 4, font: 'inherit', background: 'transparent', border: `2px dashed ${C.border}`, borderRadius: 12, minHeight: 64, display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', color: C.text, transition: 'border-color 0.15s, color 0.15s' }}
+        onMouseEnter={(e) => { e.currentTarget.style.borderColor = C.teal; e.currentTarget.style.color = C.teal; }}
+        onMouseLeave={(e) => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.text; }}>
+        <span style={{ fontSize: 20, fontWeight: 300, lineHeight: 1 }}>+</span>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>Add loan</span>
+      </button>
     </div>
   );
 }

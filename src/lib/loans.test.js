@@ -595,6 +595,21 @@ describe('loanReturnWindows', () => {
     expect(w.dateConfirmed).toBe(false);
   });
 
+  // A student who pre-enters a future year's loans must NOT see a live "N days
+  // left to return money you didn't need" for cash that hasn't been disbursed
+  // yet — you can't return money that never arrived. The window opens only once
+  // the disbursement date is on or before today.
+  it('does not open a window for a disbursement dated in the future', () => {
+    const loans = [makeLoan({ disbursements: [{ id: 'd1', date: '2028-08-05', amount: 20000, dateConfirmed: true }] })];
+    expect(loanReturnWindows(loans, '2026-07-28')).toEqual([]);
+  });
+
+  it('opens the window the day the money lands and not before', () => {
+    const loans = [makeLoan({ disbursements: [{ id: 'd1', date: '2026-08-05', amount: 20000, dateConfirmed: true }] })];
+    expect(loanReturnWindows(loans, '2026-08-04')).toEqual([]);          // day before disbursement
+    expect(loanReturnWindows(loans, '2026-08-05')).toHaveLength(1);       // day it lands
+  });
+
   // ⚠ REGRESSION (2026-07-18 hotfix, break-testing finding C1): break-testing
   // pinned the exact seeded scenario — a federal loan disbursed Aug 5 2025 +
   // Jan 10 2025, plus an HPSL loan disbursed Aug 5 2025 — and reported the UI

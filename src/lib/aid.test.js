@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   yearStartYearOf, loanCountsForYear, loanCashLanded, loanCashForYear, availableMoney,
-  unmatchedLoans, yearAidBreakdown,
+  unmatchedLoans, yearAidBreakdown, schoolMonths, summerWindow,
+  summerFundNeed, summerResources, summerShortfall, routeLoanCashBySummer,
 } from './aid.js';
 
 // A minimal, valid loan for the 2025–26 year — override fields per test.
@@ -258,6 +259,187 @@ describe('yearAidBreakdown — loanShare drives the "never green" rule', () => {
   });
 });
 
+// ── School-months divisor (money-rework §4a) ─────────────────────────────────
+describe('schoolMonths — the aid divisor', () => {
+  it('is 12 for a normal Aug→Jul (post-B2 contiguous) year with no aidThroughDate', () => {
+    expect(schoolMonths(makeYear({ startDate: '2025-08-01', endDate: '2026-07-31', aidThroughDate: null }))).toBe(12);
+  });
+  it('is 12 for the legacy Aug→Aug-15 end too (backward compatible)', () => {
+    expect(schoolMonths(makeYear({ startDate: '2025-08-01', endDate: '2026-08-15' }))).toBe(12);
+  });
+  it('falls back to 12 when dates are missing or nonsensical', () => {
+    expect(schoolMonths({})).toBe(12);
+    expect(schoolMonths(makeYear({ startDate: 'nope', endDate: 'nope' }))).toBe(12);
+    expect(schoolMonths(makeYear({ startDate: '2026-08-01', endDate: '2025-01-01' }))).toBe(12); // end before start
+  });
+  it('tightens to ~9 when aid stops in May (the Cornell correction)', () => {
+    expect(schoolMonths(makeYear({ startDate: '2025-08-01', endDate: '2026-07-31', aidThroughDate: '2026-05-15' }))).toBe(9);
+  });
+  it('uses aidThroughDate over endDate when both are present', () => {
+    const y = makeYear({ startDate: '2025-08-01', endDate: '2026-07-31', aidThroughDate: '2026-05-01' });
+    expect(schoolMonths(y)).toBe(9);
+  });
+});
+
+describe('yearAidBreakdown — school-months divisor is a no-op when aidThroughDate is null', () => {
+  it('divides by 12 (unchanged) when aidThroughDate is absent', () => {
+    const year = makeYear({ grant: 5000, tuitionFees: 34000, healthIns: 4200 });
+    const loans = [makeLoan({ type: 'private', subtype: 'private', disbursements: [{ id: 'd', amount: 50000 }] })];
+    const b = yearAidBreakdown(year, loans, 2025);
+    expect(b.schoolMonths).toBe(12);
+    expect(b.moSpendable).toBe(1400);            // 16800 / 12 — identical to the pre-rework number
+    expect(b.plannedPerMonth).toBe(b.moSpendable);
+  });
+  it('divides by the school months once aid stops early — a higher monthly plan', () => {
+    const year = makeYear({ startDate: '2025-08-01', endDate: '2026-07-31', aidThroughDate: '2026-05-15', grant: 5000, tuitionFees: 34000, healthIns: 4200 });
+    const loans = [makeLoan({ type: 'private', subtype: 'private', disbursements: [{ id: 'd', amount: 50000 }] })];
+    const b = yearAidBreakdown(year, loans, 2025);
+    expect(b.schoolMonths).toBe(9);
+    expect(b.moSpendable).toBeCloseTo(16800 / 9, 6);   // ~1867, higher than the flat-12 number
+    expect(b.moSpendable).toBeGreaterThan(1400);
+  });
+  it('surfaces hasAid / selfFunded without changing any numbers', () => {
+    expect(yearAidBreakdown(makeYear({ grant: 5000 }), [], 2025).hasAid).toBe(true);
+    expect(yearAidBreakdown(makeYear({ grant: 0 }), [], 2025).hasAid).toBe(false);
+    expect(yearAidBreakdown(makeYear({ grant: 0 }), [], 2025).selfFunded).toBe(true);
+    // a committed loan is aid scaffolding too
+    const loans = [makeLoan({ type: 'private', subtype: 'private' })];
+    expect(yearAidBreakdown(makeYear({ grant: 0 }), loans, 2025).hasAid).toBe(true);
+  });
+});
+
+// ── summerWindow (money-rework §4b) ──────────────────────────────────────────
+describe('summerWindow — the gap-detection the summer card keys off', () => {
+  const y = (aidThroughDate) => makeYear({ startDate: '2025-08-01', endDate: '2026-07-31', aidThroughDate });
+  const next = makeYear({ id: 1, startDate: '2026-08-01', endDate: '2027-07-31' });
+
+  it('returns null when aid covers the whole year (aidThroughDate null)', () => {
+    expect(summerWindow(y(null), next)).toBe(null);
+  });
+  it('returns null when there is no next year (the final / graduation year)', () => {
+    expect(summerWindow(y('2026-05-15'), null)).toBe(null);
+    expect(summerWindow(y('2026-05-15'), undefined)).toBe(null);
+  });
+  it('returns null when coverage runs to or past the next year start (no real gap)', () => {
+    expect(summerWindow(y('2026-08-01'), next)).toBe(null); // reaches next start exactly
+    expect(summerWindow(y('2026-09-01'), next)).toBe(null); // overlaps past it
+  });
+  it('returns { start, end, months } for a real May→Aug gap', () => {
+    const w = summerWindow(y('2026-05-15'), next);
+    expect(w.start).toBe('2026-05-15');
+    expect(w.end).toBe('2026-08-01');
+    expect(w.months).toBe(3); // ~78 days
+  });
+});
+
+// ── Summer fund need / resources / shortfall (pure calcs, §4b) ────────────────
+describe('summerFundNeed', () => {
+  const window = { start: '2026-05-15', end: '2026-08-01', months: 3 };
+
+  it('returns null when there is no summer window', () => {
+    expect(summerFundNeed({ monthlyPlan: 3000, schoolRent: 1500, window: null })).toBe(null);
+  });
+  it('keeps the plan unchanged when summer rent equals school rent (the default)', () => {
+    const n = summerFundNeed({ monthlyPlan: 3000, schoolRent: 1500, summerRent: null, window });
+    expect(n.monthly).toBe(3000);
+    expect(n.months).toBe(3);
+    expect(n.total).toBe(9000);
+  });
+  it('drops the rent line when the student goes home ($0 summer rent)', () => {
+    const n = summerFundNeed({ monthlyPlan: 3000, schoolRent: 1500, summerRent: 0, window });
+    expect(n.monthly).toBe(1500);   // 3000 - 1500 + 0
+    expect(n.total).toBe(4500);
+  });
+  it('raises the cost for a pricier away-rotation rent', () => {
+    const n = summerFundNeed({ monthlyPlan: 3000, schoolRent: 1500, summerRent: 2200, window });
+    expect(n.monthly).toBe(3700);   // 3000 - 1500 + 2200
+  });
+  it('never goes negative', () => {
+    expect(summerFundNeed({ monthlyPlan: 1000, schoolRent: 1500, summerRent: 0, window }).monthly).toBe(0);
+  });
+});
+
+describe('summerResources', () => {
+  const window = { start: '2026-05-15', end: '2026-08-01', months: 3 };
+
+  it('is all zero with no window', () => {
+    expect(summerResources({ window: null, lumps: [{ amount: 5000, date: '2026-06-01' }], monthlyWage: 1000 }))
+      .toEqual({ lumpTotal: 0, wageTotal: 0, total: 0 });
+  });
+  it('sums a monthly wage over the window months', () => {
+    const r = summerResources({ window, monthlyWage: 1200 });
+    expect(r.wageTotal).toBe(3600); // 1200 * 3
+    expect(r.total).toBe(3600);
+  });
+  it('counts a stipend lump landing inside the window', () => {
+    const r = summerResources({ window, lumps: [{ amount: 5000, date: '2026-06-01' }] });
+    expect(r.lumpTotal).toBe(5000);
+  });
+  it('ignores a lump dated outside the window (a July-1 stipend cannot fund a passed May)', () => {
+    const r = summerResources({ window, lumps: [{ amount: 5000, date: '2026-05-01' }] }); // before the window starts
+    expect(r.lumpTotal).toBe(0);
+  });
+  it('adds lumps and wage together', () => {
+    const r = summerResources({ window, lumps: [{ amount: 2000, date: '2026-06-15' }], monthlyWage: 500 });
+    expect(r.total).toBe(2000 + 1500);
+  });
+});
+
+describe('summerShortfall', () => {
+  it('reports the uncovered shortfall', () => {
+    const s = summerShortfall({ need: { total: 9000 }, resources: { total: 3600 } });
+    expect(s).toEqual({ need: 9000, resources: 3600, shortfall: 5400, surplus: 0 });
+  });
+  it('reports a surplus when resources exceed need', () => {
+    const s = summerShortfall({ need: { total: 3000 }, resources: { total: 5000 } });
+    expect(s.shortfall).toBe(0);
+    expect(s.surplus).toBe(2000);
+  });
+  it('treats missing pieces as zero', () => {
+    expect(summerShortfall({ need: null, resources: null })).toEqual({ need: 0, resources: 0, shortfall: 0, surplus: 0 });
+  });
+});
+
+// ── routeLoanCashBySummer (date-based routing, §4c) ──────────────────────────
+describe('routeLoanCashBySummer', () => {
+  const window = { start: '2026-05-15', end: '2026-08-01', months: 3 };
+
+  it('routes a summer-dated disbursement to summer, a school-dated one to school', () => {
+    const loan = makeLoan({
+      type: 'private', subtype: 'private',
+      disbursements: [
+        { id: 'd1', date: '2025-08-05', amount: 10000 }, // fall — school
+        { id: 'd2', date: '2026-06-01', amount: 5000 },  // summer window
+      ],
+    });
+    const { school, summer } = routeLoanCashBySummer([loan], window);
+    expect(school).toBe(10000);
+    expect(summer).toBe(5000);
+  });
+  it('routes everything to school when there is no summer window', () => {
+    const loan = makeLoan({ type: 'private', subtype: 'private', disbursements: [{ id: 'd', date: '2026-06-01', amount: 8000 }] });
+    const { school, summer } = routeLoanCashBySummer([loan], null);
+    expect(summer).toBe(0);
+    expect(school).toBe(8000);
+  });
+  it('school + summer sums to the year total landed loan cash (fee off the top)', () => {
+    const loan = makeLoan({ // federal, standard origination fee
+      disbursements: [
+        { id: 'd1', date: '2025-08-05', amount: 20000 },
+        { id: 'd2', date: '2026-06-10', amount: 6000 },
+      ],
+    });
+    const { school, summer } = routeLoanCashBySummer([loan], window);
+    expect(school + summer).toBeCloseTo(loanCashLanded(loan), 6);
+    expect(summer).toBeCloseTo(6000 * (1 - 0.01057), 6);
+  });
+  it('ignores offered and current-balance loans', () => {
+    const offered = makeLoan({ id: 'a', status: 'offered', disbursements: [{ id: 'd', date: '2026-06-01', amount: 9000 }] });
+    const balMode = makeLoan({ id: 'b', asOfBalance: 1, asOfDate: '2026-01-01', disbursements: [{ id: 'd', date: '2026-06-01', amount: 9000 }] });
+    expect(routeLoanCashBySummer([offered, balMode], window)).toEqual({ school: 0, summer: 0 });
+  });
+});
+
 // ── The one formula: availableMoney ─────────────────────────────────────────
 describe('availableMoney — projection fallback (the degenerate case)', () => {
   const year = makeYear({ grant: 42000, tuitionFees: 34000, healthIns: 4200, otherIncome: 300 });
@@ -304,15 +486,16 @@ describe('availableMoney — balance-anchored (the corrected mid-year number)', 
   it('anchors on the real balance and counts only money that has NOT landed yet', () => {
     const a = availableMoney({ year, loans, readings, today: '2025-12-01' });
     expect(a.basis).toBe('balance');
-    expect(a.onHand).toBe(3500);                    // 3000 checking + 500 savings
+    expect(a.onHand).toBe(3000);                    // CHECKING only — savings is a separate reserve
+    expect(a.savings).toBe(500);                    // surfaced apart, not counted as spendable
     expect(a.stillToArrive).toBeCloseTo(16800 / 2, 6); // only the spring half (~8400)
-    expect(a.available).toBeCloseTo(3500 + 8400, 6);
+    expect(a.available).toBeCloseTo(3000 + 8400, 6);
   });
 
   it('divides by the months REMAINING, not a flat 12', () => {
     const a = availableMoney({ year, loans, readings, today: '2025-12-01' });
     expect(a.monthsLeft).toBe(8);                    // Dec → Aug 15
-    expect(a.perMonth).toBeCloseTo(11900 / 8, 6);    // $1,487.50 — the plan's hand-check
+    expect(a.perMonth).toBeCloseTo(11400 / 8, 6);    // (3000 checking + 8400 to arrive) / 8
   });
 
   it('does NOT double-count the money that already landed', () => {
@@ -332,7 +515,7 @@ describe('availableMoney — balance-anchored (the corrected mid-year number)', 
   it('counts other income only for the months still ahead', () => {
     const withIncome = { ...year, otherIncome: 100 };
     const a = availableMoney({ year: withIncome, loans, readings, today: '2025-12-01' });
-    expect(a.available).toBeCloseTo(3500 + 8400 + 100 * 8, 6);
+    expect(a.available).toBeCloseTo(3000 + 8400 + 100 * 8, 6);
   });
 });
 
@@ -373,7 +556,7 @@ describe('availableMoney — "until your next money" (the dry-spell preventer)',
     const a = availableMoney({ year, loans, readings, today: '2025-12-01' });
     expect(a.untilNextMoney.date).toBe('2026-01-10');
     expect(a.untilNextMoney.monthsToNext).toBe(1);
-    expect(a.untilNextMoney.perMonth).toBeCloseTo(3500, 6); // $3,500 on hand over 1 month
+    expect(a.untilNextMoney.perMonth).toBeCloseTo(3000, 6); // $3,000 checking on hand over 1 month
   });
 
   it('is TIGHTER than the year average when the next lump is far off', () => {
@@ -388,7 +571,7 @@ describe('availableMoney — "until your next money" (the dry-spell preventer)',
     })];
     const a = availableMoney({ year, loans: lateLoans, readings, today: '2025-12-01' });
     expect(a.untilNextMoney.monthsToNext).toBe(5);          // Dec -> May
-    expect(a.untilNextMoney.perMonth).toBeCloseTo(700, 6);  // $3,500 stretched over 5 months
+    expect(a.untilNextMoney.perMonth).toBeCloseTo(600, 6);  // $3,000 checking stretched over 5 months
     expect(a.untilNextMoney.perMonth).toBeLessThan(a.perMonth);
   });
 

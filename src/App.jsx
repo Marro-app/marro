@@ -78,15 +78,17 @@ let markedSessionDecided = false;
 // must NOT read as "Growing ✓" the way genuine non-loan income does.
 // Founder call (2026-07-26): "Runway" is VC jargon a med student shouldn't have
 // to decode. The tile now leads with the DATE their money runs out — the fact
-// they actually want — under the label "Lasts until". Only three of the seven
-// states carry a run-out date, so each state returns its own `label`: the states
-// with no date fall back to "Money left" rather than reading "Lasts until / $0".
+// they actually want — under the label "Money lasts until". Only three of the
+// seven states carry a run-out date, so each state returns its own `label`: the
+// states with no date fall back to "Money left" rather than reading
+// "Money lasts until / $0". When money lasts the whole way the value reads
+// "Through graduation" (clearer than a bare "Graduation", which read as vague).
 function runwayTileDisplay(runway, cushionSource) {
   // Spending faster than planned. The tile keeps its three lines: this REPLACES
   // the usual sub rather than adding to it.
   const pace = runway.actualPace;
   const behind = (pace && pace.meaningful && pace.drift < 0 && pace.runOutDate) ? {
-    label: 'Lasts until', value: fmtDayYear(runway.runOutDate), color: C.amber, alert: true,
+    label: 'Money lasts until', value: fmtDayYear(runway.runOutDate), color: C.amber, alert: true,
     sub: 'spending faster than planned',
     detail: `Your plan expected about ${fmt(pace.expected)} by now and you checked in ${fmt(pace.actual)}, so you're ${fmt(Math.abs(pace.drift))} over since ${fmtDay(pace.sinceDate)}. At that pace your money would last to ${fmtDayYear(pace.runOutDate)} instead of ${fmtDayYear(runway.runOutDate)}. Either lower your monthly plan or spend closer to it.`,
   } : null;
@@ -100,7 +102,7 @@ function runwayTileDisplay(runway, cushionSource) {
     case 'through_graduation':
       if (behind) return behind;
       return {
-        label: 'Lasts until', value: 'Graduation', color: C.green,
+        label: 'Money lasts until', value: 'Through graduation', color: C.green,
         sub: `${fmt(runway.spendable)} left, enough the whole way`,
         detail: runway.savings > 0 ? `You have ${fmt(runway.savings)} in savings on top of this.` : undefined,
       };
@@ -120,7 +122,7 @@ function runwayTileDisplay(runway, cushionSource) {
       const dryDate = dry ? fmtDay(dry.date) : null;
       const guessed = runway.nextRefund?.isEstimate;
       return {
-        label: 'Lasts until', value: fmtDayYear(runway.runOutDate), color: C.amber, alert: true,
+        label: 'Money lasts until', value: fmtDayYear(runway.runOutDate), color: C.amber, alert: true,
         sub: dryDate ? `money gets tight around ${dryDate}` : 'money gets tight before your next payment',
         detail: `Your cash runs low${dryDate ? ` around ${dryDate}` : ''}, about ${runway.gapDays} days before your next money arrives (${guessed ? 'estimated ' : ''}${fmtDay(runway.nextRefund.date)}). Spending about ${fmt(runway.trimPerMonthToClose)}/mo less until then would bridge it.${runway.savings > 0 ? ` You also have ${fmt(runway.savings)} in savings if you need it.` : ''}${guessed ? ' That date is an estimate — confirm it with your aid office.' : ''}`,
       };
@@ -133,12 +135,12 @@ function runwayTileDisplay(runway, cushionSource) {
       if (behind) return behind;
       if (runway.basicallyOnTrack) {
         return {
-          label: 'Lasts until', value: fmtDayYear(runway.runOutDate), color: C.green,
+          label: 'Money lasts until', value: fmtDayYear(runway.runOutDate), color: C.green,
           sub: `${fmt(runway.spendable)} left, you're basically on track ✓`,
         };
       }
       return {
-        label: 'Lasts until', value: fmtDayYear(runway.runOutDate), color: C.text,
+        label: 'Money lasts until', value: fmtDayYear(runway.runOutDate), color: C.text,
         sub: `${fmt(runway.spendable)} left at your current pace`,
         detail: runway.savings > 0 ? `You have ${fmt(runway.savings)} in savings on top of this.` : undefined,
       };
@@ -148,6 +150,25 @@ function runwayTileDisplay(runway, cushionSource) {
     default:
       return { label: 'Money left', value: '—', sub: 'add your balance to see this', color: C.gray };
   }
+}
+
+// Custom header tile (money-rework header redesign): uppercase label + optional "i"
+// (deep detail only), the big number, then a two-line plain-language breakdown. Each
+// tile carries ~2 lines so the three sit at an even height with no empty bottoms (the
+// founder's dead-space note), and the essentials read at a glance without opening the
+// "i". Module-scope on purpose — defining it inside App's render would remount it (and
+// reset the InfoTip) on every render.
+function HeaderTile({ label, value, valueColor, lines, tip }) {
+  return (
+    <div style={{flex:"1 1 200px",minWidth:180,background:"rgba(255,255,255,0.06)",backdropFilter:"blur(40px) saturate(180%)",WebkitBackdropFilter:"blur(30px) saturate(160%)",border:"1px solid rgba(255,255,255,0.13)",borderRadius:14,padding:"13px 15px",display:"flex",flexDirection:"column",boxShadow:"0 4px 16px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.10)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:6}}>
+        <span style={{fontSize:9.5,letterSpacing:"0.07em",textTransform:"uppercase",fontWeight:700,color:C.gray}}>{label}</span>
+        {tip && <InfoTip text={tip} label={`${label} — more detail`}/>}
+      </div>
+      <div style={{fontSize:25,fontWeight:700,color:valueColor||C.text,fontFamily:"'Newsreader',Georgia,serif",lineHeight:1.05,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums lining-nums"}}>{value}</div>
+      <div style={{fontSize:11.5,color:C.textMid,lineHeight:1.45,marginTop:9}}>{lines}</div>
+    </div>
+  );
 }
 
 export function App() {
@@ -1490,28 +1511,90 @@ export function App() {
         {(()=>{const r=yrRangeLabel(data.years.find(y=>y.id===ay));return r?<span style={{fontSize:11,color:C.gray}}>Selected year runs {r}</span>:null;})()}
       </div>
 
-      {/* ── Top metrics — Runway & Debt go live behind featureFlags.SHOW_PHASE2_TILES
-           (Phase 2 commit 7). Runway's copy/color come from runwayTileDisplay() above,
-           one branch per computeRunway() state (walkthrough §5/§9); the gap and overdrawn
-           states carry role="alert" so the warning is announced, not just colored. With
-           only the "Monthly plan" tile left when the flag is off, it's wrapped (rather
-           than left as a bare flex:1 child) so it doesn't stretch to fill the whole row —
-           caps at 320px like a normal card. ── */}
-      <div style={{display:"flex",gap:10,marginBottom:SHOW_PHASE2_TILES?10:20,flexWrap:"wrap"}}>
-        {SHOW_PHASE2_TILES && (()=>{ const rt=runwayTileDisplay(runway, cushionSource); return (
-          <MetricTile label={rt.label} value={rt.value} sub={rt.sub} color={rt.color}
-            role={rt.alert?"alert":undefined} ariaLive={rt.alert?"assertive":undefined}
-            subIcon={rt.detail
-              ? <InfoTip text={rt.detail} tone={rt.alert?"warn":"info"}
-                  label={rt.alert?"Money warning — full detail":"Your money — more detail"}/>
-              : undefined}/>
-        ); })()}
-        {SHOW_PHASE2_TILES
-          ? <MetricTile label="Monthly plan"  value={fmt(moSpend)} progress={{value:moSpend,max:planBase,color:moSpend>planBase?C.neg:C.teal}} sub={planBase>0?`of ${fmt(planBase)} you can spend`:(subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending")}/>
-          : <div style={{flex:"0 1 320px",minWidth:130}}><MetricTile label="Monthly plan"  value={fmt(moSpend)} progress={{value:moSpend,max:planBase,color:moSpend>planBase?C.neg:C.teal}} sub={planBase>0?`of ${fmt(planBase)} you can spend`:(subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending")}/></div>
-        }
-        {SHOW_PHASE2_TILES && <MetricTile label="Debt" value={fmt(debtProjection.total)} sub={debtProjection.isEstimate?"estimate":"at graduation"}/>}
-      </div>
+      {/* ── Two header tiles, built around the three questions a med student actually
+           asks (founder, MONEY_REWORK.md §2): (1) "Safe to spend" — what can I spend
+           THIS month (balance-anchored, so it already adapts to how prior months went);
+           (2) "By end of year" — with my plan across every month, do I finish SHORT or
+           AHEAD. "Am I on track?" (actual vs. expected) lives at the check-in, not here.
+           The old run-out-date tile became a conditional dry-spell warning below (a run-out
+           date only matters when a real cash gap is coming). "Still to arrive" was dropped
+           from the copy — the founder found it confusing. Both tiles follow the selected
+           year: current year = real numbers, future year = the same formula's projection,
+           labeled "planned". ── */}
+      {(()=>{
+        const syLabel = `${yrStartYear}–${yr2(yrStartYear+1)}`; // e.g. "2025–26"
+        // The dry-spell / overdrawn warning is a "right now" fact — only show it when
+        // the SELECTED year is the one containing today. Peeking at a future year to
+        // plan it must not surface a today-cash-gap warning.
+        const viewingCurrentYear = !!(yr?.startDate && yr?.endDate && today>=yr.startDate && today<=yr.endDate);
+        // (1) SAFE TO SPEND — this month. Final-month reframing: monthsLeft floors at 1,
+        // so perMonth stops being a monthly rate — say what it is instead.
+        const finalMonth = safeToSpend.monthsLeft<=1 && safeToSpend.basis==="balance";
+        const sLabel = finalMonth ? "Left for this school year" : "Safe to spend";
+        // Name the PERIOD (so "year" never reads as the calendar year) and keep the
+        // check-in date visible (grounds the number in the real balance). The final-month
+        // label already says "this school year", so its sub only needs the date.
+        const sValue = finalMonth ? fmt(safeToSpend.available) : fmt(safeToSpendMo)+"/mo";
+        // Tile 1 breakdown shown INLINE (not hidden behind the "i"): a first-time viewer
+        // should see at a glance this is their CHECKING money, with aid still coming and
+        // savings kept aside separately. The "i" holds only the deeper detail.
+        const t1Lines = safeToSpend.basis==="balance"
+          ? (<>
+              <div>{fmt(safeToSpend.onHand)} in checking{safeToSpend.stillToArrive>0?` + ${fmt(safeToSpend.stillToArrive)} aid coming`:''}</div>
+              <div style={{color:C.gray,marginTop:2}}>{safeToSpend.savings>0?`${fmt(safeToSpend.savings)} in savings, kept aside`:`for the rest of the ${syLabel} school year`}</div>
+            </>)
+          : (<>
+              <div>planned for the {syLabel} school year</div>
+              <div style={{color:C.gray,marginTop:2}}>check in your balance for your real number</div>
+            </>);
+        const sTip = safeToSpend.basis==="balance"
+          ? `From your ${fmtDay(safeToSpend.asOf)} check-in, covering the rest of the ${syLabel} school year. Savings is kept aside, not counted here.`
+          : `Your aid for the ${syLabel} school year, spread across its months.`;
+        // (2) BY END OF YEAR — plan across all 12 months → surplus(+) or short(−). Never
+        // green when the cushion is borrowed (founder rule); short is negative-toned.
+        const borrowed = !!aidBreakdown?.isLoanFunded;
+        const yeColor = curYrNet < 0 ? C.neg : (borrowed ? C.blue : C.green);
+        const t2Lines = (<>
+          <div>{curYrNet<0 ? "you'd come up short on your plan" : "money left over if you stick to your plan"}</div>
+          <div style={{color:C.gray,marginTop:2}}>{curYrNet<0 ? "you'd need to trim or borrow more" : borrowed ? "but it's borrowed — you can return it" : "a real cushion, nicely done"}</div>
+        </>);
+        const yeTip = `Your planned spending across every month of the ${syLabel} school year, against your money for the year. ${curYrNet<0 ? "You'd finish short — trim your plan or plan to borrow more." : borrowed ? "You'd finish ahead, but this cushion is borrowed — returning what you don't need within 120 days cancels its interest." : "You'd finish with money to spare."} It's a forecast from your plan, not your bank balance.`;
+        // (3) VS YOUR PLAN — am I on track? (question 1). Real only for the current year
+        // with enough check-in history (pace present); otherwise a dash. drift>0 = spent
+        // LESS than planned (ahead); drift<0 = faster than planned (behind).
+        const pace = runway.actualPace;
+        let vpValue="—", vpColor=C.gray, vpSub, vpSub2, vpTip;
+        if (!viewingCurrentYear) { vpSub="only for the year you're in"; vpSub2="pick your current year to see this"; vpTip="Whether you're ahead of or behind your plan is only meaningful for the school year you're currently in."; }
+        else if (!pace) { vpSub="check in your balance again"; vpSub2="then I'll compare you to your plan"; vpTip="Once you've checked in your balance a couple of times, Marro compares what you actually have to what your plan expected you to have by now."; }
+        else if (!pace.meaningful) { vpValue="On track"; vpColor=C.green; vpSub="right where your plan expects"; vpSub2="keep it up"; vpTip=`Your plan expected you to have about ${fmt(pace.expected)} by now and you checked in ${fmt(pace.actual)} — close enough to call on track.`; }
+        else if (pace.drift>0) { vpValue=fmt(pace.drift)+" ahead"; vpColor=C.green; vpSub="you've spent less than planned"; vpSub2="your money will last longer"; vpTip=`Your plan expected you to have about ${fmt(pace.expected)} by now and you checked in ${fmt(pace.actual)}, so you're ${fmt(pace.drift)} ahead. Your money will last longer than planned.`; }
+        else { vpValue=fmt(Math.abs(pace.drift))+" behind"; vpColor=C.amber; vpSub="spending faster than planned"; vpSub2="trim a bit or spend closer to plan"; vpTip=`Your plan expected you to have about ${fmt(pace.expected)} by now and you checked in ${fmt(pace.actual)}, so you're ${fmt(Math.abs(pace.drift))} behind.${pace.runOutDate?` At this pace your money lasts to ${fmtDayYear(pace.runOutDate)} instead of ${fmtDayYear(runway.runOutDate)}.`:""} Trim your plan or spend closer to it.`; }
+        const t3Lines = (<>
+          <div>{vpSub}</div>
+          {vpSub2 && <div style={{color:C.gray,marginTop:2}}>{vpSub2}</div>}
+        </>);
+        // Dry-spell / overdrawn warning — only when there's actually a cash gap coming.
+        const dry = runway.state==='gap' ? (runway.shortfalls?.[0] || null) : null;
+        return (
+          <>
+            <div style={{display:"flex",gap:10,marginBottom:viewingCurrentYear&&(runway.state==='gap'||runway.state==='overdrawn')?10:20,flexWrap:"wrap",alignItems:"stretch"}}>
+              <HeaderTile label={sLabel} value={sValue} valueColor={C.teal} lines={t1Lines} tip={sTip}/>
+              <HeaderTile label="By end of year" value={fmtS(curYrNet)} valueColor={yeColor} lines={t2Lines} tip={yeTip}/>
+              <HeaderTile label="Compared to your plan" value={vpValue} valueColor={vpColor} lines={t3Lines} tip={vpTip}/>
+            </div>
+            {viewingCurrentYear && runway.state==='gap' && (
+              <div style={{marginBottom:20}}><Banner type="warn">
+                Heads up — your spending money gets tight{dry?.date?` around ${fmtDay(dry.date)}`:""}, before your next aid arrives{runway.nextRefund?.date?` (${runway.nextRefund.isEstimate?"around ":""}${fmtDay(runway.nextRefund.date)})`:""}. Spending about {fmt(runway.trimPerMonthToClose)}/mo less until then would bridge it.{runway.savings>0?` You also have ${fmt(runway.savings)} in savings if you need it.`:""}
+              </Banner></div>
+            )}
+            {viewingCurrentYear && runway.state==='overdrawn' && (
+              <div style={{marginBottom:20}}><Banner type="warn">
+                Your spending money is down to $0{runway.coveredBySavings?" — your savings can cover it for now.":", with no savings to fall back on yet."}
+              </Banner></div>
+            )}
+          </>
+        );
+      })()}
 
       {/* "Did your refund land?" nudge (walkthrough §9) — only when the header's own
           refundNudgeState says a nudge (not the full Playbook card) is the right surface
@@ -1548,7 +1631,7 @@ export function App() {
           ["weekly","Weekly"],
           ["charts","Charts"],
           ["savings","Savings"],
-          ["aid","Aid & Detail",0],
+          ["aid","Aid & Plan",0],
           ["loans","Loans"],
           ["subscriptions","Subscriptions",renewalsDue.length],
           ["customize","Categories"],

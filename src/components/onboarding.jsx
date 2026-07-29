@@ -629,7 +629,7 @@ export const OnboardingFlow = ({uid, user, data, upd, onDone, onCancel}) => {
           {step===6 && (
             <div style={{textAlign:"center",padding:"10px 0"}}>
               <div style={{...head,fontSize:25}} className="ob-rise">You&apos;re all set{name.trim()?`, ${name.trim()}`:""}<span style={{color:C.marigold}}>.</span></div>
-              <div style={{...sub,maxWidth:280,margin:"8px auto 0"}} className="ob-rise">{hasLoans ? "Next: add your loans so Marro can show what you’ll owe at graduation." : "Next: enter your aid on the Aid & Detail tab to see your monthly number."}</div>
+              <div style={{...sub,maxWidth:280,margin:"8px auto 0"}} className="ob-rise">{hasLoans ? "Next: add your loans so Marro can show what you’ll owe at graduation." : "Next: enter your aid on the Aid & Plan tab to see your monthly number."}</div>
               <button className="ob-cta ob-rise" style={{...ctaPrimary(true),marginTop:24}} onClick={()=>onDone(school,{landOnLoans:hasLoans})}>Go to my dashboard</button>
             </div>
           )}

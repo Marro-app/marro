@@ -858,9 +858,12 @@ export function estimateRefunds(years, loans = []) {
  * For each disbursement, the deadline to return unused federal loan money
  * for a clean cancellation of its interest and fee (studentaid.gov Direct
  * Loan Borrowers' Rights — 120 days from disbursement). Only OPEN windows are
- * returned (deadline still ahead of `today`) — this is recomputed from live
- * `loans` on every render rather than cached by loan id, so an edited
- * disbursement date is never stale.
+ * returned: the money must have ALREADY been disbursed (`d.date <= today`) AND
+ * the deadline still ahead of `today`. The disbursed-check matters — you can't
+ * return money that hasn't landed yet, and without it a loan a student pre-enters
+ * for a future year shows a live "N days left to return money you didn't need"
+ * for cash that hasn't arrived. Recomputed from live `loans` on every render
+ * rather than cached by loan id, so an edited disbursement date is never stale.
  *
  * `dateConfirmed` mirrors the disbursement row: only a date the student
  * actually entered/confirmed should ever be shown as a hard "N days left" —
@@ -873,6 +876,7 @@ export function loanReturnWindows(loans, today) {
   for (const loan of loans || []) {
     for (const d of loan.disbursements || []) {
       if (!d.date) continue;
+      if (d.date > today) continue; // not disbursed yet — nothing to return
       const deadline = addDays(d.date, LOAN_RETURN_WINDOW_DAYS);
       const daysLeft = daysBetween(today, deadline);
       if (daysLeft > 0) out.push({ loanId: loan.id, disbursementId: d.id, deadline, daysLeft, dateConfirmed: !!d.dateConfirmed });
