@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useId } from 'react';
 import { C, applyTheme, THEMES } from './lib/theme.js';
 import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed, isAdmin, logEvent, exportUserData, exportUserDataExcel, deleteAccount, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY } from './lib/data.js';
 import { recordConsentIfPending } from './lib/consent.js';
@@ -17,7 +17,7 @@ import { AV_PALETTE, avColor, AVATARS, AV_GROUPS } from './lib/avatars.js';
 import { popoverStyle, wrapPop, edgeFadeClass, radioProps, tabProps, yrRangeLabel } from './lib/ui-helpers.js';
 import { useLiftCard, useEscClose, useEdgeFade } from './lib/hooks.js';
 import { Icon, MarroLogo, GoogleGlyph } from './components/icons.jsx';
-import { XBtn, Card, SectionTitle, ChoiceGroup, Stepper, TabBtn, YrBtn, Banner, Modal, MetricTile, InfoTip, BlobHealth } from './components/primitives.jsx';
+import { XBtn, Card, SectionTitle, ChoiceGroup, Stepper, TabBtn, YrBtn, Banner, Modal, MetricTile, BlobHealth } from './components/primitives.jsx';
 import { DateField } from './components/pickers.jsx';
 import { AvatarArt, Avatar, AvatarPicker } from './components/avatars.jsx';
 import { LoginScreen } from './components/LoginScreen.jsx'; // kept, no longer rendered — see LandingPage
@@ -152,21 +152,63 @@ function runwayTileDisplay(runway, cushionSource) {
   }
 }
 
-// Custom header tile (money-rework header redesign): uppercase label + optional "i"
-// (deep detail only), the big number, then a two-line plain-language breakdown. Each
-// tile carries ~2 lines so the three sit at an even height with no empty bottoms (the
-// founder's dead-space note), and the essentials read at a glance without opening the
-// "i". Module-scope on purpose — defining it inside App's render would remount it (and
-// reset the InfoTip) on every render.
-function HeaderTile({ label, value, valueColor, lines, tip }) {
+// One labelled figure inside a header tile's expanded panel: a colour dot, a
+// plain-language label, and the dollar figure right-aligned.
+function TileRow({ label, val, dot }) {
   return (
-    <div style={{flex:"1 1 200px",minWidth:180,background:"rgba(255,255,255,0.06)",backdropFilter:"blur(40px) saturate(180%)",WebkitBackdropFilter:"blur(30px) saturate(160%)",border:"1px solid rgba(255,255,255,0.13)",borderRadius:14,padding:"13px 15px",display:"flex",flexDirection:"column",boxShadow:"0 4px 16px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.10)"}}>
-      <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:6}}>
-        <span style={{fontSize:9.5,letterSpacing:"0.07em",textTransform:"uppercase",fontWeight:700,color:C.gray}}>{label}</span>
-        {tip && <InfoTip text={tip} label={`${label} — more detail`}/>}
+    <div style={{display:"flex",alignItems:"center",gap:7,marginTop:5}}>
+      {dot && <span aria-hidden="true" style={{width:7,height:7,borderRadius:2,background:dot,flexShrink:0}}/>}
+      <span style={{color:C.textMid}}>{label}</span>
+      <span style={{flex:1}}/>
+      <span style={{color:C.text,fontWeight:600,fontVariantNumeric:"tabular-nums lining-nums"}}>{val}</span>
+    </div>
+  );
+}
+
+// Small progress ring for the "Compared to your plan" panel — how much of what the
+// plan expected by now is actually in the account (clamped 0–1). Decorative; the
+// panel text carries the real numbers, so it's aria-hidden.
+function MiniRing({ pct, color }) {
+  const r = 15, c = 2 * Math.PI * r, p = Math.max(0, Math.min(1, pct || 0));
+  return (
+    <svg width="42" height="42" viewBox="0 0 42 42" aria-hidden="true" style={{flexShrink:0}}>
+      <circle cx="21" cy="21" r={r} fill="none" stroke={C.surfaceMid} strokeWidth="4"/>
+      <circle cx="21" cy="21" r={r} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"
+        strokeDasharray={c} strokeDashoffset={c*(1-p)} transform="rotate(-90 21 21)"/>
+    </svg>
+  );
+}
+
+// Header tile (money-rework "Option 3" — calm, tap-to-expand). Collapsed: uppercase
+// label, the big number, and ONE plain-language glance (an icon or arrow + a couple
+// of words). Tapped open: the full "how it's worked out" panel replaces the glance —
+// there is no "i" any more. Each tile owns its open state so all three expand
+// independently. The whole collapsed face is a real <button> (aria-expanded /
+// aria-controls, ≥44px, global :focus-visible ring); the reveal uses the shared
+// .collapse-panel grid-rows animation, which snaps under prefers-reduced-motion.
+// Background/border use the app's glass tokens (C.glassCard / C.borderDark) so the
+// tile is theme-correct in light mode too. Module-scope on purpose — defining it
+// inside App's render would remount it (and lose the open state) every render.
+function HeaderTile({ label, value, valueColor, glance, panel }) {
+  const [open, setOpen] = useState(false);
+  const panelId = useId();
+  return (
+    <div style={{flex:"1 1 200px",minWidth:180,background:C.glassCard,backdropFilter:"blur(40px) saturate(180%)",WebkitBackdropFilter:"blur(40px) saturate(180%)",border:`1px solid ${C.borderDark}`,borderRadius:14,overflow:"hidden",boxShadow:"0 4px 16px rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.08)"}}>
+      <button type="button" onClick={()=>setOpen(o=>!o)} aria-expanded={open} aria-controls={panelId}
+        style={{display:"flex",flexDirection:"column",width:"100%",minHeight:44,textAlign:"left",background:"none",border:"none",padding:"13px 15px",margin:0,cursor:"pointer",color:"inherit"}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+          <span style={{fontSize:11,letterSpacing:"0.06em",textTransform:"uppercase",fontWeight:700,color:C.gray}}>{label}</span>
+          <span style={{flex:1}}/>
+          <Icon name="chevron" size={13} style={{color:C.gray,transform:open?"rotate(180deg)":"none",transition:"transform .18s cubic-bezier(0.23,1,0.32,1)"}}/>
+        </div>
+        <div style={{fontSize:25,fontWeight:700,color:valueColor||C.text,fontFamily:"'Newsreader',Georgia,serif",lineHeight:1.05,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums lining-nums"}}>{value}</div>
+        {glance && <div style={{display:"flex",alignItems:"center",gap:5,marginTop:9,fontSize:12,color:C.textMid,opacity:open?0:1,height:open?0:"auto",overflow:"hidden",transition:"opacity .15s"}}>{glance}</div>}
+      </button>
+      <div id={panelId} className={"collapse-panel"+(open?" open":"")}>
+        <div className="collapse-inner">
+          <div style={{padding:"0 15px 14px",fontSize:12,lineHeight:1.5}}>{panel}</div>
+        </div>
       </div>
-      <div style={{fontSize:25,fontWeight:700,color:valueColor||C.text,fontFamily:"'Newsreader',Georgia,serif",lineHeight:1.05,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums lining-nums"}}>{value}</div>
-      <div style={{fontSize:11.5,color:C.textMid,lineHeight:1.45,marginTop:9}}>{lines}</div>
     </div>
   );
 }
@@ -1535,52 +1577,94 @@ export function App() {
         // check-in date visible (grounds the number in the real balance). The final-month
         // label already says "this school year", so its sub only needs the date.
         const sValue = finalMonth ? fmt(safeToSpend.available) : fmt(safeToSpendMo)+"/mo";
-        // Tile 1 breakdown shown INLINE (not hidden behind the "i"): a first-time viewer
-        // should see at a glance this is their CHECKING money, with aid still coming and
-        // savings kept aside separately. The "i" holds only the deeper detail.
-        const t1Lines = safeToSpend.basis==="balance"
-          ? (<>
-              <div>{fmt(safeToSpend.onHand)} in checking{safeToSpend.stillToArrive>0?` + ${fmt(safeToSpend.stillToArrive)} aid coming`:''}</div>
-              <div style={{color:C.gray,marginTop:2}}>{safeToSpend.savings>0?`${fmt(safeToSpend.savings)} in savings, kept aside`:`for the rest of the ${syLabel} school year`}</div>
-            </>)
-          : (<>
-              <div>planned for the {syLabel} school year</div>
-              <div style={{color:C.gray,marginTop:2}}>check in your balance for your real number</div>
-            </>);
-        const sTip = safeToSpend.basis==="balance"
-          ? `From your ${fmtDay(safeToSpend.asOf)} check-in, covering the rest of the ${syLabel} school year. Savings is kept aside, not counted here.`
-          : `Your aid for the ${syLabel} school year, spread across its months.`;
-        // (2) BY END OF YEAR — plan across all 12 months → surplus(+) or short(−). Never
-        // green when the cushion is borrowed (founder rule); short is negative-toned.
+        // TILE 1 — collapsed glance + expanded panel. Collapsed says, in a word, that
+        // this is CHECKING money (wallet + "from checking") or a plan ("planned").
+        // Expanded: a checking/savings split bar, the labelled figures (checking, aid
+        // still coming, savings kept aside), then the check-in date + school-year note.
+        const s_balance = safeToSpend.basis==="balance";
+        const s_glance = (<>
+          <Icon name="wallet" size={13} color={C.teal}/>
+          <span>{s_balance ? "from checking" : "planned figure"}</span>
+        </>);
+        const s_panel = s_balance ? (()=>{
+          const chk=safeToSpend.onHand, sav=safeToSpend.savings, arr=safeToSpend.stillToArrive;
+          const tot=Math.max(chk+sav,1);
+          return (<>
+            {sav>0 && (
+              <div style={{display:"flex",height:6,borderRadius:3,overflow:"hidden",background:C.surface,marginBottom:6}} aria-hidden="true">
+                <div style={{width:`${chk/tot*100}%`,background:C.teal}}/>
+                <div style={{width:`${sav/tot*100}%`,background:C.gray}}/>
+              </div>
+            )}
+            <TileRow label="In checking, to spend" val={fmt(chk)} dot={C.teal}/>
+            {arr>0 && <TileRow label="Aid still to arrive" val={fmt(arr)} dot={C.tealMid}/>}
+            {sav>0 && <TileRow label="In savings, kept aside" val={fmt(sav)} dot={C.gray}/>}
+            <div style={{marginTop:9,paddingTop:9,borderTop:`1px solid ${C.border}`,color:C.gray}}>
+              From your {fmtDay(safeToSpend.asOf)} check-in, spread across the rest of the {syLabel} school year. Savings isn’t counted here.
+            </div>
+          </>);
+        })() : (<>
+          <div style={{color:C.textMid}}>This is your aid for the {syLabel} school year, spread across its months — a plan, not a live balance.</div>
+          <div style={{marginTop:7,color:C.gray}}>Check in your balance to see your real spendable number.</div>
+        </>);
+        // TILE 2 — BY END OF YEAR. Plan across all 12 months → surplus(+) or short(−).
+        // Never green when the cushion is borrowed (founder rule); short is negative-toned.
         const borrowed = !!aidBreakdown?.isLoanFunded;
         const yeColor = curYrNet < 0 ? C.neg : (borrowed ? C.blue : C.green);
-        const t2Lines = (<>
-          <div>{curYrNet<0 ? "you'd come up short on your plan" : "money left over if you stick to your plan"}</div>
-          <div style={{color:C.gray,marginTop:2}}>{curYrNet<0 ? "you'd need to trim or borrow more" : borrowed ? "but it's borrowed — you can return it" : "a real cushion, nicely done"}</div>
+        const ye_glance = (<>
+          <Icon name={curYrNet<0?"arrowDown":"arrowUp"} size={13} color={yeColor}/>
+          <span>{curYrNet<0 ? "short on your plan" : "left over"}</span>
         </>);
-        const yeTip = `Your planned spending across every month of the ${syLabel} school year, against your money for the year. ${curYrNet<0 ? "You'd finish short — trim your plan or plan to borrow more." : borrowed ? "You'd finish ahead, but this cushion is borrowed — returning what you don't need within 120 days cancels its interest." : "You'd finish with money to spare."} It's a forecast from your plan, not your bank balance.`;
-        // (3) VS YOUR PLAN — am I on track? (question 1). Real only for the current year
-        // with enough check-in history (pace present); otherwise a dash. drift>0 = spent
-        // LESS than planned (ahead); drift<0 = faster than planned (behind).
+        const ye_panel = (<>
+          <div style={{color:C.textMid}}>{curYrNet<0
+            ? <>On your current plan you’d finish about <strong style={{color:C.neg}}>{fmt(Math.abs(curYrNet))} short</strong> for the {syLabel} school year.</>
+            : <>On your current plan you’d finish with about <strong style={{color:yeColor}}>{fmt(curYrNet)} to spare</strong>.</>}</div>
+          {borrowed && curYrNet>=0 && (
+            <div style={{marginTop:8,display:"inline-flex",alignItems:"center",gap:6,padding:"3px 9px",borderRadius:8,background:C.blueLight,border:`1px solid ${C.blueMid}`,fontSize:11,color:C.blue,fontWeight:600}}>
+              Borrowed · returnable within 120 days
+            </div>
+          )}
+          <div style={{marginTop:8,color:C.gray}}>
+            {curYrNet<0 ? "Trim your plan or plan to borrow a little more." : borrowed ? "It’s borrowed money you don’t have to spend — returning what you don’t need within 120 days cancels the interest." : "A real cushion, nicely done."} This is a forecast from your plan, not your bank balance.
+          </div>
+        </>);
+        // TILE 3 — VS YOUR PLAN — am I on track? Real only for the current year with
+        // enough check-in history (pace present); otherwise a dash. drift>0 = spent LESS
+        // than planned (ahead); drift<0 = faster than planned (behind).
         const pace = runway.actualPace;
-        let vpValue="—", vpColor=C.gray, vpSub, vpSub2, vpTip;
-        if (!viewingCurrentYear) { vpSub="only for the year you're in"; vpSub2="pick your current year to see this"; vpTip="Whether you're ahead of or behind your plan is only meaningful for the school year you're currently in."; }
-        else if (!pace) { vpSub="check in your balance again"; vpSub2="then I'll compare you to your plan"; vpTip="Once you've checked in your balance a couple of times, Marro compares what you actually have to what your plan expected you to have by now."; }
-        else if (!pace.meaningful) { vpValue="On track"; vpColor=C.green; vpSub="right where your plan expects"; vpSub2="keep it up"; vpTip=`Your plan expected you to have about ${fmt(pace.expected)} by now and you checked in ${fmt(pace.actual)} — close enough to call on track.`; }
-        else if (pace.drift>0) { vpValue=fmt(pace.drift)+" ahead"; vpColor=C.green; vpSub="you've spent less than planned"; vpSub2="your money will last longer"; vpTip=`Your plan expected you to have about ${fmt(pace.expected)} by now and you checked in ${fmt(pace.actual)}, so you're ${fmt(pace.drift)} ahead. Your money will last longer than planned.`; }
-        else { vpValue=fmt(Math.abs(pace.drift))+" behind"; vpColor=C.amber; vpSub="spending faster than planned"; vpSub2="trim a bit or spend closer to plan"; vpTip=`Your plan expected you to have about ${fmt(pace.expected)} by now and you checked in ${fmt(pace.actual)}, so you're ${fmt(Math.abs(pace.drift))} behind.${pace.runOutDate?` At this pace your money lasts to ${fmtDayYear(pace.runOutDate)} instead of ${fmtDayYear(runway.runOutDate)}.`:""} Trim your plan or spend closer to it.`; }
-        const t3Lines = (<>
-          <div>{vpSub}</div>
-          {vpSub2 && <div style={{color:C.gray,marginTop:2}}>{vpSub2}</div>}
-        </>);
+        let vpValue="—", vpColor=C.gray, vp_glance, vp_panel;
+        if (!viewingCurrentYear) {
+          vp_glance = <span style={{color:C.gray}}>for your current year</span>;
+          vp_panel = <div style={{color:C.textMid}}>Being ahead of or behind your plan only makes sense for the school year you’re currently in. Pick your current year to see it.</div>;
+        } else if (!pace) {
+          vp_glance = <span style={{color:C.gray}}>check in to compare</span>;
+          vp_panel = <div style={{color:C.textMid}}>Once you’ve checked in your balance a couple of times, Marro compares what you actually have to what your plan expected you to have by now.</div>;
+        } else {
+          const ringColor = !pace.meaningful ? C.green : pace.drift>0 ? C.green : C.amber;
+          const ratio = pace.expected>0 ? pace.actual/pace.expected : 1;
+          if (!pace.meaningful) { vpValue="On track"; vpColor=C.green; vp_glance=<span>on your plan</span>; }
+          else if (pace.drift>0) { vpValue=fmt(pace.drift)+" ahead"; vpColor=C.green; vp_glance=<><Icon name="arrowUp" size={13} color={C.green}/><span>money lasts longer</span></>; }
+          else { vpValue=fmt(Math.abs(pace.drift))+" behind"; vpColor=C.amber; vp_glance=<><Icon name="arrowDown" size={13} color={C.amber}/><span>spending faster</span></>; }
+          vp_panel = (<div style={{display:"flex",gap:12,alignItems:"center"}}>
+            <MiniRing pct={ratio} color={ringColor}/>
+            <div style={{flex:1}}>
+              <div style={{color:C.textMid}}>Your plan expected about <strong style={{color:C.text}}>{fmt(pace.expected)}</strong> by now; you checked in <strong style={{color:C.text}}>{fmt(pace.actual)}</strong>.</div>
+              <div style={{marginTop:6,color:C.gray}}>{
+                !pace.meaningful ? "Right where your plan expects — keep it up."
+                : pace.drift>0 ? "You're ahead, so your money will last longer than planned."
+                : <>You’re spending faster than planned.{pace.runOutDate?<> At this pace your money lasts to {fmtDayYear(pace.runOutDate)} instead of {fmtDayYear(runway.runOutDate)}.</>:""} Trim a little or spend closer to plan.</>
+              }</div>
+            </div>
+          </div>);
+        }
         // Dry-spell / overdrawn warning — only when there's actually a cash gap coming.
         const dry = runway.state==='gap' ? (runway.shortfalls?.[0] || null) : null;
         return (
           <>
-            <div style={{display:"flex",gap:10,marginBottom:viewingCurrentYear&&(runway.state==='gap'||runway.state==='overdrawn')?10:20,flexWrap:"wrap",alignItems:"stretch"}}>
-              <HeaderTile label={sLabel} value={sValue} valueColor={C.teal} lines={t1Lines} tip={sTip}/>
-              <HeaderTile label="By end of year" value={fmtS(curYrNet)} valueColor={yeColor} lines={t2Lines} tip={yeTip}/>
-              <HeaderTile label="Compared to your plan" value={vpValue} valueColor={vpColor} lines={t3Lines} tip={vpTip}/>
+            <div style={{display:"flex",gap:10,marginBottom:viewingCurrentYear&&(runway.state==='gap'||runway.state==='overdrawn')?10:20,flexWrap:"wrap",alignItems:"flex-start"}}>
+              <HeaderTile label={sLabel} value={sValue} valueColor={C.teal} glance={s_glance} panel={s_panel}/>
+              <HeaderTile label="By end of year" value={fmtS(curYrNet)} valueColor={yeColor} glance={ye_glance} panel={ye_panel}/>
+              <HeaderTile label="Compared to your plan" value={vpValue} valueColor={vpColor} glance={vp_glance} panel={vp_panel}/>
             </div>
             {viewingCurrentYear && runway.state==='gap' && (
               <div style={{marginBottom:20}}><Banner type="warn">

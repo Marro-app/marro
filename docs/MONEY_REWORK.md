@@ -258,22 +258,22 @@ in-browser at `http://localhost:3456/?mock=1` (resize the pane to ~1280px wide t
   **CSS multi-column masonry** (`columnWidth:320`) so cards pack and reposition — no dead gap
   beside a tall expanded card. Add-loan button is full-width below.
 
-### NEXT — build the Option-3 header (founder chose this after seeing mocks)
-Replace the current 3 two-line-breakdown tiles with **calm tap-to-expand tiles**:
-- **Collapsed** = label + big number + ONE glance only: Safe to spend → "from checking" + wallet
-  icon; By end of year → ↗/↘ arrow + "left over"/"short"; Compared to plan → ↗/↘ + "ahead"/"behind".
-  A chevron on each. No prose, no "i".
-- **Tapped open** = the full "how it's worked out" panel (this REPLACES the "i" entirely):
-  Safe-to-spend → checking-vs-savings split bar + checking/aid-coming/savings-aside rows +
-  check-in date + school-year note; By end of year → "finish with $X to spare" + borrowed·returnable
-  chip + 120-day/"forecast not bank balance" caveat; Compared to plan → progress ring +
-  "plan expected ~$X, you checked in $Y" + "money lasts longer/spending fast".
-- Independent expand (all three can be open); real `<button>`, `aria-expanded`/`aria-controls`,
-  44px target, `:focus-visible`, honor reduced-motion (no height animation under reduce).
-- **Fix while here:** the tile background is hardcoded white-alpha (`rgba(255,255,255,0.06)`) —
-  breaks the light theme (white-on-cream, near-invisible border, likely fails 3:1). Use the
-  app's glass tokens (`.mc` / `--glass-card`) instead. Bump the 9.5px label to ~11px.
-- Full design brief + 3 approaches: this session's header-redesign subagent (Approach 3 chosen).
+### DONE (2026-07-29) — Option-3 header (calm tap-to-expand tiles)
+`HeaderTile` in `src/App.jsx` rebuilt: collapsed = 11px label + big number + ONE glance
+(Safe to spend → wallet + "from checking"/"planned figure"; By end of year → ↑/↓ + "left
+over"/"short on your plan"; Compared to plan → ↑/↓ + "money lasts longer"/"spending faster",
+or "on your plan"/"check in to compare"/"for your current year"). Chevron on each, no "i".
+Tapped open = the full panel (replaces the glance): tile 1 → checking-vs-savings split bar +
+`TileRow` figures (checking / aid still to arrive / savings kept aside) + check-in date +
+school-year note; tile 2 → "finish with $X to spare / $X short" + borrowed·returnable chip +
+"forecast not bank balance" caveat; tile 3 → `MiniRing` (actual÷expected) + "plan expected
+~$X, you checked in $Y" + lasts-longer/spending-faster line. Independent expand; each face is
+a real `<button>` (`aria-expanded`/`aria-controls`, ≥44px, global `:focus-visible` ring);
+reveal uses the shared `.collapse-panel` grid-rows animation (snaps under reduced-motion).
+Tile bg/border now use glass tokens (`C.glassCard`/`C.borderDark`) — light theme fixed.
+Row `alignItems:flex-start` so an open tile doesn't stretch its neighbours. New icons
+`wallet`/`arrowUp`/`arrowDown` + `TileRow`/`MiniRing` helpers. Verified both themes at 1280px.
+327 tests green, build clean, lint 0 errors.
 
 ### THEN (remaining, in order)
 1. **Summer card** on Aid & Plan (§4) — the last new feature. Needs a persisted per-year summer
