@@ -86,11 +86,19 @@ export function coveredMonthIndices(year, yearStartYear) {
  * Otherwise returns { start, end, months } describing the gap.
  */
 export function summerWindow(year, nextYear) {
-  const through = year && year.aidThroughDate;
+  const y = year || {};
+  // Coverage ends at aidThroughDate when set, otherwise the year's own end date
+  // (the field defaults to the end date in the UI). Falling back to endDate lets a
+  // year the student ended in May surface a Jun–Jul summer automatically, without
+  // making them re-enter the date.
+  const through = y.aidThroughDate != null ? y.aidThroughDate : y.endDate;
   if (!through) return null;
   if (!nextYear || !nextYear.startDate) return null;
   if (through >= nextYear.startDate) return null; // coverage reaches the next year — no gap
-  const months = Math.max(1, roundedMonthsBetween(through, nextYear.startDate) || 0);
+  const months = roundedMonthsBetween(through, nextYear.startDate);
+  // A sub-month gap isn't a summer — a normal contiguous year (…-07-31 → …-08-01)
+  // is one day apart and must NOT sprout a "1-month summer" card.
+  if (months == null || months < 1) return null;
   return { start: through, end: nextYear.startDate, months };
 }
 

@@ -358,6 +358,19 @@ describe('summerWindow — the gap-detection the summer card keys off', () => {
     expect(w.end).toBe('2026-08-01');
     expect(w.months).toBe(3); // ~78 days
   });
+  it('falls back to the year END DATE when aidThroughDate is unset (the UI default)', () => {
+    // A year the student ended in May, no explicit aidThroughDate → summer still detected.
+    const shortYear = makeYear({ startDate: '2027-08-01', endDate: '2028-05-22', aidThroughDate: null });
+    const nextY = makeYear({ id: 1, startDate: '2028-08-01', endDate: '2029-07-31' });
+    const w = summerWindow(shortYear, nextY);
+    expect(w.start).toBe('2028-05-22');
+    expect(w.end).toBe('2028-08-01');
+    expect(w.months).toBe(2); // ~71 days
+  });
+  it('returns null for a contiguous full year — a sub-month gap is not a summer', () => {
+    // endDate …-07-31 → next …-08-01 is one day; must not sprout a 1-month summer.
+    expect(summerWindow(y(null), next)).toBe(null);
+  });
 });
 
 // ── Summer fund need / resources / shortfall (pure calcs, §4b) ────────────────

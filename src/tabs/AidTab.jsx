@@ -209,18 +209,18 @@ export function AidTab(){
                           : `These dates overlap ${shortLabel(nextYr)}, which starts ${friendlyDate(nextYr.startDate)}. Pick an end date before that.`}
                     </div>
                   )}
-                  {/* "Aid covers through" (aidThroughDate) — the single control that
-                      turns on the school-months divisor + the summer card (§4a/§4b).
-                      Blank = aid lasts the whole year (÷12, no summer). Set earlier
-                      (e.g. Cornell ~May) → aid divides over the school months and a
-                      summer card appears if it ends before the next year starts. */}
+                  {/* "Aid covers through" (aidThroughDate) — the date the year's aid is
+                      meant to last through. Defaults to the year's end date (shown when
+                      unset); editable when aid actually stops earlier (e.g. classes end
+                      ~May). Drives the school-months divisor and, when it leaves a real
+                      gap before the next year, the summer card (§4a/§4b). */}
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap",marginBottom:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`}}>
                     <span style={{fontSize:12,color:C.textMid,display:"flex",alignItems:"center",gap:4}}>
-                      Aid covers through <InfoTip text="The month your aid is meant to last through — usually when classes end. Leave it blank if your aid covers the whole year. Setting it (say, mid-May) spreads your aid over just the school months and opens a small summer plan below."/>
+                      Aid covers through <InfoTip text="The date your aid is meant to last through — usually when classes end. It starts at your year's end date; change it if your aid actually stops earlier (say mid-May). If that leaves a gap before your next year starts, a small summer plan appears below."/>
                     </span>
                     <div style={{display:"flex",alignItems:"center",gap:6}}>
-                      <DateField value={y.aidThroughDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].aidThroughDate=v||null;upd(d);}} ariaLabel={`Aid covers through — ${y.label||'Year '+(i+1)}`} style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
-                      {y.aidThroughDate && <button type="button" className="btn-pop" aria-label="Clear aid-covers-through date (aid lasts all year)" onClick={()=>{const d=JSON.parse(JSON.stringify(data));d.years[i].aidThroughDate=null;upd(d);}} style={{fontSize:11,fontWeight:600,padding:"5px 9px",minHeight:32,borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",color:C.textMid,cursor:"pointer"}}>All year</button>}
+                      <DateField value={y.aidThroughDate||y.endDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].aidThroughDate=v||null;upd(d);}} ariaLabel={`Aid covers through — ${y.label||'Year '+(i+1)}`} style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
+                      {y.aidThroughDate && y.aidThroughDate!==y.endDate && <button type="button" className="btn-pop" aria-label="Reset aid-covers-through to the year's end date" onClick={()=>{const d=JSON.parse(JSON.stringify(data));d.years[i].aidThroughDate=null;upd(d);}} style={{fontSize:11,fontWeight:600,padding:"5px 9px",minHeight:32,borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",color:C.textMid,cursor:"pointer"}}>Reset</button>}
                     </div>
                   </div>
                   {[

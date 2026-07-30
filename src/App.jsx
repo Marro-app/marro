@@ -7,7 +7,7 @@ import { setAnalyticsContext } from './lib/analytics.js';
 import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
-import { fmt, fmtS, fmtD, fmtDay, fmtDayYear, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr } from './lib/format.js';
+import { fmt, fmtS, fmtD, fmtDay, fmtDayYear, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr, yearMonthRange } from './lib/format.js';
 import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState } from './lib/loans.js';
 import { yearAidBreakdown, unmatchedLoans, availableMoney, coveredMonthIndices } from './lib/aid.js';
 import { WEEKS_PER_MONTH, USMLE_STEP_FEE_ESTIMATE } from './lib/constants.js';
@@ -446,6 +446,23 @@ export function App() {
     setAy(data.years[0]?.id||0);
     setSelMonth(0);
   },[ready]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep the selected month inside the SELECTED YEAR's real months. Switching to a
+  // future year (e.g. an Aug–May year while today is July) otherwise leaves the
+  // picker on today's month, which is out of that year's range — and, worse, budget
+  // edits there write an override the year-end math never reads (curYrNet only sums
+  // covered months), so "By end of year" looked frozen when you edited the plan.
+  // Clamp to today's month when it falls inside the year, else the year's first month.
+  useEffect(()=>{
+    if(!data||!ready) return;
+    const y=data.years.find(yr=>yr.id===ay); if(!y) return;
+    const {from,to}=yearMonthRange(y);
+    setSelMonth(prev=>{
+      if(prev>=from&&prev<=to) return prev;
+      const todayIdx=(new Date().getMonth()-7+12)%12;
+      return (todayIdx>=from&&todayIdx<=to)?todayIdx:from;
+    });
+  },[ay,ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = useCallback(async d => {
     const ts = Date.now();
