@@ -308,6 +308,17 @@ same day count as one; check in again in a few days." (Separately noted: the ≥
 early-return in `computeRunway` skips `actualPace`, so a rising balance also blanks the tile —
 left as-is for now; revisit if it bites.)
 
+### DONE (2026-07-29) — "Compared to your plan" tile hardening (3 fixes)
+- **Growing balance now reads "ahead"**: `computeRunway` (`loans.js`) built `actualPace` AFTER
+  its two `growing` early-returns, so a rising balance blanked the tile. Hoisted the calc above
+  those returns and included it in both — a rising balance is the clearest "ahead". +test.
+- **Non-empty empty-state** (founder ask): no-pace tile no longer shows a lonely "—". It now
+  shows **"Check in"** (teal) + a glance ("to see if you're on track" / "again in about a week")
+  and a panel pointing to the check-in at the bottom of the Budget tab.
+- **De-duped check-in history**: `BalanceCheckin` "Past check-ins" now renders via
+  `normalizeReadings` (one row per date, latest wins) — five same-day check-ins showed five
+  identical rows but count as one for the math.
+
 ### THEN (remaining, in order)
 1. **Summer card** on Aid & Plan (§4) — the last new feature. Needs a persisted per-year summer
    shape (rent, situation, income lumps/wage) + merge-engine entry; the pure calcs already exist.

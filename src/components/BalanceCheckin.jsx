@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { C } from '../lib/theme.js';
 import { fmt, todayStr } from '../lib/format.js';
+import { normalizeReadings } from '../lib/loans.js';
 import { Card, SectionTitle, Banner, InfoTip } from './primitives.jsx';
 
 // Balance check-in — the monthly "what's your balance?" card. Moved here from the
@@ -22,6 +23,11 @@ const cleanNumInput = (e) => {
 export function BalanceCheckin({ data, upd }) {
   const readings = data.balanceReadings || [];
   const sorted = [...readings].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  // For the "Past check-ins" list: one row per DATE, matching how the math reads
+  // them (normalizeReadings keeps the last entry saved for a day). Otherwise five
+  // check-ins on the same day showed five identical rows — and looked like they
+  // should count as five, when the pace math treats them as one.
+  const displayReadings = normalizeReadings(readings, todayStr());
   const last = sorted[sorted.length - 1] || null;
   const lastSavings = [...sorted].reverse().find((r) => r.savings != null);
 
@@ -106,11 +112,11 @@ export function BalanceCheckin({ data, upd }) {
         </div>
       )}
 
-      {sorted.length > 0 && (
+      {displayReadings.length > 0 && (
         <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
           <div style={{ fontSize: 11, color: C.text, marginBottom: 8, fontWeight: 600 }}>Past check-ins</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {[...sorted].reverse().slice(0, 5).map((r) => (
+            {[...displayReadings].reverse().slice(0, 5).map((r) => (
               <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '4px 0' }}>
                 <span style={{ color: C.text }}>{new Date(r.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                 <span style={{ color: C.text, fontWeight: 600 }}>{fmt(r.spendable)}{r.savings != null ? ` + ${fmt(r.savings)} savings` : ''}</span>

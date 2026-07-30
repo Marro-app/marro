@@ -258,6 +258,12 @@ describe('computeRunway', () => {
     ];
     const r = computeRunway({ readings, plannedMonthlyBurn: 2000, upcomingRefunds: [], gradDate, today: '2026-10-05' });
     expect(r.state).toBe('growing');
+    // A rising balance still reports the plan comparison — it's the clearest
+    // "you're ahead", and the tile must not go blank there. Spent ~$0 against a
+    // $2000/mo plan → well ahead of plan (drift positive).
+    expect(r.actualPace).not.toBeNull();
+    expect(r.actualPace.perMonth).toBe(0);
+    expect(r.actualPace.drift).toBeGreaterThan(0);
   });
 
   it('state: through_graduation — money (with savings cushion) comfortably outlasts gradDate', () => {

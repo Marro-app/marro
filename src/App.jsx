@@ -1648,15 +1648,17 @@ export function App() {
           vp_glance = <span style={{color:C.gray}}>for your current year</span>;
           vp_panel = <div style={{color:C.textMid}}>Being ahead of or behind your plan only makes sense for the school year you’re currently in. Pick your current year to see it.</div>;
         } else if (!pace) {
-          // Distinguish "never checked in" from "checked in, but not enough SPACED-OUT
-          // history yet" — same-day or <7-day-apart check-ins can't measure a pace, and
-          // telling someone who just checked in five times to "check in a couple of times"
-          // reads as broken. safeToSpend.basis === "balance" ⇒ at least one real reading.
+          // No spaced-out history yet → make the tile a purposeful PROMPT, never a lonely
+          // "—" (founder: the block shouldn't read as empty). Distinguish "never checked
+          // in" from "checked in, but same-day / <7 days apart" — telling someone who just
+          // checked in five times to "check in a couple of times" reads as broken.
+          // safeToSpend.basis === "balance" ⇒ at least one real reading exists.
           const hasCheckedIn = safeToSpend.basis === "balance";
-          vp_glance = <span style={{color:C.gray}}>{hasCheckedIn ? "check in again in a week" : "check in to compare"}</span>;
+          vpValue = "Check in"; vpColor = C.teal;
+          vp_glance = <span style={{color:C.gray}}>{hasCheckedIn ? "again in about a week" : "to see if you’re on track"}</span>;
           vp_panel = <div style={{color:C.textMid}}>{hasCheckedIn
-            ? <>To measure your pace I need two check-ins on <strong style={{color:C.text}}>different days, about a week apart</strong> — several on the same day count as one. Check in again in a few days and this fills in.</>
-            : <>Check in your balance a couple of times, about a week apart, and Marro compares what you actually have to what your plan expected by now.</>}</div>;
+            ? <>To measure your pace I need two check-ins on <strong style={{color:C.text}}>different days, about a week apart</strong> — several on the same day count as one. Check in again in a few days at the bottom of the Budget tab and this fills in.</>
+            : <>Tell me your balance at the bottom of the Budget tab. After a couple of check-ins about a week apart, I’ll compare what you actually have to what your plan expected by now — so you’ll know if you’re ahead or spending too fast.</>}</div>;
         } else {
           const ringColor = !pace.meaningful ? C.green : pace.drift>0 ? C.green : C.amber;
           const ratio = pace.expected>0 ? pace.actual/pace.expected : 1;

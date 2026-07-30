@@ -692,37 +692,12 @@ export function computeRunway({ readings, plannedMonthlyBurn, upcomingRefunds, g
   // silently taking the "Extra loan money, you may be able to return some" tile
   // with it, which is a locked decision (never green when borrowed).
   const measured = compareToPlan({ readings, plannedMonthlyBurn, inflows: upcomingRefunds, today });
-  if (sorted.length >= 2) {
-    const prev = sorted[sorted.length - 2];
-    const windowDays = daysBetween(prev.date, latest.date);
-    if (windowDays >= 14) {
-      const landedBetween = (upcomingRefunds || [])
-        .filter((r) => r.date > prev.date && r.date <= latest.date)
-        .reduce((a, r) => a + (Number(r.amount) || 0), 0);
-      const spentOverWindow = readingTotal(prev) - readingTotal(latest) + landedBetween;
-      if ((spentOverWindow / windowDays) * DAYS_PER_MONTH <= GROWING_EPSILON) {
-        return { state: 'growing', spendable, savings, total, burn, asOf: latest.date };
-      }
-    }
-  }
-
-  if (burn.amount <= GROWING_EPSILON) {
-    return { state: 'growing', spendable, savings, total, burn, asOf: latest.date };
-  }
-
-  const dailyBurn = burn.amount / DAYS_PER_MONTH;
-  // `runOutDate` counts the money still to arrive (see projectBalance), so it's
-  // the date the student ACTUALLY runs out — not the date their current cash
-  // alone would have lasted. `shortfalls` carries the dry spells along the way.
-  const spendableProj = projectBalance({ startDate: latest.date, startBalance: spendable, dailyBurn, inflows: upcomingRefunds, horizon: gradDate });
-  const runOutDate = spendableProj.runOutDate;
-  const shortfalls = spendableProj.shortfalls;
-  const cushionExtensionDate = projectBalance({ startDate: latest.date, startBalance: total, dailyBurn, inflows: upcomingRefunds, horizon: gradDate }).runOutDate;
-
-  // What actually happens if they keep spending the way they have been. Same
-  // projection method as the headline, just fed the real pace instead of the
-  // plan, so the two can never diverge in how they were worked out. Present
-  // only when the comparison is worth showing (see compareToPlan).
+  // How the student is actually tracking vs. their plan — "Compared to your plan".
+  // Computed HERE, before any early return, so it survives the `growing` states
+  // below: a rising balance is the clearest "you're ahead", and blanking the tile
+  // there (the old behaviour, it was only built after the growing returns) told a
+  // student doing great that we had nothing to say. Present only once there's real
+  // spaced-out history (measured.measurable — two check-ins ≥7 days apart).
   const actualPace = measured.measurable ? {
     perMonth: measured.actualPerMonth,
     drift: measured.drift,
@@ -736,6 +711,33 @@ export function computeRunway({ readings, plannedMonthlyBurn, upcomingRefunds, g
       ? projectBalance({ startDate: latest.date, startBalance: spendable, dailyBurn: measured.actualPerMonth / DAYS_PER_MONTH, inflows: upcomingRefunds, horizon: gradDate }).runOutDate
       : null,
   } : null;
+
+  if (sorted.length >= 2) {
+    const prev = sorted[sorted.length - 2];
+    const windowDays = daysBetween(prev.date, latest.date);
+    if (windowDays >= 14) {
+      const landedBetween = (upcomingRefunds || [])
+        .filter((r) => r.date > prev.date && r.date <= latest.date)
+        .reduce((a, r) => a + (Number(r.amount) || 0), 0);
+      const spentOverWindow = readingTotal(prev) - readingTotal(latest) + landedBetween;
+      if ((spentOverWindow / windowDays) * DAYS_PER_MONTH <= GROWING_EPSILON) {
+        return { state: 'growing', spendable, savings, total, burn, actualPace, asOf: latest.date };
+      }
+    }
+  }
+
+  if (burn.amount <= GROWING_EPSILON) {
+    return { state: 'growing', spendable, savings, total, burn, actualPace, asOf: latest.date };
+  }
+
+  const dailyBurn = burn.amount / DAYS_PER_MONTH;
+  // `runOutDate` counts the money still to arrive (see projectBalance), so it's
+  // the date the student ACTUALLY runs out — not the date their current cash
+  // alone would have lasted. `shortfalls` carries the dry spells along the way.
+  const spendableProj = projectBalance({ startDate: latest.date, startBalance: spendable, dailyBurn, inflows: upcomingRefunds, horizon: gradDate });
+  const runOutDate = spendableProj.runOutDate;
+  const shortfalls = spendableProj.shortfalls;
+  const cushionExtensionDate = projectBalance({ startDate: latest.date, startBalance: total, dailyBurn, inflows: upcomingRefunds, horizon: gradDate }).runOutDate;
 
   // A dry spell outranks "you're fine through graduation": lasting the whole way
   // is no comfort if there's a month with $0 in it on the way there. Checked
