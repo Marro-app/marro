@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { C } from '../lib/theme.js';
-import { fmt, fmtS, moTotal, todayStr, sanitizeMoneyInput, cleanNumEvent } from '../lib/format.js';
+import { fmt, fmtS, moTotal, todayStr, sanitizeMoneyInput, cleanNumEvent, pruneOutOfRangeMonths } from '../lib/format.js';
 import { Card, SectionTitle, XBtn, Pill, ScrollX, InfoTip } from '../components/primitives.jsx';
 import { Icon } from '../components/icons.jsx';
 import { DateField } from '../components/pickers.jsx';
@@ -196,9 +196,9 @@ export function AidTab(){
               {expanded && (
                 <div id={`aid-year-detail-${y.id}`} style={{marginTop:14}}>
                   <div style={{display:"flex",gap:8,marginBottom:invertedRange||startOverlap||endOverlap?8:10,alignItems:"center",flexWrap:"wrap"}}>
-                    <DateField value={y.startDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].startDate=v;upd(d);}} ariaLabel="Year start date" style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
+                    <DateField value={y.startDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].startDate=v;pruneOutOfRangeMonths(d,d.years[i].id);upd(d);}} ariaLabel="Year start date" style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
                     <span style={{fontSize:11,color:C.gray}}>→</span>
-                    <DateField value={y.endDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].endDate=v;upd(d);}} ariaLabel="Year end date" style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
+                    <DateField value={y.endDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].endDate=v;pruneOutOfRangeMonths(d,d.years[i].id);upd(d);}} ariaLabel="Year end date" style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
                   </div>
                   {(invertedRange||startOverlap||endOverlap) && (
                     <div role="alert" style={{marginBottom:10,padding:"8px 12px",background:C.dangerLight,border:`1px solid ${C.dangerMid}`,borderRadius:8,fontSize:12,color:C.danger,lineHeight:1.5}}>

@@ -7,7 +7,7 @@ import { setAnalyticsContext } from './lib/analytics.js';
 import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
-import { fmt, fmtS, fmtD, fmtDay, fmtDayYear, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr, yearMonthRange } from './lib/format.js';
+import { fmt, fmtS, fmtD, fmtDay, fmtDayYear, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr, yearMonthRange, pruneAllYears } from './lib/format.js';
 import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState } from './lib/loans.js';
 import { yearAidBreakdown, unmatchedLoans, availableMoney, coveredMonthIndices } from './lib/aid.js';
 import { WEEKS_PER_MONTH, USMLE_STEP_FEE_ESTIMATE } from './lib/constants.js';
@@ -393,6 +393,9 @@ export function App() {
           const ey=y.endDate?new Date(y.endDate+"T12:00:00").getFullYear():sy+1;
           y.label=`Year ${i+1} — ${sy}-${yr2(ey)}`;
         });
+        // One-time cleanup: drop plan overrides for months a year no longer contains
+        // (stale July edits from before the picker clamped to the year's range).
+        pruneAllYears(loaded);
         setData(loaded);
         // Profile (school). No row → {school:null} triggers the one-time ProfileModal.
         // On error (e.g. offline) leave profile null so we don't block — re-check next boot.

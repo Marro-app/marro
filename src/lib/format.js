@@ -136,6 +136,43 @@ export function yearMonthRange(year) {
   if (from == null || to == null || to < from) return { from: 0, to: 11 };
   return { from, to };
 }
+
+// Drop per-month plan overrides (and month-disabled flags) for academic months a
+// year no longer contains — e.g. after its date range is shortened (July → May).
+// Stale edits otherwise linger invisibly: out of the month picker's range and
+// ignored by the year-end math, but still on disk. Mutates `data` in place and
+// returns whether anything changed. A full or invalid/wrapping range keeps
+// everything (yearMonthRange falls back to {0,11}), so it never over-prunes.
+export function pruneOutOfRangeMonths(data, yearId) {
+  const y = (data?.years || []).find((x) => x.id === yearId);
+  if (!y) return false;
+  const { from, to } = yearMonthRange(y);
+  const inRange = (mi) => mi >= from && mi <= to;
+  let changed = false;
+  if (y.monthlyOverrides) {
+    for (const mn of Object.keys(y.monthlyOverrides)) {
+      const mi = MONTH_NAMES.indexOf(mn);
+      if (mi < 0 || !inRange(mi)) { delete y.monthlyOverrides[mn]; changed = true; }
+    }
+  }
+  if (data.monthDisabled) {
+    for (const key of Object.keys(data.monthDisabled)) {
+      const dash = key.indexOf('-');
+      if (dash < 0 || String(key.slice(0, dash)) !== String(yearId)) continue;
+      const mi = MONTH_NAMES.indexOf(key.slice(dash + 1));
+      if (mi < 0 || !inRange(mi)) { delete data.monthDisabled[key]; changed = true; }
+    }
+  }
+  return changed;
+}
+
+// Prune every year — used as a one-time cleanup on load so pre-existing stale
+// overrides (from before the picker clamped to a year's range) don't linger.
+export function pruneAllYears(data) {
+  let changed = false;
+  for (const y of data?.years || []) if (pruneOutOfRangeMonths(data, y.id)) changed = true;
+  return changed;
+}
 // Actual money (logged/imported spending): show cents only when they exist — never round real transactions
 export const fmtA = n => { const v=Math.abs(Number(n)||0); const cents=Math.round(v*100)%100!==0; return "$"+v.toLocaleString(undefined,cents?{minimumFractionDigits:2,maximumFractionDigits:2}:{maximumFractionDigits:0}); };
 export const fmtSA = n => { const v=Number(n)||0; if(Math.round(v*100)===0) return "$0"; return (v>0?"+":"-")+fmtA(v); };

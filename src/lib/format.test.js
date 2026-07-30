@@ -3,7 +3,7 @@ import {
   fmt, fmtS, fmtD, fmtA, fmtSA, moTotal, subMonthlyTotal, catColorIndex, DEFAULT_CATS, yearMonthRange,
   generateYearConfigs, yr2, blankYearFields, BLANK_MONTHLY,
   getMonday, getSunday, fmtWeekLabel, daysUntil, getYearMonthStr, todayStr,
-  sanitizeMoneyInput, MAX_QUICK_ADD_AMOUNT,
+  sanitizeMoneyInput, MAX_QUICK_ADD_AMOUNT, pruneOutOfRangeMonths, pruneAllYears,
 } from './format.js';
 
 // ── Money input clamping ────────────────────────────────────────────────────
@@ -302,5 +302,40 @@ describe('yearMonthRange — a school year is not always 12 months', () => {
   });
   it('falls back rather than inverting when the dates are backwards', () => {
     expect(yearMonthRange({ startDate: '2027-05-01', endDate: '2026-08-01' })).toEqual({ from: 0, to: 11 });
+  });
+});
+
+describe('pruneOutOfRangeMonths — drop overrides for months a year no longer contains', () => {
+  const makeData = () => ({
+    years: [{
+      id: 0, startDate: '2025-08-01', endDate: '2026-05-15', // Aug → May (no Jun/Jul)
+      monthly: { food: 300 },
+      monthlyOverrides: { Aug: { food: 400 }, May: { food: 350 }, Jun: { food: 999 }, Jul: { food: 888 } },
+    }],
+    monthDisabled: { '0-Aug': ['exams'], '0-Jul': ['books'], '1-Jul': ['social'] },
+  });
+  it('removes overrides for out-of-range months, keeps in-range', () => {
+    const d = makeData();
+    const changed = pruneOutOfRangeMonths(d, 0);
+    expect(changed).toBe(true);
+    expect(Object.keys(d.years[0].monthlyOverrides).sort()).toEqual(['Aug', 'May']);
+    expect(d.years[0].monthlyOverrides.Jun).toBeUndefined();
+    expect(d.years[0].monthlyOverrides.Jul).toBeUndefined();
+  });
+  it('prunes this year\'s monthDisabled but leaves other years alone', () => {
+    const d = makeData();
+    pruneOutOfRangeMonths(d, 0);
+    expect(d.monthDisabled['0-Aug']).toEqual(['exams']); // in range, kept
+    expect(d.monthDisabled['0-Jul']).toBeUndefined();     // out of range, dropped
+    expect(d.monthDisabled['1-Jul']).toEqual(['social']); // different year, untouched
+  });
+  it('is a no-op (changed=false) for a full 12-month year', () => {
+    const d = { years: [{ id: 0, startDate: '2025-08-01', endDate: '2026-07-31', monthly: {}, monthlyOverrides: { Jun: { food: 1 }, Jul: { food: 2 } } }], monthDisabled: {} };
+    expect(pruneOutOfRangeMonths(d, 0)).toBe(false);
+    expect(Object.keys(d.years[0].monthlyOverrides).sort()).toEqual(['Jul', 'Jun']);
+  });
+  it('pruneAllYears reports whether anything changed', () => {
+    expect(pruneAllYears(makeData())).toBe(true);
+    expect(pruneAllYears({ years: [{ id: 0, startDate: '2025-08-01', endDate: '2026-07-31', monthlyOverrides: {} }], monthDisabled: {} })).toBe(false);
   });
 });
