@@ -3,6 +3,7 @@ import {
   yearStartYearOf, loanCountsForYear, loanCashLanded, loanCashForYear, availableMoney,
   unmatchedLoans, yearAidBreakdown, schoolMonths, summerWindow,
   summerFundNeed, summerResources, summerShortfall, routeLoanCashBySummer,
+  coveredMonthIndices,
 } from './aid.js';
 
 // A minimal, valid loan for the 2025–26 year — override fields per test.
@@ -278,6 +279,33 @@ describe('schoolMonths — the aid divisor', () => {
   it('uses aidThroughDate over endDate when both are present', () => {
     const y = makeYear({ startDate: '2025-08-01', endDate: '2026-07-31', aidThroughDate: '2026-05-01' });
     expect(schoolMonths(y)).toBe(9);
+  });
+});
+
+describe('coveredMonthIndices — funded academic months (the year-end / running-balance loop)', () => {
+  const sorted = (set) => [...set].sort((a, b) => a - b);
+  it('covers all 12 for a normal Aug→Jul year (backward compatible)', () => {
+    const c = coveredMonthIndices(makeYear({ startDate: '2025-08-01', endDate: '2026-07-31', aidThroughDate: null }), 2025);
+    expect(c.size).toBe(12);
+  });
+  it('covers only Aug→May when aid stops mid-May (the Cornell / 10-month case)', () => {
+    const c = coveredMonthIndices(makeYear({ startDate: '2025-08-01', endDate: '2026-07-31', aidThroughDate: '2026-05-15' }), 2025);
+    // academic indices 0=Aug … 9=May; Jun (10) and Jul (11) are the unfunded summer
+    expect(sorted(c)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(c.has(10)).toBe(false);
+    expect(c.has(11)).toBe(false);
+  });
+  it('excludes the unfunded summer for a Jul-start / May-end year (the reported bug)', () => {
+    const c = coveredMonthIndices(makeYear({ startDate: '2026-07-29', endDate: '2027-05-22', aidThroughDate: null }), 2026);
+    expect(c.has(10)).toBe(false); // Jun 2027
+    expect(c.has(11)).toBe(false); // Jul 2027
+    expect(c.has(0)).toBe(true);   // Aug 2026
+    expect(c.has(9)).toBe(true);   // May 2027
+  });
+  it('falls back to all 12 when dates are missing or garbage', () => {
+    expect(coveredMonthIndices({}, 2025).size).toBe(12);
+    expect(coveredMonthIndices(makeYear({ startDate: 'nope', endDate: 'nope' }), 2025).size).toBe(12);
+    expect(coveredMonthIndices(makeYear({ startDate: '2025-08-01', endDate: '2026-07-31' }), NaN).size).toBe(12);
   });
 });
 

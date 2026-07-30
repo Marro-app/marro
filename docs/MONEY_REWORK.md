@@ -275,6 +275,18 @@ Row `alignItems:flex-start` so an open tile doesn't stretch its neighbours. New 
 `wallet`/`arrowUp`/`arrowDown` + `TileRow`/`MiniRing` helpers. Verified both themes at 1280px.
 327 tests green, build clean, lint 0 errors.
 
+### DONE (2026-07-29) — B4: phantom summer income in year-end net / running balance
+Found while double-checking the header math. §4a made `moSpendable` = year money ÷
+**school months** (e.g. ÷10 for a Jul→May year), but `curYrNet` ("By end of year") and
+`runningBalance` still summed it over a flat **12** months — crediting a full month of income
+for the ~2 unfunded summer months the aid never covers. For a $23,222/10-month year that
+invented **+$4,644** of fake surplus (headline read +$6,354 instead of ~+$1,710); the Charts
+bars inherited it too. Fix: new tested `coveredMonthIndices(year, yearStartYear)` in `aid.js`
+(which academic months fall in the coverage window; all 12 for a normal Aug→Jul year, so it's a
+no-op on existing/mock data). `monthNetFor` in `src/App.jsx` now spreads the **true annual**
+`sentToYou + otherIncome` over the funded months only and returns 0 for unfunded summer months
+— summer belongs to the summer fund (§4b), founder chose "school year only". +4 tests (331 green).
+
 ### THEN (remaining, in order)
 1. **Summer card** on Aid & Plan (§4) — the last new feature. Needs a persisted per-year summer
    shape (rent, situation, income lumps/wage) + merge-engine entry; the pure calcs already exist.

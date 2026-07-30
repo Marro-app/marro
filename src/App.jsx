@@ -9,7 +9,7 @@ import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
 import { fmt, fmtS, fmtD, fmtDay, fmtDayYear, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr } from './lib/format.js';
 import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState, classifyCushionSource } from './lib/loans.js';
-import { yearAidBreakdown, unmatchedLoans, availableMoney } from './lib/aid.js';
+import { yearAidBreakdown, unmatchedLoans, availableMoney, coveredMonthIndices } from './lib/aid.js';
 import { WEEKS_PER_MONTH, USMLE_STEP_FEE_ESTIMATE } from './lib/constants.js';
 import { BRANDS, BRAND_DOMAINS, getBrandDomain, getBrand } from './lib/brands.js';
 import { US_MED_SCHOOLS, degreeForSchool, DO_DUAL, dualOptionsForSchool } from './lib/schools.js';
@@ -802,11 +802,8 @@ export function App() {
   // rate — see the "Left for the rest of the year" reframing in BudgetTab.
   const moSurplus = Math.round(moSpendable - moSpend - unbudgetedTotal);  // this month's net (auto)
 
-  // Per-month net = spendable - planned budget - unbudgeted spending.
-  // Uses the YEAR-PLAN number on purpose: this is summed across all 12 months to
-  // build the running balance / year-end net, so a remaining-months figure would
-  // be counted once per month and inflate the total.
-  const monthNetFor = (mi) => {
+  // Planned budget + unbudgeted spending for one academic month (no income term).
+  const monthPlanFor = (mi) => {
     const mn=MONTH_NAMES[mi];
     const disM=data.monthDisabled?.[ay+"-"+mn]||[];
     let planned=0, unb=0;
@@ -815,8 +812,22 @@ export function App() {
       if(disM.includes(c.id)){ if(!c.locked&&!c.autoCalc) unb+=spentInMonth(c.id,mi); }
       else { const ov=yr.monthlyOverrides?.[mn]?.[c.id]; planned += (ov!==undefined?ov:(Number(yr.monthly[c.id])||0)); }
     });
-    return moSpendable - planned - unb;
+    return planned + unb;
   };
+  // The months this year's aid actually covers (money-rework §4b). The running
+  // balance and year-end net iterate these, NOT a flat 0–11: dividing the year's
+  // money by the school months (moSpendable) and then re-multiplying it across
+  // all 12 would credit a full month of income for the unfunded summer, inventing
+  // money that never reaches the account. Summer belongs to the summer fund.
+  const coveredIdx = coveredMonthIndices(yr, yrStartYear);
+  const coveredCount = coveredIdx.size || 12;
+  // True money reaching the account this year, spread evenly over the FUNDED
+  // months only — so the 12-month sum below totals exactly this, no phantom.
+  const fullYearIncome = annDisburse + annOther;
+  const moIncome = fullYearIncome / coveredCount;
+  // Per-month net = this month's share of the year's money − planned − unbudgeted.
+  // Unfunded (summer) months contribute nothing to the school-year net.
+  const monthNetFor = (mi) => coveredIdx.has(mi) ? (moIncome - monthPlanFor(mi)) : 0;
   // Running balance: cumulative net Aug → selected month (auto carry-forward)
   let runningBalance = 0;
   for(let mi=0; mi<=selMonth; mi++) runningBalance += monthNetFor(mi);

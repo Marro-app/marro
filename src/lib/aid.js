@@ -45,6 +45,37 @@ export function schoolMonths(year) {
 }
 
 /**
+ * Which academic-month indices (0 = August … 11 = July — the convention App.jsx's
+ * month loops use) fall inside a year's aid-coverage window [startDate → the
+ * aidThroughDate, or endDate]. The year-end net and running balance iterate these
+ * instead of a flat 0–11, so they never credit a full month of income for the
+ * UNFUNDED summer months past the coverage window (money-rework §4b: the summer
+ * fund owns those, not the school-year plan). Without this, a 10-month-coverage
+ * year still gets 12 × the monthly figure, inventing ~2 months of income that
+ * never reaches the account.
+ *
+ * Returns all 12 whenever coverage spans the whole year or the dates are
+ * missing/garbage — bit-for-bit the old behaviour for every normal Aug→Jul year.
+ */
+export function coveredMonthIndices(year, yearStartYear) {
+  const all = new Set([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+  const y = year || {};
+  const through = y.aidThroughDate != null ? y.aidThroughDate : y.endDate;
+  if (!parseISO(y.startDate) || !parseISO(through) || !Number.isFinite(yearStartYear)) return all;
+  const covered = new Set();
+  for (let mi = 0; mi < 12; mi++) {
+    const calMonth = (mi + 7) % 12;                    // 0 = January … 7 = August
+    const calYear = yearStartYear + (mi >= 5 ? 1 : 0);  // Jan (mi 5) onward is the next calendar year
+    const mm = String(calMonth + 1).padStart(2, '0');
+    const monthStart = `${calYear}-${mm}-01`;
+    const monthEnd = `${calYear}-${mm}-31`;             // ISO string upper bound (any real day ≤ '-31')
+    // Include the month if it overlaps the coverage window at all.
+    if (monthStart <= through && monthEnd >= y.startDate) covered.add(mi);
+  }
+  return covered.size > 0 ? covered : all;
+}
+
+/**
  * The uncovered summer between one year's aid-coverage end and the next year's
  * start — the gap-detection the Plan tab's summer card keys off (money-rework
  * §4b). Returns null (no card) when there is no real gap:
