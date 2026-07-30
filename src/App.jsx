@@ -1648,8 +1648,15 @@ export function App() {
           vp_glance = <span style={{color:C.gray}}>for your current year</span>;
           vp_panel = <div style={{color:C.textMid}}>Being ahead of or behind your plan only makes sense for the school year you’re currently in. Pick your current year to see it.</div>;
         } else if (!pace) {
-          vp_glance = <span style={{color:C.gray}}>check in to compare</span>;
-          vp_panel = <div style={{color:C.textMid}}>Once you’ve checked in your balance a couple of times, Marro compares what you actually have to what your plan expected you to have by now.</div>;
+          // Distinguish "never checked in" from "checked in, but not enough SPACED-OUT
+          // history yet" — same-day or <7-day-apart check-ins can't measure a pace, and
+          // telling someone who just checked in five times to "check in a couple of times"
+          // reads as broken. safeToSpend.basis === "balance" ⇒ at least one real reading.
+          const hasCheckedIn = safeToSpend.basis === "balance";
+          vp_glance = <span style={{color:C.gray}}>{hasCheckedIn ? "check in again in a week" : "check in to compare"}</span>;
+          vp_panel = <div style={{color:C.textMid}}>{hasCheckedIn
+            ? <>To measure your pace I need two check-ins on <strong style={{color:C.text}}>different days, about a week apart</strong> — several on the same day count as one. Check in again in a few days and this fills in.</>
+            : <>Check in your balance a couple of times, about a week apart, and Marro compares what you actually have to what your plan expected by now.</>}</div>;
         } else {
           const ringColor = !pace.meaningful ? C.green : pace.drift>0 ? C.green : C.amber;
           const ratio = pace.expected>0 ? pace.actual/pace.expected : 1;

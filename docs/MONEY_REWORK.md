@@ -298,6 +298,16 @@ panel adds "This is your whole month's money — rent and everything else come o
 (3) **Budget** — the Total note is now always-shown and leads with the live **"$X left to
 spend"** running tally (verified it moves as categories are edited).
 
+### DONE (2026-07-29) — "Compared to your plan" empty-state copy
+Founder saw "—" after checking in five times — all on the same day, which `normalizeReadings`
+collapses to one reading, so there was no spaced-out history to measure a pace from (needs two
+check-ins ≥7 days apart). Not a bug; the old copy ("check in a couple of times") just misread as
+broken to someone who had. Copy now branches on `safeToSpend.basis==="balance"`: if they've
+checked in, it says "need two check-ins on different days, about a week apart — several on the
+same day count as one; check in again in a few days." (Separately noted: the ≥14-day 'growing'
+early-return in `computeRunway` skips `actualPace`, so a rising balance also blanks the tile —
+left as-is for now; revisit if it bites.)
+
 ### THEN (remaining, in order)
 1. **Summer card** on Aid & Plan (§4) — the last new feature. Needs a persisted per-year summer
    shape (rent, situation, income lumps/wage) + merge-engine entry; the pure calcs already exist.
