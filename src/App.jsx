@@ -8,7 +8,7 @@ import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
 import { fmt, fmtS, fmtD, fmtDay, fmtDayYear, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr } from './lib/format.js';
-import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState, classifyCushionSource } from './lib/loans.js';
+import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState } from './lib/loans.js';
 import { yearAidBreakdown, unmatchedLoans, availableMoney, coveredMonthIndices } from './lib/aid.js';
 import { WEEKS_PER_MONTH, USMLE_STEP_FEE_ESTIMATE } from './lib/constants.js';
 import { BRANDS, BRAND_DOMAINS, getBrandDomain, getBrand } from './lib/brands.js';
@@ -56,101 +56,6 @@ const AdminTab = React.lazy(() => import('./tabs/AdminTab.jsx'));
 
 let markedFirstRender = false;
 let markedSessionDecided = false;
-
-// ── Runway header-tile copy (Phase 2 commit 7) ──────────────────────────────
-// Maps computeRunway()'s state machine to the tile's value/sub/color per the
-// plan's walkthrough §5/§9 copy table. `alert:true` marks the state that must
-// carry role="alert" on the tile (a11y rule 7 — the gap warning has to be
-// announced, not just colored). Every sub carries its own meaning in plain
-// words, per the "no label ships that a confused M1 would need to google" rule
-// — never a bare number.
-// `sub` is always a SHORT single line that must read on its own; any longer
-// warning/guidance goes in `detail` (a plain string) instead of wrapping the
-// tile. The header renders `detail` behind a small InfoTip icon on the tile
-// (⚠️ for alert states, ℹ️ otherwise) that reveals it on hover/focus/tap — so
-// the tile stays clean and the same height as its siblings, and the full text
-// is still keyboard- and screen-reader-reachable (InfoTip's aria wiring). This
-// replaced an earlier line-clamp that truncated the warning with an ellipsis.
-// `cushionSource` ("loan"|"own"|"mixed"|undefined, from `classifyCushionSource`)
-// only matters for the `growing` state — every other state is unaffected.
-// Founder decision: a "growing" balance built from unspent LOAN money isn't
-// real savings (it's borrowed cash sitting at about 8% interest), so that case
-// must NOT read as "Growing ✓" the way genuine non-loan income does.
-// Founder call (2026-07-26): "Runway" is VC jargon a med student shouldn't have
-// to decode. The tile now leads with the DATE their money runs out — the fact
-// they actually want — under the label "Money lasts until". Only three of the
-// seven states carry a run-out date, so each state returns its own `label`: the
-// states with no date fall back to "Money left" rather than reading
-// "Money lasts until / $0". When money lasts the whole way the value reads
-// "Through graduation" (clearer than a bare "Graduation", which read as vague).
-function runwayTileDisplay(runway, cushionSource) {
-  // Spending faster than planned. The tile keeps its three lines: this REPLACES
-  // the usual sub rather than adding to it.
-  const pace = runway.actualPace;
-  const behind = (pace && pace.meaningful && pace.drift < 0 && pace.runOutDate) ? {
-    label: 'Money lasts until', value: fmtDayYear(runway.runOutDate), color: C.amber, alert: true,
-    sub: 'spending faster than planned',
-    detail: `Your plan expected about ${fmt(pace.expected)} by now and you checked in ${fmt(pace.actual)}, so you're ${fmt(Math.abs(pace.drift))} over since ${fmtDay(pace.sinceDate)}. At that pace your money would last to ${fmtDayYear(pace.runOutDate)} instead of ${fmtDayYear(runway.runOutDate)}. Either lower your monthly plan or spend closer to it.`,
-  } : null;
-
-  switch (runway.state) {
-    case 'unanchored':
-      return { label: 'Money left', value: '—', sub: 'add your balance to see this', color: C.gray };
-    case 'growing':
-      if (cushionSource === 'own') return { label: 'Money left', value: 'Saving more than you spend ✓', sub: 'your balance grows a little each month', color: C.green };
-      return { label: 'Money left', value: 'Extra loan money', sub: 'you may be able to return some, see your Loans tab', color: C.blue };
-    case 'through_graduation':
-      if (behind) return behind;
-      return {
-        label: 'Money lasts until', value: 'Through graduation', color: C.green,
-        sub: `${fmt(runway.spendable)} left, enough the whole way`,
-        detail: runway.savings > 0 ? `You have ${fmt(runway.savings)} in savings on top of this.` : undefined,
-      };
-    case 'overdrawn':
-      return {
-        label: 'Money left', value: '$0', color: C.amber, alert: true,
-        sub: runway.coveredBySavings ? 'overdrawn, but your savings covers it' : 'overdrawn, with no savings to fall back on yet',
-      };
-    case 'gap': {
-      // The hero stays the date the money is ACTUALLY gone (inflows counted),
-      // and the sub SWAPS to the dry-spell warning rather than stacking under
-      // it — the tile must stay three lines (founder: "worried about too much
-      // text"). Everything specific lives in the existing `detail` InfoTip.
-      // "gets tight" carries the warning in words, so the amber isn't doing the
-      // job alone (WCAG 1.4.1).
-      const dry = runway.shortfalls?.[0];
-      const dryDate = dry ? fmtDay(dry.date) : null;
-      const guessed = runway.nextRefund?.isEstimate;
-      return {
-        label: 'Money lasts until', value: fmtDayYear(runway.runOutDate), color: C.amber, alert: true,
-        sub: dryDate ? `money gets tight around ${dryDate}` : 'money gets tight before your next payment',
-        detail: `Your cash runs low${dryDate ? ` around ${dryDate}` : ''}, about ${runway.gapDays} days before your next money arrives (${guessed ? 'estimated ' : ''}${fmtDay(runway.nextRefund.date)}). Spending about ${fmt(runway.trimPerMonthToClose)}/mo less until then would bridge it.${runway.savings > 0 ? ` You also have ${fmt(runway.savings)} in savings if you need it.` : ''}${guessed ? ' That date is an estimate — confirm it with your aid office.' : ''}`,
-      };
-    }
-    case 'counting_down': {
-      // Ranked below the dry-spell warning (the 'gap' state above), which is the
-      // more urgent thing. The headline date comes from the PLAN, so if the plan
-      // isn't being followed the student has to be told, or the date quietly
-      // becomes fiction.
-      if (behind) return behind;
-      if (runway.basicallyOnTrack) {
-        return {
-          label: 'Money lasts until', value: fmtDayYear(runway.runOutDate), color: C.green,
-          sub: `${fmt(runway.spendable)} left, you're basically on track ✓`,
-        };
-      }
-      return {
-        label: 'Money lasts until', value: fmtDayYear(runway.runOutDate), color: C.text,
-        sub: `${fmt(runway.spendable)} left at your current pace`,
-        detail: runway.savings > 0 ? `You have ${fmt(runway.savings)} in savings on top of this.` : undefined,
-      };
-    }
-    case 'graduated':
-      return { label: 'Money left', value: '—', sub: 'all done, congrats!', color: C.teal };
-    default:
-      return { label: 'Money left', value: '—', sub: 'add your balance to see this', color: C.gray };
-  }
-}
 
 // One labelled figure inside a header tile's expanded panel: a colour dot, a
 // plain-language label, and the dollar figure right-aligned.
@@ -880,10 +785,6 @@ export function App() {
   const strayLoans = unmatchedLoans(data.loans||[], data.years);
   const debtProjection = projectDebtAtGraduation(data.loans||[], gradDate);
   const runway = computeRunway({ readings: data.balanceReadings||[], plannedMonthlyBurn: runwayPlannedBurn, upcomingRefunds, gradDate, today });
-  // A4 (Phase 2.6 Package A): only meaningful for the tile's "growing" state
-  // — cheap to compute regardless, since classifyCushionSource is pure math
-  // over data already loaded here.
-  const cushionSource = classifyCushionSource({ readings: data.balanceReadings||[], loans: data.loans||[], otherIncome: annOther, today });
   const refundNudge = refundNudgeState({ years: data.years, readings: data.balanceReadings||[], refundPlaybookSeen: data.refundPlaybookSeen, today, confirmedTerm: refundNudgeConfirmed });
 
   // ── Weekly ────────────────────────────────────────────────────────────────

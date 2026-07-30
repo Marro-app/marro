@@ -336,7 +336,16 @@ left as-is for now; revisit if it bites.)
   calcs (`summerFundNeed`/`summerResources`/`summerShortfall`). Verified in-browser: card appears on
   setting aid-through, $0 summer rent → $1,305/mo, covered + shortfall readouts both neutral.
 
+### DONE (2026-07-29) — dead-code cleanup
+- `src/App.jsx`: removed the unused `runwayTileDisplay` helper (+ its long comment) and the
+  `cushionSource` const it fed, and dropped `classifyCushionSource` from the import (still
+  exported/tested in `loans.js`).
+- `src/tabs/BudgetTab.jsx`: the "lean months" one-tap trim was **fully orphaned** — `confirmLean`
+  was only ever set to `null`, so the modal never rendered. Removed the whole dead chain
+  (`untilNext` → `buildLeanPlan` → `leanPlan` → `applyLeanPlan` → the modal) plus the unused
+  `yearEndMonth`, and dropped the now-unused `safeToSpend` prop. **`leanMonths` KEPT** (still used
+  to mark dry-spell months in the month picker). Recoverable via git if the trim gets re-wired.
+- Build + 333 tests green, lint unchanged (pre-existing warnings only).
+
 ### THEN (remaining, in order)
-1. **Cleanup**: dead `runwayTileDisplay` + `cushionSource` in `src/App.jsx`; `leanPlan`/
-   `yearEndMonth` unused in `src/tabs/BudgetTab.jsx`.
-2. **Naming sweep** (§5) across all surfaces.
+1. **Naming sweep** (§5) across all surfaces.

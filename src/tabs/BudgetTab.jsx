@@ -20,7 +20,7 @@ import { targetIndexFor, rowShift } from '../lib/reorder.js';
 export function BudgetTab(){
   const { data, cats, ay, yr, yrStartYear, selMonth, setSelMonth, subs, subsMo, disabledCats,
           moSpend, moSpendable, moSurplus,
-          aidBreakdown, safeToSpend, runway, upd, allEntriesFlat,
+          aidBreakdown, runway, upd, allEntriesFlat,
           getMonthVal, spentInMonth, unbudgetedCats, unbudgetedTotal, promoteToBudget,
           toggleMonthCat, setMo, reorderCats, addCat,
           newCatName, setNewCatName, newCatIcon, setNewCatIcon, iconPickOpen, setIconPickOpen } = useApp();
@@ -44,14 +44,8 @@ export function BudgetTab(){
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [showSubscriptions, setShowSubscriptions] = useState(false);
   const [showHealthChecks, setShowHealthChecks] = useState(false);
-  const [confirmLean, setConfirmLean] = useState(null);
-  // What the cash on hand supports until the next payment lands (src/lib/aid.js).
-  const untilNext = safeToSpend?.untilNextMoney || null;
-
   // ── Budgeting through a dry spell ──────────────────────────────────────────
-  // The months between now and the next payment. Scaling these to `untilNext`
-  // is what turns the warning into a fix, so the student isn't just told they
-  // have a problem in November.
+  // The academic months a dry spell spans — used to mark them in the month picker.
   const monthIdxOf = (iso) => { const d = new Date(iso+"T12:00:00"); return Number.isNaN(d.getTime()) ? null : (d.getMonth()-7+12)%12; };
   const leanMonths = (() => {
     const out = new Set();
@@ -70,41 +64,6 @@ export function BudgetTab(){
     }
     return out;
   })();
-  // Scale the DISCRETIONARY categories to hit the target. Housing is locked by
-  // a contract and Fixed monthly costs is a derived total — neither is
-  // something a student can decide to spend less on, so neither is touched.
-  const buildLeanPlan = (target) => {
-    const flexible = cats.filter(c => !c.locked && !c.autoCalc);
-    const fixedTotal = cats.filter(c => c.locked).reduce((a,c)=>a+(Number(yr.monthly[c.id])||0),0) + subsMo;
-    const flexTotal = flexible.reduce((a,c)=>a+(Number(yr.monthly[c.id])||0),0);
-    const room = target - fixedTotal;
-    if (flexTotal <= 0) return null;
-    const factor = room / flexTotal;
-    // `possible` is false when rent and fixed costs ALONE already exceed the
-    // target — no amount of trimming groceries closes that, and applying the
-    // scale would zero out every discretionary category. Offering a "fix" that
-    // wipes the plan and still doesn't work is worse than offering none, so the
-    // action is withheld and the tooltip explains instead.
-    // factor >= 1 means the plan already fits; nothing to do either.
-    return { flexible, factor, fixedTotal, flexTotal, newFlexTotal: flexTotal*Math.max(0,factor), target,
-             possible: room > 0 && factor < 1 };
-  };
-  const leanPlan = untilNext ? buildLeanPlan(untilNext.perMonth) : null;
-  const applyLeanPlan = (plan, months) => {
-    const d = JSON.parse(JSON.stringify(data));
-    const y = d.years.find(x=>x.id===ay) || d.years[0];
-    y.monthlyOverrides = y.monthlyOverrides || {};
-    for (const mi of months) {
-      const mk = MONTH_NAMES[mi];
-      y.monthlyOverrides[mk] = { ...(y.monthlyOverrides[mk]||{}) };
-      for (const c of plan.flexible) {
-        y.monthlyOverrides[mk][c.id] = Math.round((Number(y.monthly[c.id])||0) * plan.factor);
-      }
-    }
-    upd(d);
-  };
-  // Month the current school year ends in — labels the "to last through X" row.
-  const yearEndMonth = yr?.endDate ? new Date(yr.endDate+"T12:00:00").toLocaleDateString("en-US",{month:"long"}) : "the year";
   const [barHover, setBarHover] = useState(null);
   const barDim = i => barHover!=null && barHover!==i ? 0.35 : 1;
   const barMove = s => setBarHover(s && s.isTooltipActive && s.activeTooltipIndex!=null ? s.activeTooltipIndex : null);
@@ -240,24 +199,6 @@ export function BudgetTab(){
   return (
     <>
       {showSubscriptions && <Modal title="Fixed monthly costs" onClose={()=>setShowSubscriptions(false)} width={640}><SubscriptionsTab/></Modal>}
-      {/* Overwrites budget numbers the student typed, across several months —
-          never fires straight off the tap. Shows exactly which months change
-          and the before → after, so it's a decision rather than a surprise. */}
-      {confirmLean && <Modal title="Use this for the lean months" onClose={()=>setConfirmLean(null)} width={380}>
-        <div style={{fontSize:13,color:C.textMid,marginBottom:12,lineHeight:1.6}}>
-          Sets your plan to about <strong style={{color:C.text}}>{fmt(confirmLean.target)}/mo</strong> for{" "}
-          <strong style={{color:C.text}}>{[...leanMonths].sort((a,b)=>a-b).map(mi=>MONTH_FULL[mi]).join(", ")}</strong>,
-          the months before your next payment.
-        </div>
-        <div style={{fontSize:12,color:C.gray,marginBottom:16,lineHeight:1.6}}>
-          Housing and fixed monthly costs stay as they are ({fmt(confirmLean.fixedTotal)}/mo), since those aren&apos;t yours to change.
-          Everything else scales from {fmt(confirmLean.flexTotal)} to about {fmt(confirmLean.newFlexTotal)}/mo.
-        </div>
-        <div style={{display:"flex",gap:8}}>
-          <button className="btn-pop" onClick={()=>setConfirmLean(null)} style={{flex:1,padding:"10px",fontSize:13,fontWeight:500,border:`1px solid ${C.border}`,borderRadius:8,background:"transparent",color:C.gray,cursor:"pointer"}}>Cancel</button>
-          <button className="btn-fill" onClick={()=>{applyLeanPlan(confirmLean,[...leanMonths]);setConfirmLean(null);}} style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.teal,color:C.bg,cursor:"pointer"}}>Use it</button>
-        </div>
-      </Modal>}
       {confirmRemove && <Modal title="Remove category" onClose={()=>setConfirmRemove(null)} width={340}>
         <div style={{fontSize:13,color:C.textMid,marginBottom:16}}>Remove <strong>{cats.find(c=>c.id===confirmRemove)?.label}</strong> from {MONTH_FULL[selMonth]}? You can add it back anytime.</div>
         <div style={{display:"flex",gap:8}}>
