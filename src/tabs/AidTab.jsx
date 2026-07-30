@@ -122,7 +122,7 @@ export function AidTab(){
             )}
             <div style={{height:1,background:C.border,margin:"4px 0"}}/>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:16}}>
-              <span style={{fontSize:12,fontWeight:600,color:C.text,display:"inline-flex",alignItems:"center",gap:4}}>You keep <InfoTip text="What reaches your bank account each year, after your school takes tuition, fees, and health insurance. This does not include money already in your checking account."/></span>
+              <span style={{fontSize:12,fontWeight:600,color:C.text,display:"inline-flex",alignItems:"center",gap:4}}>Sent to you <InfoTip text="What reaches your bank account each year, after your school takes tuition, fees, and health insurance. This does not include money already in your checking account."/></span>
               <span style={{fontSize:14,fontWeight:700,color:C.teal}}>{fmt(annDisburse)}<span style={{fontSize:11,fontWeight:400,color:C.gray}}> per year</span></span>
             </div>
           </div>
@@ -261,9 +261,9 @@ export function AidTab(){
                   </div>
                   <div style={{marginTop:12,padding:"10px 12px",background:C.tealLight,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.tealMid}`,borderRadius:8,fontSize:12}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:3,alignItems:"center"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Sent to you/yr <InfoTip text="What reaches your bank account this year, after your school takes tuition, fees, and health insurance."/></span><strong style={{color:C.teal}}>{fmt(disb)}</strong></div>
-                    <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Safe to spend <InfoTip text="Sent to you, divided across the months of this school year. This is your whole month's money — rent and everything else come out of it."/></span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
+                    <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Planned per month <InfoTip text="Sent to you, divided across the months of this school year — your planned monthly amount. It's your whole month's money, before rent. Your live 'Safe to spend' up top adjusts this once you check in a balance."/></span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
                     {(y.monthly.housing||0)>0 && (
-                      <div style={{display:"flex",justifyContent:"space-between",marginTop:5,paddingTop:5,borderTop:`1px solid ${C.tealMid}`}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Left after rent <InfoTip text={`Rent is ${fmt(y.monthly.housing)}/mo — that's ${fmt((y.monthly.housing||0)*b.schoolMonths)} across the ${b.schoolMonths} months of this school year. Take it out of Safe to spend and this is what's left each month for food, books, and everything else.`}/></span><strong style={{color:C.teal}}>{fmt(moD-(y.monthly.housing||0))}/mo</strong></div>
+                      <div style={{display:"flex",justifyContent:"space-between",marginTop:5,paddingTop:5,borderTop:`1px solid ${C.tealMid}`}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Left after rent <InfoTip text={`Rent is ${fmt(y.monthly.housing)}/mo — that's ${fmt((y.monthly.housing||0)*b.schoolMonths)} across the ${b.schoolMonths} months of this school year. Take it out of your planned monthly amount and this is what's left each month for food, books, and everything else.`}/></span><strong style={{color:C.teal}}>{fmt(moD-(y.monthly.housing||0))}/mo</strong></div>
                     )}
                   </div>
                   {rawGap<0 && (
@@ -298,7 +298,7 @@ export function AidTab(){
         <ScrollX className="scrollx" style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead><tr>
-              {["Year","Total aid","School costs","Sent to you/yr","Safe to spend/mo","Budget/mo","Surplus/mo"].map(h=>
+              {["Year","Total aid","School costs","Sent to you/yr","Planned/mo","Monthly plan","Left over"].map(h=>
                 <th key={h} style={{textAlign:"left",fontSize:10,color:C.gray,padding:"6px 8px",borderBottom:`1px solid ${C.border}`,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
               )}
             </tr></thead>

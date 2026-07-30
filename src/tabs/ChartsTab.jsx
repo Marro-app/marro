@@ -47,7 +47,7 @@ export function ChartsTab(){
           const calMo=(mi+7)%12;
           const calYr=yrStartYear+(mi>=5?1:0);
           const actual=allEntriesFlat.filter(e=>{const dt=new Date(e.date+"T12:00:00");return dt.getMonth()===calMo&&dt.getFullYear()===calYr;}).reduce((a,e)=>a+Number(e.amount),0);
-          return {name:m, Budgeted:Math.round(budgeted), Actual:Math.round(actual)};
+          return {name:m, Planned:Math.round(budgeted), Actual:Math.round(actual)};
         });
         return (
           <div role="tabpanel" id="tab-panel" aria-labelledby="tab-charts" tabIndex={0} style={{display:"flex",flexDirection:"column",gap:16}}>
@@ -79,7 +79,7 @@ export function ChartsTab(){
               const priorColor  = priorYearsCarryover >= 0 ? C.teal : C.neg;
               return (
                 <Card>
-                  <SectionTitle sub="if you stay on budget">Planned surplus — {yr.label.split("—")[0].trim()}</SectionTitle>
+                  <SectionTitle sub="if you stay on plan">Planned leftover — {yr.label.split("—")[0].trim()}</SectionTitle>
                   <div style={{display:"flex",gap:14,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
                     {priorYearsCarryover!==0 && (
                       <div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.gray}}>
@@ -138,7 +138,7 @@ export function ChartsTab(){
             <Card>
               <SectionTitle>Budget vs actual</SectionTitle>
               <div style={{display:"flex",gap:20,marginBottom:10}}>
-                {[["Budgeted",C.teal],["Actual",C.neg]].map(([l,c])=>(
+                {[["Planned",C.teal],["Actual",C.neg]].map(([l,c])=>(
                   <div key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:C.gray}}>
                     <div style={{width:10,height:10,borderRadius:3,background:c}}/>{l}
                   </div>
@@ -152,7 +152,7 @@ export function ChartsTab(){
                   <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
                   <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
                   <Tooltip separator=": " formatter={v=>fmt(v)} {...tipProps()} cursor={false}/>
-                  <Bar dataKey="Budgeted" fill={C.teal} radius={[6,6,0,0]} maxBarSize={26}>
+                  <Bar dataKey="Planned" fill={C.teal} radius={[6,6,0,0]} maxBarSize={26}>
                     {budgetVsActual.filter(d=>d.Actual>0).map((d,i)=><Cell key={i} fill={C.teal} opacity={0.85*barDim("bva",i)} style={{transition:"opacity 150ms ease"}}/>)}
                   </Bar>
                   <Bar dataKey="Actual" fill={C.neg} radius={[6,6,0,0]} maxBarSize={26}>
@@ -440,7 +440,7 @@ export function ChartsTab(){
 
             {/* Multi-year comparison */}
             <Card>
-              <SectionTitle sub="Average month in each academic year — what you can spend vs what you've planned">Spendable vs budget by year</SectionTitle>
+              <SectionTitle sub="Average month in each academic year — what's safe to spend vs your monthly plan">Spendable vs plan by year</SectionTitle>
               <div style={{display:"flex",gap:20,marginBottom:12}}>
                 {[["Spendable /mo",C.teal],["Budget /mo",C.neg]].map(([l,c])=>(
                   <div key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:C.gray}}>

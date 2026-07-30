@@ -194,7 +194,7 @@ export function BudgetTab(){
     const calMo=(mi+7)%12;
     const calYr=yrStartYear+(mi>=5?1:0);
     const actual=allEntriesFlat.filter(e=>{const dt=new Date(e.date+"T12:00:00");return dt.getMonth()===calMo&&dt.getFullYear()===calYr;}).reduce((a,e)=>a+Number(e.amount),0);
-    return {name:m, Budgeted:Math.round(budgeted), Actual:Math.round(actual)};
+    return {name:m, Planned:Math.round(budgeted), Actual:Math.round(actual)};
   }).filter(d=>d.Actual>0);
   return (
     <>
@@ -371,7 +371,7 @@ export function BudgetTab(){
             <Card>
               <SectionTitle>Plan vs actual</SectionTitle>
               <div style={{display:"flex",gap:20,marginBottom:10}}>
-                {[["Budgeted",C.teal],["Actual",C.neg]].map(([l,c])=>(
+                {[["Planned",C.teal],["Actual",C.neg]].map(([l,c])=>(
                   <div key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:C.gray}}>
                     <div style={{width:10,height:10,borderRadius:3,background:c}}/>{l}
                   </div>
@@ -384,7 +384,7 @@ export function BudgetTab(){
                   <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
                   <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
                   <Tooltip separator=": " formatter={v=>fmt(v)} {...tipProps()} cursor={false}/>
-                  <Bar dataKey="Budgeted" fill={C.teal} radius={[6,6,0,0]} maxBarSize={26}>
+                  <Bar dataKey="Planned" fill={C.teal} radius={[6,6,0,0]} maxBarSize={26}>
                     {budgetVsActual.map((d,i)=><Cell key={i} fill={C.teal} opacity={0.85*barDim(i)} style={{transition:"opacity 150ms ease"}}/>)}
                   </Bar>
                   <Bar dataKey="Actual" fill={C.neg} radius={[6,6,0,0]} maxBarSize={26}>
