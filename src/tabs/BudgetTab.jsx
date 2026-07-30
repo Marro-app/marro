@@ -388,20 +388,21 @@ export function BudgetTab(){
               </div>
               <span style={{color:moSpend>moSpendable?C.neg:C.text}}>{fmt(moSpend)}/mo</span>
             </div>
-            {/* This-month room (question 3): is your plan within what's safe to spend?
-                Folded here when the Cash flow card was removed. Never green when the
-                spendable money is borrowed (founder rule) — colour AND words carry it. */}
-            {moSurplus!==0 && (
-              <div style={{marginTop:12,padding:"10px 12px",
-                background:moSurplus<0?C.negLight:(surplusBorrowed?C.blueLight:C.greenLight),borderRadius:8,fontSize:12,
-                color:moSurplus<0?C.neg:(surplusBorrowed?C.blue:C.green),fontWeight:500,lineHeight:1.5}}>
-                {moSurplus<0
-                  ? `Your plan is ${fmt(Math.abs(moSurplus))} more than what's safe to spend this month — trim a little, or it comes out of your cushion.`
+            {/* Live "left to spend" (question 3): what's still unspent of this month's
+                safe-to-spend as the student fills in the plan. Always shown so it reads as
+                a running tally that updates with every edit. Never green when the spendable
+                money is borrowed (founder rule) — colour AND words carry it. */}
+            <div style={{marginTop:12,padding:"10px 12px",
+              background:moSurplus<0?C.negLight:moSurplus===0?C.surface:(surplusBorrowed?C.blueLight:C.greenLight),borderRadius:8,fontSize:12,
+              color:moSurplus<0?C.neg:moSurplus===0?C.textMid:(surplusBorrowed?C.blue:C.green),fontWeight:500,lineHeight:1.5}}>
+              {moSurplus<0
+                ? <><strong>{fmt(Math.abs(moSurplus))} over</strong> what’s safe to spend this month — trim a little, or it comes out of your cushion.</>
+                : moSurplus===0
+                  ? <>You’ve planned every dollar that’s safe to spend this month.</>
                   : surplusBorrowed
-                    ? `${fmt(moSurplus)} under what's safe to spend this month — but that money is borrowed, so returning what you don't need within 120 days cancels its interest.`
-                    : `${fmt(moSurplus)} under what's safe to spend this month — a nice bit of room.`}
-              </div>
-            )}
+                    ? <><strong>{fmt(moSurplus)} left to spend</strong> this month — but that money is borrowed, so returning what you don’t need within 120 days cancels its interest.</>
+                    : <><strong>{fmt(moSurplus)} left to spend</strong> this month — a nice bit of room.</>}
+            </div>
             {unbudgetedCats.length>0 && <div style={{marginTop:16,paddingTop:14,borderTop:`2px dashed ${C.border}`}}>
               <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
                 <span style={{fontSize:12,fontWeight:700,color:C.amber}}>Unbudgeted spending</span>

@@ -287,6 +287,17 @@ no-op on existing/mock data). `monthNetFor` in `src/App.jsx` now spreads the **t
 `sentToYou + otherIncome` over the funded months only and returns 0 for unfunded summer months
 — summer belongs to the summer fund (§4b), founder chose "school year only". +4 tests (331 green).
 
+### DONE (2026-07-29) — rent clarity across the three surfaces (founder ask)
+Rent was counted every month in the Budget but invisible on the aid summary, and the
+aid card annualised "Other income (monthly)" into Safe-to-spend while ignoring "Housing
+(monthly)" — so it read as if rent wasn't counted. Not an arithmetic bug; a clarity gap.
+Fixes: (1) **Aid & Plan year card** — new **"Left after rent"** line under Safe-to-spend
+(= moSpendable − housing/mo), with an InfoTip spelling out rent × school months.
+(2) **Safe-to-spend header tile** — collapsed glance now says **"before rent"**; expanded
+panel adds "This is your whole month's money — rent and everything else come out of it."
+(3) **Budget** — the Total note is now always-shown and leads with the live **"$X left to
+spend"** running tally (verified it moves as categories are edited).
+
 ### THEN (remaining, in order)
 1. **Summer card** on Aid & Plan (§4) — the last new feature. Needs a persisted per-year summer
    shape (rent, situation, income lumps/wage) + merge-engine entry; the pure calcs already exist.

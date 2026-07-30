@@ -1588,14 +1588,14 @@ export function App() {
         // check-in date visible (grounds the number in the real balance). The final-month
         // label already says "this school year", so its sub only needs the date.
         const sValue = finalMonth ? fmt(safeToSpend.available) : fmt(safeToSpendMo)+"/mo";
-        // TILE 1 — collapsed glance + expanded panel. Collapsed says, in a word, that
-        // this is CHECKING money (wallet + "from checking") or a plan ("planned").
-        // Expanded: a checking/savings split bar, the labelled figures (checking, aid
-        // still coming, savings kept aside), then the check-in date + school-year note.
+        // TILE 1 — collapsed glance + expanded panel. Collapsed carries the one thing a
+        // student must not misread: this is the WHOLE month's money, BEFORE rent (rent and
+        // everything else come out of it — founder call). Expanded: a checking/savings
+        // split bar, the labelled figures, then the before-rent + check-in / school-year note.
         const s_balance = safeToSpend.basis==="balance";
         const s_glance = (<>
           <Icon name="wallet" size={13} color={C.teal}/>
-          <span>{s_balance ? "from checking" : "planned figure"}</span>
+          <span>before rent{s_balance ? "" : " · planned"}</span>
         </>);
         const s_panel = s_balance ? (()=>{
           const chk=safeToSpend.onHand, sav=safeToSpend.savings, arr=safeToSpend.stillToArrive;
@@ -1611,11 +1611,11 @@ export function App() {
             {arr>0 && <TileRow label="Aid still to arrive" val={fmt(arr)} dot={C.tealMid}/>}
             {sav>0 && <TileRow label="In savings, kept aside" val={fmt(sav)} dot={C.gray}/>}
             <div style={{marginTop:9,paddingTop:9,borderTop:`1px solid ${C.border}`,color:C.gray}}>
-              From your {fmtDay(safeToSpend.asOf)} check-in, spread across the rest of the {syLabel} school year. Savings isn’t counted here.
+              This is your whole month’s money — rent and everything else come out of it. From your {fmtDay(safeToSpend.asOf)} check-in, spread across the rest of the {syLabel} school year. Savings isn’t counted here.
             </div>
           </>);
         })() : (<>
-          <div style={{color:C.textMid}}>This is your aid for the {syLabel} school year, spread across its months — a plan, not a live balance.</div>
+          <div style={{color:C.textMid}}>This is your aid for the {syLabel} school year, spread across its months — a plan, not a live balance. It’s your whole month’s money, before rent.</div>
           <div style={{marginTop:7,color:C.gray}}>Check in your balance to see your real spendable number.</div>
         </>);
         // TILE 2 — BY END OF YEAR. Plan across all 12 months → surplus(+) or short(−).
