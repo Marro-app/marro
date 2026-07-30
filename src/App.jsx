@@ -447,22 +447,24 @@ export function App() {
     setSelMonth(0);
   },[ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Keep the selected month inside the SELECTED YEAR's real months. Switching to a
-  // future year (e.g. an Aug–May year while today is July) otherwise leaves the
-  // picker on today's month, which is out of that year's range — and, worse, budget
-  // edits there write an override the year-end math never reads (curYrNet only sums
-  // covered months), so "By end of year" looked frozen when you edited the plan.
-  // Clamp to today's month when it falls inside the year, else the year's first month.
+  // Keep the selected month inside the SELECTED YEAR's real months. Two ways it
+  // can fall out of range: switching to a future year (e.g. an Aug–May year while
+  // today is July), OR shortening the CURRENT year's end date (July → May) while
+  // staying on it. Either way an out-of-range month is bad: budget edits there
+  // write an override the year-end math never reads (curYrNet only sums covered
+  // months), so "By end of year" looked frozen and the picker showed a month the
+  // year doesn't contain. Depends on the year's start/end so a date-range edit
+  // re-clamps too. Clamp to today's month when it's in the year, else month one.
+  const _clampYr = data?.years?.find(yr=>yr.id===ay);
   useEffect(()=>{
-    if(!data||!ready) return;
-    const y=data.years.find(yr=>yr.id===ay); if(!y) return;
-    const {from,to}=yearMonthRange(y);
+    if(!data||!ready||!_clampYr) return;
+    const {from,to}=yearMonthRange(_clampYr);
     setSelMonth(prev=>{
       if(prev>=from&&prev<=to) return prev;
       const todayIdx=(new Date().getMonth()-7+12)%12;
       return (todayIdx>=from&&todayIdx<=to)?todayIdx:from;
     });
-  },[ay,ready]); // eslint-disable-line react-hooks/exhaustive-deps
+  },[ay,ready,_clampYr?.startDate,_clampYr?.endDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = useCallback(async d => {
     const ts = Date.now();

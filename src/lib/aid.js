@@ -318,14 +318,17 @@ export function availableMoney({ year, loans, readings, today }) {
   const fullYear = breakdown.sentToYou + breakdown.otherIncomeAnnual;
 
   // The projection fallback — also the answer for every year that isn't the
-  // current one. Identical to the pre-2026-07-26 behaviour by construction.
+  // current one. Spread over the SCHOOL months (breakdown.moSpendable), NOT a flat
+  // 12, so the header's "Safe to spend" projection matches the Aid tab's "Planned
+  // per month" for the same year (both aid ÷ school months). For a normal full-year
+  // (schoolMonths = 12) this is bit-for-bit the old ÷12 behaviour.
   const projection = {
     onHand: 0,
     savings: 0,
     stillToArrive: fullYear,
     available: fullYear,
-    monthsLeft: 12,
-    perMonth: fullYear / 12,
+    monthsLeft: breakdown.schoolMonths,
+    perMonth: breakdown.moSpendable,
     untilNextMoney: null,
     basis: 'projection',
     // No-aid degrade flags (money-rework §4e), surfaced alongside `basis` so the
