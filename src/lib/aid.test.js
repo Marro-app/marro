@@ -273,12 +273,14 @@ describe('schoolMonths — the aid divisor', () => {
     expect(schoolMonths(makeYear({ startDate: 'nope', endDate: 'nope' }))).toBe(12);
     expect(schoolMonths(makeYear({ startDate: '2026-08-01', endDate: '2025-01-01' }))).toBe(12); // end before start
   });
-  it('tightens to ~9 when aid stops in May (the Cornell correction)', () => {
-    expect(schoolMonths(makeYear({ startDate: '2025-08-01', endDate: '2026-07-31', aidThroughDate: '2026-05-15' }))).toBe(9);
+  it('tightens to the covered calendar months (Aug–May = 10) when aid stops in May', () => {
+    // Counts the calendar months the budget actually spans (Aug…May), NOT the
+    // day-based ~9, so it matches the year-end math exactly.
+    expect(schoolMonths(makeYear({ startDate: '2025-08-01', endDate: '2026-07-31', aidThroughDate: '2026-05-15' }))).toBe(10);
   });
   it('uses aidThroughDate over endDate when both are present', () => {
     const y = makeYear({ startDate: '2025-08-01', endDate: '2026-07-31', aidThroughDate: '2026-05-01' });
-    expect(schoolMonths(y)).toBe(9);
+    expect(schoolMonths(y)).toBe(10); // Aug…May
   });
 });
 
@@ -322,8 +324,8 @@ describe('yearAidBreakdown — school-months divisor is a no-op when aidThroughD
     const year = makeYear({ startDate: '2025-08-01', endDate: '2026-07-31', aidThroughDate: '2026-05-15', grant: 5000, tuitionFees: 34000, healthIns: 4200 });
     const loans = [makeLoan({ type: 'private', subtype: 'private', disbursements: [{ id: 'd', amount: 50000 }] })];
     const b = yearAidBreakdown(year, loans, 2025);
-    expect(b.schoolMonths).toBe(9);
-    expect(b.moSpendable).toBeCloseTo(16800 / 9, 6);   // ~1867, higher than the flat-12 number
+    expect(b.schoolMonths).toBe(10);                    // Aug…May calendar months
+    expect(b.moSpendable).toBeCloseTo(16800 / 10, 6);   // 1680, higher than the flat-12 number
     expect(b.moSpendable).toBeGreaterThan(1400);
   });
   it('surfaces hasAid / selfFunded without changing any numbers', () => {

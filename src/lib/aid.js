@@ -25,20 +25,26 @@ function roundedMonthsBetween(a, b) {
 }
 
 /**
- * The number of whole months in a year's SCHOOL period — from `startDate` to
- * the date its aid is meant to last through (`aidThroughDate` when the student
- * has set one, otherwise the year's `endDate`). This is the divisor for the
- * "planned per month" figure.
+ * The number of CALENDAR MONTHS a year's aid is spread over — the divisor for
+ * "planned per month" / "safe to spend". This is the COUNT of covered academic
+ * months (coveredMonthIndices), NOT a day-based `roundedMonthsBetween`, so it
+ * agrees exactly with the year-end math (curYrNet), which spends the money across
+ * those same calendar months. Using two different divisors is what made a year
+ * ending mid-month (e.g. May 22 → 9 by days, but Aug–May = 10 calendar months)
+ * show "$258 left this month" yet "$2 by end of year" — the same money divided
+ * two ways.
  *
- * ⚠ Backward compatibility: `aidThroughDate` defaults to null on every year, so
- * this falls through to `endDate` and a normal Aug→(Jul 31 | Aug 15) year lands
- * on exactly 12 — reproducing the old flat `/12` divisor bit-for-bit for all
- * existing/default data. It only diverges once a student deliberately enters an
- * earlier classes-end date (e.g. Cornell's ~May, giving ~9 school months).
- * Falls back to 12 whenever the dates are missing or nonsensical.
+ * A normal Aug→Jul year → 12 (the old ÷12 behaviour). Falls back to 12 whenever
+ * the dates are missing or nonsensical.
  */
 export function schoolMonths(year) {
   const y = year || {};
+  const ysy = y.startDate ? new Date(y.startDate + 'T12:00:00').getFullYear() : null;
+  if (ysy != null && !Number.isNaN(ysy)) {
+    const n = coveredMonthIndices(y, ysy).size;
+    if (n > 0) return n;
+  }
+  // No/garbage start date → day-based estimate, else 12.
   const through = y.aidThroughDate != null ? y.aidThroughDate : y.endDate;
   const m = roundedMonthsBetween(y.startDate, through);
   return m != null && m > 0 ? m : 12;
