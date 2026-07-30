@@ -4,6 +4,7 @@ import { fmt, fmtS, moTotal, todayStr, sanitizeMoneyInput, cleanNumEvent } from 
 import { Card, SectionTitle, XBtn, Pill, ScrollX, InfoTip } from '../components/primitives.jsx';
 import { Icon } from '../components/icons.jsx';
 import { DateField } from '../components/pickers.jsx';
+import { SummerCard } from '../components/SummerCard.jsx';
 import { useApp } from '../context/AppContext.js';
 import { useEscClose, useGridColumnCount } from '../lib/hooks.js';
 import { yearAidBreakdown } from '../lib/aid.js';
@@ -208,6 +209,20 @@ export function AidTab(){
                           : `These dates overlap ${shortLabel(nextYr)}, which starts ${friendlyDate(nextYr.startDate)}. Pick an end date before that.`}
                     </div>
                   )}
+                  {/* "Aid covers through" (aidThroughDate) — the single control that
+                      turns on the school-months divisor + the summer card (§4a/§4b).
+                      Blank = aid lasts the whole year (÷12, no summer). Set earlier
+                      (e.g. Cornell ~May) → aid divides over the school months and a
+                      summer card appears if it ends before the next year starts. */}
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap",marginBottom:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`}}>
+                    <span style={{fontSize:12,color:C.textMid,display:"flex",alignItems:"center",gap:4}}>
+                      Aid covers through <InfoTip text="The month your aid is meant to last through — usually when classes end. Leave it blank if your aid covers the whole year. Setting it (say, mid-May) spreads your aid over just the school months and opens a small summer plan below."/>
+                    </span>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <DateField value={y.aidThroughDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].aidThroughDate=v||null;upd(d);}} ariaLabel={`Aid covers through — ${y.label||'Year '+(i+1)}`} style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
+                      {y.aidThroughDate && <button type="button" className="btn-pop" aria-label="Clear aid-covers-through date (aid lasts all year)" onClick={()=>{const d=JSON.parse(JSON.stringify(data));d.years[i].aidThroughDate=null;upd(d);}} style={{fontSize:11,fontWeight:600,padding:"5px 9px",minHeight:32,borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",color:C.textMid,cursor:"pointer"}}>All year</button>}
+                    </div>
+                  </div>
                   {[
                     {label:"Grants & scholarships (annual)", field:"grant", note:"Money you don't pay back"},
                     {label:"Tuition & fees",            field:"tuitionFees", note:""},
@@ -256,6 +271,9 @@ export function AidTab(){
                       Your costs exceed your aid by {fmt(Math.abs(rawGap))} this year.
                     </div>
                   )}
+                  {/* Summer fund (§4b) — renders itself only when there's a real
+                      uncovered summer (summerWindow non-null); a no-op otherwise. */}
+                  <SummerCard year={y} yearIndex={i} nextYear={nextYr} data={data} upd={upd} subsMo={subsMo}/>
                 </div>
               )}
             </Card>

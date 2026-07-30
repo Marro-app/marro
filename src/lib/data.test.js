@@ -142,6 +142,12 @@ describe('applyChanges round-trips every diff family', () => {
     'year field / monthly / override': (c) => {
       c.years[0].grant = 1200; c.years[0].monthly.food = 320; c.years[0].monthlyOverrides.Sep.food = 360;
     },
+    'summer fund add (older year gains one)': (c) => {
+      c.years[0].summer = { rent: 1200, situation: 'research', wageMonthly: 800, stipends: [{ id: 'sp1', amount: 5000, date: '2027-06-15' }] };
+    },
+    'summer stipend edit + scalar': (c) => {
+      c.years[0].summer = { rent: null, situation: 'off', wageMonthly: 0, stipends: [{ id: 'sp1', amount: 3000, date: '2027-07-01' }] };
+    },
     'array append': (c) => { c.categories.push({ id: 'gym', label: 'Gym' }); },
     'array item edit': (c) => { c.subscriptions[0].amount = 22; },
     'array remove': (c) => { c.stepGoals = []; },

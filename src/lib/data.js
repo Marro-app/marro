@@ -621,7 +621,7 @@ export function diffStates(base, cur) {
   const ylen=Math.max(blen,clen);
   for (let i=0;i<ylen;i++) {
     const by=(base.years||[])[i]||{}, cy=(cur.years||[])[i]||{};
-    for (const f of ['grant','tuitionFees','healthIns','otherIncome','housing','housingNote','livingAllowance','notes','startDate','endDate'])
+    for (const f of ['grant','tuitionFees','healthIns','otherIncome','housing','housingNote','livingAllowance','notes','startDate','endDate','aidThroughDate'])
       if (js(by[f])!==js(cy[f])) ch[`years[${i}].${f}`]={b:by[f],c:cy[f]};
     const bm=by.monthly||{}, cm=cy.monthly||{};
     for (const c of new Set([...Object.keys(bm),...Object.keys(cm)]))
@@ -632,6 +632,14 @@ export function diffStates(base, cur) {
       for (const c of new Set([...Object.keys(bmo),...Object.keys(cmo)]))
         if (js(bmo[c])!==js(cmo[c])) ch[`years[${i}].monthlyOverrides.${mn}.${c}`]={b:bmo[c],c:cmo[c]};
     }
+    // Summer fund (§4b): scalar fields diffed by name; the stipends array is
+    // diffed WHOLE (a small list of dated lumps, like a mini balanceReadings —
+    // last writer wins on the list, consistent with how other per-year arrays
+    // that lack a top-level id-merge slot are handled). Absent on older years.
+    const bsu=by.summer||{}, csu=cy.summer||{};
+    for (const f of ['rent','situation','wageMonthly'])
+      if (js(bsu[f])!==js(csu[f])) ch[`years[${i}].summer.${f}`]={b:bsu[f],c:csu[f]};
+    if (js(bsu.stipends||[])!==js(csu.stipends||[])) ch[`years[${i}].summer.stipends`]={b:bsu.stipends,c:csu.stipends};
   }
   for (const k of ['categories','subscriptions','stepGoals','savingsGoals','savingsLog','currentWeekEntries','loans','balanceReadings']) {
     const ba=base[k]||[], ca=cur[k]||[];
@@ -684,6 +692,13 @@ export function applyChanges(state, changes) {
         s.years[idx].monthlyOverrides=s.years[idx].monthlyOverrides||{};
         s.years[idx].monthlyOverrides[mn]=s.years[idx].monthlyOverrides[mn]||{};
         if (val==null) delete s.years[idx].monthlyOverrides[mn][cid]; else s.years[idx].monthlyOverrides[mn][cid]=val;
+      } else if (rest.startsWith('summer.')) {
+        // Nested summer object (§4b) — create it lazily so older saved years
+        // (which have no `summer`) pick up merged fields without a migration.
+        // Always ASSIGN (never delete-on-null): the keys are fixed, and `rent:null`
+        // is a real value ("same as school-year rent"), not a removal.
+        const f=rest.slice(7); s.years[idx].summer=s.years[idx].summer||{};
+        s.years[idx].summer[f]=val;
       } else { s.years[idx][rest]=val; }
       continue;
     }

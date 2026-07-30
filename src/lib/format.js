@@ -6,7 +6,12 @@ export const BLANK_MONTHLY = {housing:0,food:0,transport:0,personal:0,books:0,ex
 // (no summer gap), which is the default so every existing year keeps dividing
 // its aid over a full ~12 months exactly as before (see yearAidBreakdown's
 // school-months divisor in src/lib/aid.js, which reproduces /12 when it's null).
-export const blankYearFields = () => ({ tuitionFees:0, healthIns:0, grant:0, otherIncome:0, housing:0, housingNote:"", livingAllowance:0, notes:"", aidThroughDate:null });
+// `summer` (money-rework §4b): per-year summer-fund inputs, only ever surfaced
+// when there's a real uncovered summer (summerWindow non-null). `rent:null` means
+// "same as the school-year rent" (summerFundNeed treats null as no change); the
+// rest default empty. Optional on older saved years — every read defaults it.
+export const blankSummer = () => ({ rent:null, situation:"", wageMonthly:0, stipends:[] });
+export const blankYearFields = () => ({ tuitionFees:0, healthIns:0, grant:0, otherIncome:0, housing:0, housingNote:"", livingAllowance:0, notes:"", aidThroughDate:null, summer:blankSummer() });
 
 // Tier-1 heuristic academic-year date provider. Budgeting needs the ~12-month
 // financial boundary, not day-precision, so we anchor each year near Aug 1.

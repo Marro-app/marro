@@ -319,11 +319,24 @@ left as-is for now; revisit if it bites.)
   `normalizeReadings` (one row per date, latest wins) — five same-day check-ins showed five
   identical rows but count as one for the math.
 
+### DONE (2026-07-29) — Summer card (§4b, the last new feature)
+- **"Aid covers through" field** added to each Aid & Plan year card (sets `aidThroughDate`) —
+  the single control that turns on the school-months divisor + the summer card. Blank = whole
+  year (÷12, no summer), backward-compatible. Also **added `aidThroughDate` to the merge field
+  list** (`data.js`) — it was missing, so it never synced across devices (latent since the §4a
+  foundation).
+- **Persisted shape** `year.summer = { rent, situation, wageMonthly, stipends:[{id,amount,date}] }`
+  via `format.blankSummer()`; older years default it on read. **Merge**: scalars diffed by name,
+  `stipends` diffed whole; `applyChanges` creates `summer` lazily and ALWAYS assigns (never
+  delete-on-null — `rent:null` = "same as school rent" is a real value). +2 round-trip tests.
+- **`SummerCard`** (`src/components/SummerCard.jsx`) on the Aid & Plan year card — renders itself
+  only when `summerWindow(year, nextYear)` is non-null. Shows "about $X/mo for the summer" (school
+  plan with rent swapped), summer rent / situation / take-home wage / dated stipend lumps, and a
+  **calm neutral** covered/left readout (no red, no nag — founder call). Wired to the existing pure
+  calcs (`summerFundNeed`/`summerResources`/`summerShortfall`). Verified in-browser: card appears on
+  setting aid-through, $0 summer rent → $1,305/mo, covered + shortfall readouts both neutral.
+
 ### THEN (remaining, in order)
-1. **Summer card** on Aid & Plan (§4) — the last new feature. Needs a persisted per-year summer
-   shape (rent, situation, income lumps/wage) + merge-engine entry; the pure calcs already exist.
-   Card appears ONLY when `summerWindow` returns non-null (a real gap).
-2. **Cleanup**: dead `runwayTileDisplay` + `cushionSource` in `src/App.jsx`; `leanPlan`/
+1. **Cleanup**: dead `runwayTileDisplay` + `cushionSource` in `src/App.jsx`; `leanPlan`/
    `yearEndMonth` unused in `src/tabs/BudgetTab.jsx`.
-3. **Naming sweep** (§5) across all surfaces.
-4. **Commit + push** `mo/ux-batch-preview` for a Vercel preview (ask founder first).
+2. **Naming sweep** (§5) across all surfaces.
