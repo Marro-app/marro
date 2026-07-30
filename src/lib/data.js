@@ -632,14 +632,14 @@ export function diffStates(base, cur) {
       for (const c of new Set([...Object.keys(bmo),...Object.keys(cmo)]))
         if (js(bmo[c])!==js(cmo[c])) ch[`years[${i}].monthlyOverrides.${mn}.${c}`]={b:bmo[c],c:cmo[c]};
     }
-    // Summer fund (§4b): scalar fields diffed by name; the stipends array is
-    // diffed WHOLE (a small list of dated lumps, like a mini balanceReadings —
-    // last writer wins on the list, consistent with how other per-year arrays
-    // that lack a top-level id-merge slot are handled). Absent on older years.
+    // Summer fund (§4b): scalar fields diffed by name; the `income` object (one
+    // pay stream — cadence/amount/dates or "other" lumps) is diffed WHOLE, last
+    // writer wins (a small self-contained shape, like a mini balanceReadings).
+    // Absent on older years — both sides default to {}.
     const bsu=by.summer||{}, csu=cy.summer||{};
-    for (const f of ['rent','situation','wageMonthly'])
+    for (const f of ['rent','situation','situationOther'])
       if (js(bsu[f])!==js(csu[f])) ch[`years[${i}].summer.${f}`]={b:bsu[f],c:csu[f]};
-    if (js(bsu.stipends||[])!==js(csu.stipends||[])) ch[`years[${i}].summer.stipends`]={b:bsu.stipends,c:csu.stipends};
+    if (js(bsu.income||{})!==js(csu.income||{})) ch[`years[${i}].summer.income`]={b:bsu.income,c:csu.income};
   }
   for (const k of ['categories','subscriptions','stepGoals','savingsGoals','savingsLog','currentWeekEntries','loans','balanceReadings']) {
     const ba=base[k]||[], ca=cur[k]||[];

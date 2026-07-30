@@ -347,5 +347,19 @@ left as-is for now; revisit if it bites.)
   to mark dry-spell months in the month picker). Recoverable via git if the trim gets re-wired.
 - Build + 333 tests green, lint unchanged (pre-existing warnings only).
 
+### DONE (2026-07-29) — summer income redesign + aid-through default (founder feedback)
+- **Situation options** are now Research / Work / Volunteer / Taking off / **Other** (with a
+  free-text `situationOther`).
+- **Summer income is ONE stream with a cadence** (weekly / biweekly / monthly / other), replacing
+  the old `wageMonthly` + `stipends[]`. Persisted shape: `summer.income = { cadence, perPaycheck,
+  firstDate, lastDate, lumps[] }`. New pure calc `summerWageTotal` counts pay PERIODS itself
+  (inclusive when first+last dates given, else estimated from the summer window) so entering every
+  payday can't inflate the total — the founder's concern. `summerResources` now takes `{window,
+  income}`; "other" cadence uses dated lumps, steady cadences use the period count. Merge engine
+  updated (scalars + `income` diffed whole); +tests (339 total). Data shape is 1 day old so no
+  migration — reads default via `blankSummer()`.
+- Verified: biweekly $1,500/paycheck over a May–Aug window → "≈ 6 paychecks · $9,000" (estimated),
+  calm "$9,000 of $9,315 — $315 left to plan for" readout; Other reveals its free-text box.
+
 ### THEN (remaining, in order)
 1. **Naming sweep** (§5) across all surfaces.

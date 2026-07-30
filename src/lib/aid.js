@@ -443,17 +443,57 @@ export function summerFundNeed({ monthlyPlan, schoolRent = 0, summerRent = null,
  *
  * @param {object} p
  * @param {object|null} p.window   a summerWindow() result; null → totals are 0.
- * @param {Array} p.lumps          [{amount, date}] dated one-off summer income.
- * @param {number} p.monthlyWage   steady take-home per month over the window.
- * @returns {{lumpTotal:number, wageTotal:number, total:number}}
+ * @param {object} p.income        blankSummerIncome() shape: a steady paycheck
+ *                                 (cadence + perPaycheck + optional first/last
+ *                                 dates) OR cadence "other" with dated lumps.
+ * @returns {{lumpTotal:number, wageTotal:number, periods:number, total:number}}
  */
-export function summerResources({ window, lumps = [], monthlyWage = 0 }) {
-  if (!window) return { lumpTotal: 0, wageTotal: 0, total: 0 };
-  const lumpTotal = (lumps || [])
+export function summerResources({ window, income = {} }) {
+  if (!window) return { lumpTotal: 0, wageTotal: 0, periods: 0, total: 0 };
+  const inc = income || {};
+  // Steady paycheck → count the pay PERIODS over the window (or the entered
+  // first→last span) and multiply, rather than summing a list of paydays. This is
+  // the anti-inflation fix: entering every biweekly date would otherwise be counted
+  // as separate lumps and roughly double the income.
+  const wage = summerWageTotal({ cadence: inc.cadence, perPaycheck: inc.perPaycheck, firstDate: inc.firstDate, lastDate: inc.lastDate, window });
+  // Dated lumps only apply to the "other" cadence; only those inside the window
+  // count — a July-1 stipend can't fund a June that already passed.
+  const lumps = inc.cadence === 'other' ? (inc.lumps || []) : [];
+  const lumpTotal = lumps
     .filter((l) => l && l.date && l.date >= window.start && l.date <= window.end)
     .reduce((a, l) => a + (Number(l.amount) || 0), 0);
-  const wageTotal = (Number(monthlyWage) || 0) * window.months;
-  return { lumpTotal, wageTotal, total: lumpTotal + wageTotal };
+  return { lumpTotal, wageTotal: wage.total, periods: wage.periods, total: lumpTotal + wage.total };
+}
+
+/**
+ * A steady summer paycheck → total take-home over the summer, WITHOUT double-
+ * counting (money-rework §4b, founder). The student enters ONE per-paycheck
+ * amount plus how often it lands (weekly / biweekly / monthly); we count the pay
+ * periods ourselves. First/last paycheck dates are optional — when given, the
+ * count is the inclusive number of paydays across that span; when blank, we
+ * estimate from the summer window's length. Returns {periods, total}.
+ */
+export function summerWageTotal({ cadence, perPaycheck, firstDate = null, lastDate = null, window = null }) {
+  const pay = Number(perPaycheck) || 0;
+  if (pay <= 0 || !cadence || cadence === 'other') return { periods: 0, total: 0 };
+  const perDays = cadence === 'weekly' ? 7 : cadence === 'biweekly' ? 14 : DAYS_PER_MONTH; // else monthly
+  const span = (a, b) => {
+    const s = parseISO(a), e = parseISO(b);
+    return s && e && e >= s ? (e - s) / DAY_MS : null;
+  };
+  let periods;
+  const explicit = span(firstDate, lastDate);
+  if (explicit != null) {
+    // Inclusive count: both the first AND last paydays land in the span.
+    periods = Math.max(1, Math.round(explicit / perDays) + 1);
+  } else if (window) {
+    // No dates entered → estimate from the summer's length (not inclusive).
+    const wSpan = span(window.start, window.end);
+    periods = wSpan != null ? Math.max(1, Math.round(wSpan / perDays)) : Math.max(1, Math.round((window.months * DAYS_PER_MONTH) / perDays));
+  } else {
+    return { periods: 0, total: 0 };
+  }
+  return { periods, total: pay * periods };
 }
 
 /**

@@ -3,7 +3,7 @@ import {
   yearStartYearOf, loanCountsForYear, loanCashLanded, loanCashForYear, availableMoney,
   unmatchedLoans, yearAidBreakdown, schoolMonths, summerWindow,
   summerFundNeed, summerResources, summerShortfall, routeLoanCashBySummer,
-  coveredMonthIndices,
+  summerWageTotal, coveredMonthIndices,
 } from './aid.js';
 
 // A minimal, valid loan for the 2025–26 year — override fields per test.
@@ -400,29 +400,57 @@ describe('summerFundNeed', () => {
   });
 });
 
+describe('summerWageTotal — steady paycheck without double-counting', () => {
+  const window = { start: '2026-06-01', end: '2026-07-27', months: 2 };
+  it('is zero for no amount, no cadence, or the "other" cadence', () => {
+    expect(summerWageTotal({ cadence: 'biweekly', perPaycheck: 0, window })).toEqual({ periods: 0, total: 0 });
+    expect(summerWageTotal({ cadence: '', perPaycheck: 1000, window })).toEqual({ periods: 0, total: 0 });
+    expect(summerWageTotal({ cadence: 'other', perPaycheck: 1000, window })).toEqual({ periods: 0, total: 0 });
+  });
+  it('counts inclusive paydays across an explicit first→last span (biweekly)', () => {
+    // Jun 1 → Jul 27 is 56 days; 56/14 = 4, +1 inclusive = 5 paychecks
+    const r = summerWageTotal({ cadence: 'biweekly', perPaycheck: 1500, firstDate: '2026-06-01', lastDate: '2026-07-27' });
+    expect(r.periods).toBe(5);
+    expect(r.total).toBe(7500);
+  });
+  it('estimates from the window length when dates are blank (not inclusive)', () => {
+    // window ~56 days; weekly → round(56/7)=8 periods
+    const r = summerWageTotal({ cadence: 'weekly', perPaycheck: 400, window });
+    expect(r.periods).toBe(8);
+    expect(r.total).toBe(3200);
+  });
+  it('monthly cadence uses ~30.4-day periods', () => {
+    const r = summerWageTotal({ cadence: 'monthly', perPaycheck: 2000, firstDate: '2026-06-01', lastDate: '2026-07-01' });
+    expect(r.periods).toBe(2); // ~30 days /30.4 = 1, +1 inclusive = 2
+    expect(r.total).toBe(4000);
+  });
+});
+
 describe('summerResources', () => {
   const window = { start: '2026-05-15', end: '2026-08-01', months: 3 };
 
   it('is all zero with no window', () => {
-    expect(summerResources({ window: null, lumps: [{ amount: 5000, date: '2026-06-01' }], monthlyWage: 1000 }))
-      .toEqual({ lumpTotal: 0, wageTotal: 0, total: 0 });
+    expect(summerResources({ window: null, income: { cadence: 'monthly', perPaycheck: 1000 } }))
+      .toEqual({ lumpTotal: 0, wageTotal: 0, periods: 0, total: 0 });
   });
-  it('sums a monthly wage over the window months', () => {
-    const r = summerResources({ window, monthlyWage: 1200 });
-    expect(r.wageTotal).toBe(3600); // 1200 * 3
+  it('sums a steady wage over the window when no dates are given', () => {
+    // window ~78 days; monthly → round(78/30.4)=3 periods × 1200
+    const r = summerResources({ window, income: { cadence: 'monthly', perPaycheck: 1200 } });
+    expect(r.wageTotal).toBe(3600);
     expect(r.total).toBe(3600);
   });
-  it('counts a stipend lump landing inside the window', () => {
-    const r = summerResources({ window, lumps: [{ amount: 5000, date: '2026-06-01' }] });
+  it('counts an "other"-cadence lump landing inside the window', () => {
+    const r = summerResources({ window, income: { cadence: 'other', lumps: [{ amount: 5000, date: '2026-06-01' }] } });
     expect(r.lumpTotal).toBe(5000);
   });
   it('ignores a lump dated outside the window (a July-1 stipend cannot fund a passed May)', () => {
-    const r = summerResources({ window, lumps: [{ amount: 5000, date: '2026-05-01' }] }); // before the window starts
+    const r = summerResources({ window, income: { cadence: 'other', lumps: [{ amount: 5000, date: '2026-05-01' }] } });
     expect(r.lumpTotal).toBe(0);
   });
-  it('adds lumps and wage together', () => {
-    const r = summerResources({ window, lumps: [{ amount: 2000, date: '2026-06-15' }], monthlyWage: 500 });
-    expect(r.total).toBe(2000 + 1500);
+  it('does not count lumps when a steady cadence is chosen (no double-dipping)', () => {
+    const r = summerResources({ window, income: { cadence: 'monthly', perPaycheck: 500, lumps: [{ amount: 9999, date: '2026-06-15' }] } });
+    expect(r.lumpTotal).toBe(0);
+    expect(r.total).toBe(r.wageTotal);
   });
 });
 

@@ -8,9 +8,15 @@ export const BLANK_MONTHLY = {housing:0,food:0,transport:0,personal:0,books:0,ex
 // school-months divisor in src/lib/aid.js, which reproduces /12 when it's null).
 // `summer` (money-rework §4b): per-year summer-fund inputs, only ever surfaced
 // when there's a real uncovered summer (summerWindow non-null). `rent:null` means
-// "same as the school-year rent" (summerFundNeed treats null as no change); the
-// rest default empty. Optional on older saved years — every read defaults it.
-export const blankSummer = () => ({ rent:null, situation:"", wageMonthly:0, stipends:[] });
+// "same as the school-year rent" (summerFundNeed treats null as no change).
+// `situation` is one of research/work/volunteer/off/other (+ free-text
+// `situationOther` when "other"). `income` holds ONE take-home stream: a steady
+// paycheck (cadence weekly/biweekly/monthly + amount + optional first/last dates,
+// guessed from the summer window when blank — so a student never inflates their
+// total by entering every payday), or cadence "other" with dated lump(s).
+// Optional on older saved years — every read defaults it.
+export const blankSummerIncome = () => ({ cadence:"", perPaycheck:0, firstDate:null, lastDate:null, lumps:[] });
+export const blankSummer = () => ({ rent:null, situation:"", situationOther:"", income:blankSummerIncome() });
 export const blankYearFields = () => ({ tuitionFees:0, healthIns:0, grant:0, otherIncome:0, housing:0, housingNote:"", livingAllowance:0, notes:"", aidThroughDate:null, summer:blankSummer() });
 
 // Tier-1 heuristic academic-year date provider. Budgeting needs the ~12-month
