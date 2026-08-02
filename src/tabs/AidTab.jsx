@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { C } from '../lib/theme.js';
-import { fmt, fmtS, moTotal, todayStr, sanitizeMoneyInput, cleanNumEvent, pruneOutOfRangeMonths } from '../lib/format.js';
+import { fmt, fmtS, moTotal, todayStr, sanitizeMoneyInput, cleanNumEvent, pruneOutOfRangeMonths, yearDisplay } from '../lib/format.js';
 import { Card, SectionTitle, XBtn, Pill, ScrollX, InfoTip } from '../components/primitives.jsx';
 import { Icon } from '../components/icons.jsx';
 import { DateField } from '../components/pickers.jsx';
@@ -144,6 +144,7 @@ export function AidTab(){
       <div ref={yearsGridRef} style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,300px),1fr))",gap:16,alignItems:"start"}}>
         {data.years.map((y,i)=>{
           const b=yearAidBreakdown(y,data.loans||[]);
+          const disp=yearDisplay(y,i); // custom name / "Year N" + quiet range
           const g=b.totalAid; // grants + loans — what this year's aid adds up to
           const rawGap=b.rawGap; // unfloored — negative means costs exceed aid
           const disb=b.sentToYou,oth=b.otherIncomeAnnual;
@@ -182,7 +183,10 @@ export function AidTab(){
                 style={{display:"flex",boxSizing:"border-box",width:"auto",minHeight:44,justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",rowGap:6,margin:"-18px -20px 0",padding:"18px 20px",paddingRight:data.years.length>1?54:20,background:"transparent",border:"none",cursor:"pointer",textAlign:"left",font:"inherit",color:"inherit"}}>
                 <span style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
                   <Icon name="chevron" size={12} style={{transform:expanded?"rotate(180deg)":"none",transition:"transform .15s",color:C.gray,flexShrink:0}}/>
-                  <span style={{fontWeight:700,fontSize:14,color:C.text,whiteSpace:"nowrap"}}>{y.label}</span>
+                  <span style={{display:"flex",alignItems:"baseline",gap:8,minWidth:0}}>
+                    <span style={{fontWeight:700,fontSize:14,color:C.text,whiteSpace:"nowrap"}}>{disp.primary}</span>
+                    {disp.secondary && <span style={{fontSize:11.5,color:C.gray,whiteSpace:"nowrap"}}>{disp.secondary}</span>}
+                  </span>
                 </span>
                 <span style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                   <span style={{fontSize:11.5,color:C.textMid,whiteSpace:"nowrap"}}>Total aid <strong style={{color:C.text}}>{fmt(g)}</strong></span>
@@ -195,6 +199,15 @@ export function AidTab(){
 
               {expanded && (
                 <div id={`aid-year-detail-${y.id}`} style={{marginTop:14}}>
+                  {/* Optional custom name — blank falls back to "Year N" (money-rework
+                      §5, founder). The ordinal + range still show beside it in the header. */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                    <Icon name="settings" size={13} style={{color:C.gray,flexShrink:0}}/>
+                    <input type="text" value={y.name||""} placeholder={`Name this year (optional) — e.g. Clerkships`} maxLength={40}
+                      aria-label={`Name for ${disp.ordinal}`}
+                      onChange={e=>{const d=JSON.parse(JSON.stringify(data));d.years[i].name=e.target.value;upd(d);}}
+                      style={{flex:1,minWidth:0,fontSize:12,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 9px",background:C.bg,color:C.text}}/>
+                  </div>
                   <div style={{display:"flex",gap:8,marginBottom:invertedRange||startOverlap||endOverlap?8:10,alignItems:"center",flexWrap:"wrap"}}>
                     <DateField value={y.startDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].startDate=v;pruneOutOfRangeMonths(d,d.years[i].id);upd(d);}} ariaLabel="Year start date" style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
                     <span style={{fontSize:11,color:C.gray}}>→</span>
@@ -304,7 +317,7 @@ export function AidTab(){
             </tr></thead>
             <tbody>
               {(()=>{
-                return data.years.map(y=>{
+                return data.years.map((y,i)=>{
                   const b=yearAidBreakdown(y,data.loans||[]);
                   const g=b.totalAid,tf=b.tuitionFees,hi=b.healthIns;
                   const rawGap=b.rawGap; // unfloored — negative means costs exceed aid
@@ -315,7 +328,7 @@ export function AidTab(){
                   // they're filled in.
                   const notSetUp = b.totalAid <= 0;
                   return <tr key={y.id}>
-                    <td style={{padding:"8px",fontWeight:600,whiteSpace:"nowrap",fontSize:11,color:C.text}}>{y.label}</td>
+                    <td style={{padding:"8px",fontWeight:600,whiteSpace:"nowrap",fontSize:11,color:C.text}}>{yearDisplay(y,i).primary}</td>
                     <td style={{padding:"8px",color:C.neg,fontWeight:600}}>
                       {g>0?fmt(g):"TBD"}
                       {!notSetUp && rawGap<0 && <span title={`Costs exceed aid by ${fmt(Math.abs(rawGap))} this year`} style={{marginLeft:4,color:C.danger}} aria-label={`Warning: costs exceed aid by ${fmt(Math.abs(rawGap))} this year`}>⚠</span>}

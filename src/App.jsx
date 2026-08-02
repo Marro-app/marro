@@ -1228,7 +1228,7 @@ export function App() {
         </div>
       </Modal>}
       {confirmYearRemove!==null && <Modal title="Remove year" onClose={()=>setConfirmYearRemove(null)} width={350}>
-        <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>Remove <strong>{data.years.find(y=>y.id===confirmYearRemove)?.label}</strong>? Its budget data is kept. You can reinstate this year anytime from <strong>Add year</strong> and its numbers come right back.</div>
+        <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>Remove <strong>{(()=>{const ry=data.years.find(y=>y.id===confirmYearRemove);return (ry?.name?.trim())||(ry?.label||"").split("—")[0].trim()||"this year";})()}</strong>? Its budget data is kept. You can reinstate this year anytime from <strong>Add year</strong> and its numbers come right back.</div>
         <div style={{display:"flex",gap:8}}>
           <button className="btn-fill" onClick={()=>setConfirmYearRemove(null)} style={{flex:1.4,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.creamSoft,color:C.text,cursor:"pointer"}}>Cancel</button>
           <button className="btn-fill" onClick={()=>{removeYear(confirmYearRemove);setConfirmYearRemove(null);}} style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:`1px solid ${C.dangerMid}`,borderRadius:8,background:C.dangerLight,color:C.danger,cursor:"pointer"}}>Remove</button>
@@ -1250,7 +1250,7 @@ export function App() {
                 </div>
               ) : (
                 <div key={a.startDate||a.id} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10}}>
-                  <span style={{fontWeight:600,color:C.text,fontSize:13,flex:1}}>{a.label}</span>
+                  <span style={{fontWeight:600,color:C.text,fontSize:13,flex:1}}>{(a.name||"").trim()||(a.label||"").split("—")[0].trim()}</span>
                   <button type="button" onClick={()=>{setShowAddYear(false);reinstateYear(a);}} style={{fontSize:12,color:C.teal,fontWeight:600,whiteSpace:"nowrap",background:"none",border:"none",cursor:"pointer",padding:"6px 4px",minHeight:32}}>Reinstate →</button>
                   <button type="button" aria-label={`Delete ${a.label.split("—")[0].trim()} permanently`} title="Delete permanently" onClick={()=>setConfirmPermDel(a.startDate||a.id)} className="xbtn" style={{width:28,height:28,borderRadius:8,border:"none",background:"transparent",color:C.gray,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name="close" size={13}/></button>
                 </div>

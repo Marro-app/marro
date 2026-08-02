@@ -621,7 +621,7 @@ export function diffStates(base, cur) {
   const ylen=Math.max(blen,clen);
   for (let i=0;i<ylen;i++) {
     const by=(base.years||[])[i]||{}, cy=(cur.years||[])[i]||{};
-    for (const f of ['grant','tuitionFees','healthIns','otherIncome','housing','housingNote','livingAllowance','notes','startDate','endDate','aidThroughDate'])
+    for (const f of ['grant','tuitionFees','healthIns','otherIncome','housing','housingNote','livingAllowance','notes','startDate','endDate','aidThroughDate','name'])
       if (js(by[f])!==js(cy[f])) ch[`years[${i}].${f}`]={b:by[f],c:cy[f]};
     const bm=by.monthly||{}, cm=cy.monthly||{};
     for (const c of new Set([...Object.keys(bm),...Object.keys(cm)]))

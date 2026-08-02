@@ -17,7 +17,22 @@ export const BLANK_MONTHLY = {housing:0,food:0,transport:0,personal:0,books:0,ex
 // Optional on older saved years — every read defaults it.
 export const blankSummerIncome = () => ({ cadence:"", perPaycheck:0, firstDate:null, lastDate:null, lumps:[] });
 export const blankSummer = () => ({ rent:null, situation:"", situationOther:"", income:blankSummerIncome() });
-export const blankYearFields = () => ({ tuitionFees:0, healthIns:0, grant:0, otherIncome:0, housing:0, housingNote:"", livingAllowance:0, notes:"", aidThroughDate:null, summer:blankSummer() });
+export const blankYearFields = () => ({ tuitionFees:0, healthIns:0, grant:0, otherIncome:0, housing:0, housingNote:"", livingAllowance:0, notes:"", aidThroughDate:null, name:"", summer:blankSummer() });
+
+// How a year's label reads on screen (money-rework — founder disliked the old
+// "Year 1 — 2026-27" em-dash form). `primary` is the student's custom name if they
+// set one, else the ordinal "Year N"; `secondary` is a quiet range beside it (with
+// the ordinal folded in when a name is showing). `idx` is the year's position.
+export function yearDisplay(year, idx) {
+  const y = year || {};
+  const ordinal = `Year ${(idx ?? 0) + 1}`;
+  const name = (y.name || "").trim();
+  const sy = y.startDate ? new Date(y.startDate + "T12:00:00").getFullYear() : null;
+  const ey = y.endDate ? new Date(y.endDate + "T12:00:00").getFullYear() : (sy != null ? sy + 1 : null);
+  const range = sy != null ? `${sy}–${yr2(ey)}` : "";        // en dash, e.g. "2026–27"
+  return { ordinal, name, range, primary: name || ordinal,
+           secondary: name ? (range ? `${ordinal} · ${range}` : ordinal) : range };
+}
 
 // Tier-1 heuristic academic-year date provider. Budgeting needs the ~12-month
 // financial boundary, not day-precision, so we anchor each year near Aug 1.
