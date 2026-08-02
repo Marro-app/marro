@@ -145,7 +145,6 @@ export function AidTab(){
         {data.years.map((y,i)=>{
           const b=yearAidBreakdown(y,data.loans||[]);
           const disp=yearDisplay(y,i); // custom name / "Year N" + quiet range
-          const g=b.totalAid; // grants + loans — what this year's aid adds up to
           const rawGap=b.rawGap; // unfloored — negative means costs exceed aid
           const disb=b.sentToYou,oth=b.otherIncomeAnnual;
           const moD=b.moSpendable,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
@@ -189,11 +188,12 @@ export function AidTab(){
                   </span>
                 </span>
                 <span style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                  <span style={{fontSize:11.5,color:C.textMid,whiteSpace:"nowrap"}}>Total aid <strong style={{color:C.text}}>{fmt(g)}</strong></span>
+                  <span style={{fontSize:11.5,color:C.textMid,whiteSpace:"nowrap"}}>Aid <strong style={{color:C.text}}>{fmt(b.grants)}</strong></span>
+                  <span style={{fontSize:11.5,color:C.textMid,whiteSpace:"nowrap"}}>Loans <strong style={{color:C.text}}>{fmt(b.loanCash)}</strong></span>
                   <span style={{fontSize:11.5,color:C.textMid,whiteSpace:"nowrap"}}>Sent to you <strong style={{color:C.teal}}>{fmt(disb)}</strong></span>
                   {notSetUp
                     ? <Pill neutral>Not set up yet</Pill>
-                    : <Pill ok={moS>=0} warn={moS<0}>{fmtS(moS)}/mo{moS<0?" short":" left over"}</Pill>}
+                    : <Pill ok={moS>=0} warn={moS<0}>{fmtS(moS)}/mo{moS<0?" short":" available to spend"}</Pill>}
                 </span>
               </button>
 
@@ -310,7 +310,7 @@ export function AidTab(){
         <ScrollX className="scrollx" style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead><tr>
-              {["Year","Total aid","School costs","Sent to you/yr","Planned/mo","Monthly plan","Left over"].map(h=>
+              {["Year","Aid","Loans","School costs","Sent to you/yr","Planned/mo","Monthly plan","Available to spend"].map(h=>
                 <th key={h} style={{textAlign:"left",fontSize:10,color:C.gray,padding:"6px 8px",borderBottom:`1px solid ${C.border}`,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
               )}
             </tr></thead>
@@ -318,7 +318,7 @@ export function AidTab(){
               {(()=>{
                 return data.years.map((y,i)=>{
                   const b=yearAidBreakdown(y,data.loans||[]);
-                  const g=b.totalAid,tf=b.tuitionFees,hi=b.healthIns;
+                  const tf=b.tuitionFees,hi=b.healthIns;
                   const rawGap=b.rawGap; // unfloored — negative means costs exceed aid
                   const disb=b.sentToYou,oth=b.otherIncomeAnnual;
                   const moD=b.moSpendable,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
@@ -328,8 +328,9 @@ export function AidTab(){
                   const notSetUp = b.totalAid <= 0;
                   return <tr key={y.id}>
                     <td style={{padding:"8px",fontWeight:600,whiteSpace:"nowrap",fontSize:11,color:C.text}}>{yearDisplay(y,i).primary}</td>
-                    <td style={{padding:"8px",color:C.neg,fontWeight:600}}>
-                      {g>0?fmt(g):"TBD"}
+                    <td style={{padding:"8px",color:C.text,fontWeight:600}}>{notSetUp?"TBD":fmt(b.grants)}</td>
+                    <td style={{padding:"8px",color:C.text,fontWeight:600}}>
+                      {notSetUp?"TBD":fmt(b.loanCash)}
                       {!notSetUp && rawGap<0 && <span title={`Costs exceed aid by ${fmt(Math.abs(rawGap))} this year`} style={{marginLeft:4,color:C.danger}} aria-label={`Warning: costs exceed aid by ${fmt(Math.abs(rawGap))} this year`}>⚠</span>}
                     </td>
                     <td style={{padding:"8px",color:C.gray}}>{fmt(tf+hi)}</td>
