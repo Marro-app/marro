@@ -1589,27 +1589,18 @@ export function App() {
             {yeEven ? "Nothing extra, nothing short — right on target." : curYrNet<0 ? "Trim your plan or plan to borrow a little more." : borrowed ? "It’s borrowed money you don’t have to spend — returning what you don’t need within 120 days cancels the interest." : "A real cushion, nicely done."} This is a forecast from your plan, not your bank balance.
           </div>
         </>);
-        // TILE 3 — VS YOUR PLAN — am I on track? Real only for the current year with
-        // enough check-in history (pace present); otherwise a dash. drift>0 = spent LESS
-        // than planned (ahead); drift<0 = faster than planned (behind).
+        // TILE 3 — VS YOUR PLAN — am I on track? Real ONLY for the current year with
+        // enough check-in history (pace present). Anything less and the tile does not
+        // render at all (founder, Aug 2): it used to fall back to a "for your current
+        // year" note (other-year case) or a "Check in" prompt (no spaced-out history
+        // yet), but a tile that never carries a number reads as clutter — the Budget
+        // tab's own check-in card is where we ask for readings. So: two tiles until
+        // there's a real ahead/behind comparison, three once there is.
+        // drift>0 = spent LESS than planned (ahead); drift<0 = faster than planned.
         const pace = runway.actualPace;
-        let vpValue="—", vpColor=C.gray, vp_glance, vp_panel;
-        if (!viewingCurrentYear) {
-          vp_glance = <span style={{color:C.gray}}>for your current year</span>;
-          vp_panel = <div style={{color:C.textMid}}>Being ahead of or behind your plan only makes sense for the school year you’re currently in. Pick your current year to see it.</div>;
-        } else if (!pace) {
-          // No spaced-out history yet → make the tile a purposeful PROMPT, never a lonely
-          // "—" (founder: the block shouldn't read as empty). Distinguish "never checked
-          // in" from "checked in, but same-day / <7 days apart" — telling someone who just
-          // checked in five times to "check in a couple of times" reads as broken.
-          // safeToSpend.basis === "balance" ⇒ at least one real reading exists.
-          const hasCheckedIn = safeToSpend.basis === "balance";
-          vpValue = "Check in"; vpColor = C.teal;
-          vp_glance = <span style={{color:C.gray}}>{hasCheckedIn ? "again in about a week" : "to see if you’re on track"}</span>;
-          vp_panel = <div style={{color:C.textMid}}>{hasCheckedIn
-            ? <>To measure your pace I need two check-ins on <strong style={{color:C.text}}>different days, about a week apart</strong> — several on the same day count as one. Check in again in a few days at the bottom of the Budget tab and this fills in.</>
-            : <>Tell me your balance at the bottom of the Budget tab. After a couple of check-ins about a week apart, I’ll compare what you actually have to what your plan expected by now — so you’ll know if you’re ahead or spending too fast.</>}</div>;
-        } else {
+        const showVsPlan = !!(viewingCurrentYear && pace);
+        let vpValue, vpColor, vp_glance, vp_panel; // only populated when showVsPlan
+        if (showVsPlan) {
           const ringColor = !pace.meaningful ? C.green : pace.drift>0 ? C.green : C.amber;
           const ratio = pace.expected>0 ? pace.actual/pace.expected : 1;
           if (!pace.meaningful) { vpValue="On track"; vpColor=C.green; vp_glance=<span>on your plan</span>; }
@@ -1634,7 +1625,7 @@ export function App() {
             <div style={{display:"flex",gap:10,marginBottom:viewingCurrentYear&&(runway.state==='gap'||runway.state==='overdrawn')?10:20,flexWrap:"wrap",alignItems:"flex-start"}}>
               <HeaderTile label={sLabel} value={sValue} valueColor={C.teal} glance={s_glance} panel={s_panel}/>
               <HeaderTile label="By end of year" value={fmtS(curYrNet)} valueColor={yeColor} glance={ye_glance} panel={ye_panel}/>
-              <HeaderTile label="Compared to your plan" value={vpValue} valueColor={vpColor} glance={vp_glance} panel={vp_panel}/>
+              {showVsPlan && <HeaderTile label="Compared to your plan" value={vpValue} valueColor={vpColor} glance={vp_glance} panel={vp_panel}/>}
             </div>
             {viewingCurrentYear && runway.state==='gap' && (
               <div style={{marginBottom:20}}><Banner type="warn">

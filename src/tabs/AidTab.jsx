@@ -201,12 +201,11 @@ export function AidTab(){
                 <div id={`aid-year-detail-${y.id}`} style={{marginTop:14}}>
                   {/* Optional custom name — blank falls back to "Year N" (money-rework
                       §5, founder). The ordinal + range still show beside it in the header. */}
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-                    <Icon name="settings" size={13} style={{color:C.gray,flexShrink:0}}/>
+                  <div style={{marginBottom:10}}>
                     <input type="text" value={y.name||""} placeholder={`Name this year (optional) — e.g. Clerkships`} maxLength={40}
                       aria-label={`Name for ${disp.ordinal}`}
                       onChange={e=>{const d=JSON.parse(JSON.stringify(data));d.years[i].name=e.target.value;upd(d);}}
-                      style={{flex:1,minWidth:0,fontSize:12,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 9px",background:C.bg,color:C.text}}/>
+                      style={{width:"auto",maxWidth:240,fontSize:12,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 9px",background:C.bg,color:C.text}}/>
                   </div>
                   <div style={{display:"flex",gap:8,marginBottom:invertedRange||startOverlap||endOverlap?8:10,alignItems:"center",flexWrap:"wrap"}}>
                     <DateField value={y.startDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].startDate=v;pruneOutOfRangeMonths(d,d.years[i].id);upd(d);}} ariaLabel="Year start date" style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>

@@ -115,8 +115,8 @@ export function BalanceCheckin({ data, upd }) {
       {displayReadings.length > 0 && (
         <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
           <div style={{ fontSize: 11, color: C.text, marginBottom: 8, fontWeight: 600 }}>Past check-ins</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {[...displayReadings].reverse().slice(0, 5).map((r) => (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto', paddingRight: 4 }}>
+            {[...displayReadings].reverse().slice(0, 100).map((r) => (
               <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '4px 0' }}>
                 <span style={{ color: C.text }}>{new Date(r.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                 <span style={{ color: C.text, fontWeight: 600 }}>{fmt(r.spendable)}{r.savings != null ? ` + ${fmt(r.savings)} savings` : ''}</span>
