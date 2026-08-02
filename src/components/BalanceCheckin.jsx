@@ -68,8 +68,8 @@ export function BalanceCheckin({ data, upd }) {
 
   return (
     <Card>
-      <SectionTitle sub="No bank login, no linking accounts — just the number you see when you check your balance. Your “Vs your plan” status up top updates from this.">
-        About how much do you have available for living costs right now?
+      <SectionTitle sub="Just the number from your banking app — no logins, no linking.">
+        How much do you have for living costs right now?
       </SectionTitle>
 
       <form onSubmit={onSubmit} style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>

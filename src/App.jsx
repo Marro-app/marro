@@ -209,6 +209,7 @@ export function App() {
   const [showAddYear, setShowAddYear] = useState(false);
   const [confirmYearRemove, setConfirmYearRemove] = useState(null);
   const [yearUndo, setYearUndo] = useState(null); // last soft-deleted year, for the Undo toast
+  const [confirmPermDel, setConfirmPermDel] = useState(null); // archived year (startDate) pending a permanent delete
   useEffect(()=>{ if(!yearUndo) return; const t=setTimeout(()=>setYearUndo(null),8000); return ()=>clearTimeout(t); },[yearUndo]);
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetConfirmText, setResetConfirmText] = useState(""); // typed "RESET" guard, mirrors the delete-account modal
@@ -1021,6 +1022,13 @@ export function App() {
     });
     upd(d); setAy(newId);
   };
+  // Permanently drop a soft-deleted year — its saved numbers are gone for good
+  // (guarded by an inline confirm in the reinstate list).
+  const permDeleteYear = (arch) => {
+    const d=JSON.parse(JSON.stringify(data));
+    d.archivedYears=(d.archivedYears||[]).filter(a=>a.startDate!==arch.startDate);
+    upd(d); setConfirmPermDel(null);
+  };
   const addYear = (start,end) => {
     const d=JSON.parse(JSON.stringify(data));
     const newId=Math.max(...d.years.map(y=>y.id),-1)+1;
@@ -1230,13 +1238,24 @@ export function App() {
         {(data.archivedYears||[]).length>0 && <div style={{marginBottom:16}}>
           <div style={{fontSize:11,fontWeight:600,color:C.textMid,marginBottom:8}}>Reinstate a removed year</div>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {data.archivedYears.slice().sort((a,b)=>String(a.startDate||"").localeCompare(String(b.startDate||""))).map(a=>(
-              <button key={a.startDate||a.id} type="button" onClick={()=>{setShowAddYear(false);reinstateYear(a);}}
-                className="menu-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,width:"100%",textAlign:"left",padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:"transparent",color:C.text,fontSize:13,cursor:"pointer"}}>
-                <span style={{fontWeight:600}}>{a.label}</span>
-                <span style={{fontSize:12,color:C.teal,fontWeight:600,whiteSpace:"nowrap"}}>Reinstate →</span>
-              </button>
-            ))}
+            {data.archivedYears.slice().sort((a,b)=>String(a.startDate||"").localeCompare(String(b.startDate||""))).map(a=>{
+              const confirming = confirmPermDel===(a.startDate||a.id);
+              return confirming ? (
+                <div key={a.startDate||a.id} role="alert" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"10px 12px",border:`1px solid ${C.dangerMid}`,borderRadius:10,background:C.dangerLight,fontSize:13}}>
+                  <span style={{color:C.text}}>Delete <strong>{a.label.split("—")[0].trim()}</strong> and its saved numbers forever?</span>
+                  <span style={{display:"flex",gap:6,flexShrink:0}}>
+                    <button type="button" onClick={()=>setConfirmPermDel(null)} style={{padding:"6px 11px",minHeight:32,fontSize:12,fontWeight:600,border:`1px solid ${C.border}`,borderRadius:8,background:"transparent",color:C.text,cursor:"pointer"}}>Cancel</button>
+                    <button type="button" onClick={()=>permDeleteYear(a)} style={{padding:"6px 11px",minHeight:32,fontSize:12,fontWeight:600,border:"none",borderRadius:8,background:C.danger,color:C.bg,cursor:"pointer"}}>Delete</button>
+                  </span>
+                </div>
+              ) : (
+                <div key={a.startDate||a.id} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10}}>
+                  <span style={{fontWeight:600,color:C.text,fontSize:13,flex:1}}>{a.label}</span>
+                  <button type="button" onClick={()=>{setShowAddYear(false);reinstateYear(a);}} style={{fontSize:12,color:C.teal,fontWeight:600,whiteSpace:"nowrap",background:"none",border:"none",cursor:"pointer",padding:"6px 4px",minHeight:32}}>Reinstate →</button>
+                  <button type="button" aria-label={`Delete ${a.label.split("—")[0].trim()} permanently`} title="Delete permanently" onClick={()=>setConfirmPermDel(a.startDate||a.id)} className="xbtn" style={{width:28,height:28,borderRadius:8,border:"none",background:"transparent",color:C.gray,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name="close" size={13}/></button>
+                </div>
+              );
+            })}
           </div>
           <div style={{textAlign:"center",fontSize:11,color:C.gray,margin:"14px 0 2px"}}>— or add a new year —</div>
         </div>}

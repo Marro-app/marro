@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { C, CHART_COLORS, tipProps } from '../lib/theme.js';
+import { C, CHART_COLORS } from '../lib/theme.js';
 import { fmt, MONTH_NAMES, MONTH_FULL, cleanNumEvent, catColorIndex, yearMonthRange } from '../lib/format.js';
-import { USMLE_STEP_FEE_ESTIMATE } from '../lib/constants.js';
-import { Card, SectionTitle, Divider, InfoTip, Pill, XBtn, Modal } from '../components/primitives.jsx';
+import { Card, SectionTitle, Divider, InfoTip, XBtn, Modal } from '../components/primitives.jsx';
 import { BalanceCheckin } from '../components/BalanceCheckin.jsx';
 import { Icon, CatIcon, CatIconPicker, ChangeIconButton } from '../components/icons.jsx';
 import { MonthPicker } from '../components/pickers.jsx';
@@ -18,9 +16,9 @@ import { targetIndexFor, rowShift } from '../lib/reorder.js';
 // header metrics) and the add-category form fields (newCat*) are shared with the
 // Categories tab — both come from useApp().
 export function BudgetTab(){
-  const { data, cats, ay, yr, yrStartYear, selMonth, setSelMonth, subs, subsMo, disabledCats,
+  const { data, cats, ay, yr, yrStartYear, selMonth, setSelMonth, subs, disabledCats,
           moSpend, moSpendable, moSurplus,
-          aidBreakdown, runway, upd, allEntriesFlat,
+          aidBreakdown, runway, upd,
           getMonthVal, spentInMonth, unbudgetedCats, unbudgetedTotal, promoteToBudget,
           toggleMonthCat, setMo, reorderCats, addCat,
           newCatName, setNewCatName, newCatIcon, setNewCatIcon, iconPickOpen, setIconPickOpen } = useApp();
@@ -43,7 +41,6 @@ export function BudgetTab(){
   const [showAddCat, setShowAddCat] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [showSubscriptions, setShowSubscriptions] = useState(false);
-  const [showHealthChecks, setShowHealthChecks] = useState(false);
   // ── Budgeting through a dry spell ──────────────────────────────────────────
   // The academic months a dry spell spans — used to mark them in the month picker.
   const monthIdxOf = (iso) => { const d = new Date(iso+"T12:00:00"); return Number.isNaN(d.getTime()) ? null : (d.getMonth()-7+12)%12; };
@@ -64,9 +61,6 @@ export function BudgetTab(){
     }
     return out;
   })();
-  const [barHover, setBarHover] = useState(null);
-  const barDim = i => barHover!=null && barHover!==i ? 0.35 : 1;
-  const barMove = s => setBarHover(s && s.isTooltipActive && s.activeTooltipIndex!=null ? s.activeTooltipIndex : null);
   // Visible, reorderable categories for this month — shared by the plan list
   // and its drag/keyboard reorder logic (both mouse-drag drop targets and
   // ArrowUp/ArrowDown need the same ordered, filtered list).
@@ -180,22 +174,6 @@ export function BudgetTab(){
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Plan vs actual — the one chart Phase 1 keeps on Home (ported from the hidden Charts tab)
-  const budgetVsActual = MONTH_NAMES.map((m,mi)=>{
-    const mk=ay+"-"+m;
-    const disM=data.monthDisabled?.[mk]||[];
-    let budgeted=0;
-    cats.forEach(c=>{
-      if(disM.includes(c.id)) return;
-      if(c.id==="subs"){budgeted+=subsMo;return;}
-      const ov=yr.monthlyOverrides?.[m]?.[c.id];
-      budgeted+=(ov!==undefined?ov:(Number(yr.monthly[c.id])||0));
-    });
-    const calMo=(mi+7)%12;
-    const calYr=yrStartYear+(mi>=5?1:0);
-    const actual=allEntriesFlat.filter(e=>{const dt=new Date(e.date+"T12:00:00");return dt.getMonth()===calMo&&dt.getFullYear()===calYr;}).reduce((a,e)=>a+Number(e.amount),0);
-    return {name:m, Planned:Math.round(budgeted), Actual:Math.round(actual)};
-  }).filter(d=>d.Actual>0);
   return (
     <>
       {showSubscriptions && <Modal title="Fixed monthly costs" onClose={()=>setShowSubscriptions(false)} width={640}><SubscriptionsTab/></Modal>}
@@ -372,84 +350,10 @@ export function BudgetTab(){
             </div>}
           </Card>
 
-          <div style={{display:"flex",flexDirection:"column",gap:14}}>
-            {/* Plan vs actual — Phase 1's one chart, ported from the hidden Charts tab */}
-            <Card>
-              <SectionTitle>Plan vs actual</SectionTitle>
-              <div style={{display:"flex",gap:20,marginBottom:10}}>
-                {[["Planned",C.teal],["Actual",C.neg]].map(([l,c])=>(
-                  <div key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:C.gray}}>
-                    <div style={{width:10,height:10,borderRadius:3,background:c}}/>{l}
-                  </div>
-                ))}
-              </div>
-              {budgetVsActual.length===0
-                ? <div style={{textAlign:"center",padding:"28px 16px",fontSize:12,color:C.textMid,border:`1px dashed ${C.borderDark}`,borderRadius:12,background:C.surface}}>No spending logged yet. Use <strong>Quick add</strong> to log an expense and it&apos;ll show up here.</div>
-                : <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={budgetVsActual} barGap={3} barCategoryGap="32%" onMouseMove={barMove} onMouseLeave={()=>setBarHover(null)}>
-                  <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
-                  <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
-                  <Tooltip separator=": " formatter={v=>fmt(v)} {...tipProps()} cursor={false}/>
-                  <Bar dataKey="Planned" fill={C.teal} radius={[6,6,0,0]} maxBarSize={26}>
-                    {budgetVsActual.map((d,i)=><Cell key={i} fill={C.teal} opacity={0.85*barDim(i)} style={{transition:"opacity 150ms ease"}}/>)}
-                  </Bar>
-                  <Bar dataKey="Actual" fill={C.neg} radius={[6,6,0,0]} maxBarSize={26}>
-                    {budgetVsActual.map((d,i)=><Cell key={i} fill={C.neg} opacity={barDim(i)} style={{transition:"opacity 150ms ease"}}/>)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>}
-            </Card>
-
-            <Card>
-              {/* The ENTIRE header row toggles, not just the chevron. Negative
-                  margins cancel the Card's 18px/20px padding so the button reaches
-                  the card edges; the same padding is added back inside (box-sizing:
-                  border-box) so the label sits where it did — clicking anywhere on
-                  the row, including the whitespace beside the chevron, toggles. */}
-              <button type="button" id="health-checks-btn" onClick={()=>setShowHealthChecks(s=>!s)} aria-expanded={showHealthChecks} aria-controls="health-checks-panel"
-                style={{display:"flex",alignItems:"center",justifyContent:"flex-start",gap:8,width:"auto",boxSizing:"border-box",minHeight:44,margin:"-18px -20px 0",padding:"18px 20px 6px",background:"none",border:"none",cursor:"pointer",textAlign:"left",font:"inherit"}}>
-                <Icon name="chevron" size={12} style={{transform:showHealthChecks?"rotate(180deg)":"none",transition:"transform .15s",color:C.gray,flexShrink:0}}/>
-                <span style={{fontSize:13,fontWeight:600,color:C.text}}>Health checks</span>
-              </button>
-              {/* Always mounted (aria-controls target never dangles) and animated
-                  open/closed via the .collapse-panel grid-rows transition — so a
-                  rotated chevron always corresponds to a visibly-open panel. */}
-              {/* The shared .collapse-panel grid trick (0fr -> 1fr) never resolves
-                  in this app, so this panel silently opened to zero height for as
-                  long as it has shipped. Plain `hidden` toggle instead, same as
-                  the "How is this worked out?" disclosure. */}
-              <div id="health-checks-panel" role="region" aria-labelledby="health-checks-btn" hidden={!showHealthChecks}>
-                <div>
-                  <div style={{paddingTop:14}}>
-                  {[
-                    ["Housing ratio",    moSpendable>0?Math.round((yr.monthly.housing||0)/moSpendable*100)+"%":"—", (yr.monthly.housing||0)/moSpendable<0.6,(yr.monthly.housing||0)/moSpendable<0.75,"Target <60% of spending money"],
-                    ["Monthly balance",  moSurplus>=0?"Positive":"Negative", moSurplus>=0, false, ""],
-                    ["Savings",          (yr.monthly.savings||0)>0?fmt(yr.monthly.savings||0)+"/mo":"None", (yr.monthly.savings||0)>0, false, "Even $50/mo adds up"],
-                    ["Exam fund",        (yr.monthly.exams||0)>0?fmt(yr.monthly.exams||0)+"/mo":"$0/mo", ay<=1||(yr.monthly.exams||0)>0, ay>1, `Steps cost about ${fmt(USMLE_STEP_FEE_ESTIMATE)} each`],
-                  ].map(([label,val,ok,warn,tip])=>(
-                    <div key={label} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
-                      <span style={{color:C.gray}}>{label}</span>
-                      <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        <Pill ok={ok} warn={!ok&&warn}>{val}</Pill>
-                        {tip && <span style={{fontSize:10,color:C.gray}}>{tip}</span>}
-                      </div>
-                    </div>
-                  ))}
-                  </div>
-                </div>
-              </div>
-            </Card>
-
-            {/* The free-text "Notes" block was removed from the UI (founder
-                call — looked cheap, rarely used). The underlying yr.notes data
-                field is left intact so existing notes still sync and nothing
-                breaks; it's simply no longer rendered here. */}
-          </div>
-          {/* Check-in form at the BOTTOM (founder: the input form doesn't belong at
-              the top — the "Vs your plan" tile up top carries its status). Full width. */}
-          <div style={{gridColumn:"1 / -1"}}>
-            <BalanceCheckin data={data} upd={upd} />
-          </div>
+          {/* Check-in card sits in the right column, next to the Monthly plan
+              (founder). The Plan-vs-actual chart and the Health-checks card were
+              removed. The `yr.notes` field is still synced, just no longer shown. */}
+          <BalanceCheckin data={data} upd={upd} />
         </div>
     </>
   );
