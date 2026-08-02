@@ -1,6 +1,7 @@
 # Money Rework — Design & Build Plan
 
-**Branch:** `mo/ux-batch-preview` · **Status:** design locked (2026-07-28), building.
+**Branch:** `mo/ux-batch-preview` · **Status:** feature-complete as of 2026-07-30 (commit `a499900`),
+Vercel build green, PR #51 open — not yet merged. Founder is testing on the preview before self-merge.
 
 Founders drove this in a long design session. The money side of the app was confusing:
 the same dollar figure showed up on several screens under different names, and a student
@@ -361,5 +362,44 @@ left as-is for now; revisit if it bites.)
 - Verified: biweekly $1,500/paycheck over a May–Aug window → "≈ 6 paychecks · $9,000" (estimated),
   calm "$9,000 of $9,315 — $315 left to plan for" readout; Other reveals its free-text box.
 
-### THEN (remaining, in order)
-1. **Naming sweep** (§5) across all surfaces.
+### DONE (2026-07-30) — naming sweep, founder bug reports, UI decluttering, year labels
+Rest of the rework's remaining scope, plus everything founder caught testing on the preview:
+- **Naming sweep (§5)**: "You keep"→"Sent to you", the Aid-tab projection→"Planned per month",
+  table headers→"Planned/mo · Monthly plan · Left over", chart series "Budgeted"→"Planned".
+- **The "By end of year" divisor saga** (multi-round, founder-driven): `selMonth` now re-clamps
+  when the CURRENT year's date range shrinks (not just on year switch), so budget edits can't land
+  on an out-of-range month the year-end math ignores; `schoolMonths` now returns the COVERED
+  CALENDAR-MONTH count (not a day-based estimate) so Safe-to-spend, Planned/mo, the budget's "left
+  to spend", and "By end of year" all divide by the same number; stale out-of-range overrides are
+  pruned on load and on date edit (`pruneOutOfRangeMonths`/`pruneAllYears`).
+- **Rounding-noise fixes**: a `curYrNet` that rounds to $0 reads neutral "right on your plan" (not
+  amber "short"); the monthly note only warns "over" past a $5 tolerance, not $2.
+- **"Compared to your plan" hardening**: a rising balance now reports `actualPace` instead of
+  blanking (hoisted above the `growing` early-returns in `computeRunway`); the no-pace state is a
+  "Check in" prompt, never a bare "—"; check-in history is de-duped by date.
+- **Rent clarity**: "Left after rent" line on the Aid card, "before rent" on the header glance,
+  live "$X left to spend" tally in the budget.
+- **Budget decluttered**: Health-checks card and the Plan-vs-actual chart removed; the balance
+  check-in card moved into the right column beside Monthly plan; its explainer shortened.
+- **Date pickers**: tapping the month/year header opens a 12-year grid (jump to a far year without
+  clicking Next repeatedly) — `DateField` in `src/components/pickers.jsx`.
+- **Removed years**: permanent-delete (×) with an inline confirm, next to Reinstate.
+- **Year labels** (founder disliked the "Year 1 — 2026-27" em-dash form): optional custom
+  `year.name`, falls back to "Year N"; a quiet "Year 1 · 2026–27" (en-dash) shows beside it. New
+  `yearDisplay()` helper in `format.js`; the "Name this year" input lives in the expanded Aid card
+  (a rename pencil in the collapsed header wasn't valid — nested inside the card's own toggle
+  button). Top year-selector chips stay plain "Year 1".
+- Dead code removed: orphaned `runwayTileDisplay`/`cushionSource`, the never-reachable "lean
+  months" trim modal in BudgetTab.
+- Session's local vitest/build tooling degraded mid-session (workers can't spawn — sandbox issue,
+  not the code); verification leaned on esbuild transforms per file + Vercel's CI build, which
+  stayed green throughout. **Worth a real `npm test` run early next session** to confirm the
+  full suite (was 343 green before tooling broke) still passes end to end.
+
+### NEXT (not started)
+1. Founder is testing the whole batch on the Vercel preview — **watch for merge-readiness signal
+   or new bug reports** before starting new work.
+2. Once merged: confirm `npm run dev` + `npx vitest run` are healthy again (local tooling was
+   degraded at session end — see note above).
+3. Nothing else is queued from the original money-rework plan — §1–§9 are all built. Future work
+   is founder-driven from here (check `docs/FUTURE_WORK.md` / Notion for anything new).
