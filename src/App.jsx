@@ -1543,23 +1543,31 @@ export function App() {
         </>);
         // TILE 2 — BY END OF YEAR. Plan across all 12 months → surplus(+) or short(−).
         // Never green when the cushion is borrowed (founder rule); short is negative-toned.
+        // A value that ROUNDS to $0 is "even", not a shortfall — a tiny negative (−$0.40)
+        // still displays "$0", so it must read neutral ("right on your plan"), never amber
+        // "short" (founder). Math.round===0 matches exactly when the value shows $0.
         const borrowed = !!aidBreakdown?.isLoanFunded;
-        const yeColor = curYrNet < 0 ? C.neg : (borrowed ? C.blue : C.green);
-        const ye_glance = (<>
-          <Icon name={curYrNet<0?"arrowDown":"arrowUp"} size={13} color={yeColor}/>
-          <span>{curYrNet<0 ? "short on your plan" : "left over"}</span>
-        </>);
+        const yeEven = Math.round(curYrNet) === 0;
+        const yeColor = yeEven ? C.textMid : (curYrNet < 0 ? C.neg : (borrowed ? C.blue : C.green));
+        const ye_glance = yeEven
+          ? <span style={{color:C.textMid}}>right on your plan</span>
+          : (<>
+              <Icon name={curYrNet<0?"arrowDown":"arrowUp"} size={13} color={yeColor}/>
+              <span>{curYrNet<0 ? "short on your plan" : "left over"}</span>
+            </>);
         const ye_panel = (<>
-          <div style={{color:C.textMid}}>{curYrNet<0
-            ? <>On your current plan you’d finish about <strong style={{color:C.neg}}>{fmt(Math.abs(curYrNet))} short</strong> for the {syLabel} school year.</>
-            : <>On your current plan you’d finish with about <strong style={{color:yeColor}}>{fmt(curYrNet)} to spare</strong>.</>}</div>
-          {borrowed && curYrNet>=0 && (
+          <div style={{color:C.textMid}}>{yeEven
+            ? <>On your current plan you’d finish just about <strong style={{color:C.text}}>even</strong> for the {syLabel} school year — your plan uses almost exactly what you have.</>
+            : curYrNet<0
+              ? <>On your current plan you’d finish about <strong style={{color:C.neg}}>{fmt(Math.abs(curYrNet))} short</strong> for the {syLabel} school year.</>
+              : <>On your current plan you’d finish with about <strong style={{color:yeColor}}>{fmt(curYrNet)} to spare</strong>.</>}</div>
+          {borrowed && curYrNet>=0 && !yeEven && (
             <div style={{marginTop:8,display:"inline-flex",alignItems:"center",gap:6,padding:"3px 9px",borderRadius:8,background:C.blueLight,border:`1px solid ${C.blueMid}`,fontSize:11,color:C.blue,fontWeight:600}}>
               Borrowed · returnable within 120 days
             </div>
           )}
           <div style={{marginTop:8,color:C.gray}}>
-            {curYrNet<0 ? "Trim your plan or plan to borrow a little more." : borrowed ? "It’s borrowed money you don’t have to spend — returning what you don’t need within 120 days cancels the interest." : "A real cushion, nicely done."} This is a forecast from your plan, not your bank balance.
+            {yeEven ? "Nothing extra, nothing short — right on target." : curYrNet<0 ? "Trim your plan or plan to borrow a little more." : borrowed ? "It’s borrowed money you don’t have to spend — returning what you don’t need within 120 days cancels the interest." : "A real cushion, nicely done."} This is a forecast from your plan, not your bank balance.
           </div>
         </>);
         // TILE 3 — VS YOUR PLAN — am I on track? Real only for the current year with

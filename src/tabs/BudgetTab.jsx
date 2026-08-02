@@ -332,18 +332,24 @@ export function BudgetTab(){
             {/* Live "left to spend" (question 3): what's still unspent of this month's
                 safe-to-spend as the student fills in the plan. Always shown so it reads as
                 a running tally that updates with every edit. Never green when the spendable
-                money is borrowed (founder rule) — colour AND words carry it. */}
+                money is borrowed (founder rule) — colour AND words carry it.
+                A few dollars over is rounding noise, NOT overspending (founder): reading
+                "$2 over — trim a little" when you nudge a maxed month up by $2 is alarmist,
+                so the warning only fires once you're meaningfully over (> $5); at or within
+                a few dollars of the max it reads calmly as "planned it all". */}
+            {(()=>{ const planOver = moSurplus < -5; const planOnTarget = !planOver && moSurplus <= 0; return (
             <div style={{marginTop:12,padding:"10px 12px",
-              background:moSurplus<0?C.negLight:moSurplus===0?C.surface:(surplusBorrowed?C.blueLight:C.greenLight),borderRadius:8,fontSize:12,
-              color:moSurplus<0?C.neg:moSurplus===0?C.textMid:(surplusBorrowed?C.blue:C.green),fontWeight:500,lineHeight:1.5}}>
-              {moSurplus<0
+              background:planOver?C.negLight:planOnTarget?C.surface:(surplusBorrowed?C.blueLight:C.greenLight),borderRadius:8,fontSize:12,
+              color:planOver?C.neg:planOnTarget?C.textMid:(surplusBorrowed?C.blue:C.green),fontWeight:500,lineHeight:1.5}}>
+              {planOver
                 ? <><strong>{fmt(Math.abs(moSurplus))} over</strong> what’s safe to spend this month — trim a little, or it comes out of your cushion.</>
-                : moSurplus===0
-                  ? <>You’ve planned every dollar that’s safe to spend this month.</>
+                : planOnTarget
+                  ? <>You’ve planned just about every dollar that’s safe to spend this month.</>
                   : surplusBorrowed
                     ? <><strong>{fmt(moSurplus)} left to spend</strong> this month — but that money is borrowed, so returning what you don’t need within 120 days cancels its interest.</>
                     : <><strong>{fmt(moSurplus)} left to spend</strong> this month — a nice bit of room.</>}
             </div>
+            );})()}
             {unbudgetedCats.length>0 && <div style={{marginTop:16,paddingTop:14,borderTop:`2px dashed ${C.border}`}}>
               <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
                 <span style={{fontSize:12,fontWeight:700,color:C.amber}}>Unbudgeted spending</span>
