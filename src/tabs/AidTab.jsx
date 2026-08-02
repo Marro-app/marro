@@ -228,7 +228,7 @@ export function AidTab(){
                       gap before the next year, the summer card (§4a/§4b). */}
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap",marginBottom:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`}}>
                     <span style={{fontSize:12,color:C.textMid,display:"flex",alignItems:"center",gap:4}}>
-                      Aid covers through <InfoTip text="The date your aid is meant to last through — usually when classes end. It starts at your year's end date; change it if your aid actually stops earlier (say mid-May). If that leaves a gap before your next year starts, a small summer plan appears below."/>
+                      Aid covers through
                     </span>
                     <div style={{display:"flex",alignItems:"center",gap:6}}>
                       <DateField value={y.aidThroughDate||y.endDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].aidThroughDate=v||null;upd(d);}} ariaLabel={`Aid covers through — ${y.label||'Year '+(i+1)}`} style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
@@ -273,9 +273,9 @@ export function AidTab(){
                   </div>
                   <div style={{marginTop:12,padding:"10px 12px",background:C.tealLight,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.tealMid}`,borderRadius:8,fontSize:12}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:3,alignItems:"center"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Sent to you/yr <InfoTip text="What reaches your bank account this year, after your school takes tuition, fees, and health insurance."/></span><strong style={{color:C.teal}}>{fmt(disb)}</strong></div>
-                    <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Planned per month <InfoTip text="Sent to you, divided across the months of this school year — your planned monthly amount. It's your whole month's money, before rent. Your live 'Safe to spend' up top adjusts this once you check in a balance."/></span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
+                    <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Planned per month</span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
                     {(y.monthly.housing||0)>0 && (
-                      <div style={{display:"flex",justifyContent:"space-between",marginTop:5,paddingTop:5,borderTop:`1px solid ${C.tealMid}`}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Left after rent <InfoTip text={`Rent is ${fmt(y.monthly.housing)}/mo — that's ${fmt((y.monthly.housing||0)*b.schoolMonths)} across the ${b.schoolMonths} months of this school year. Take it out of your planned monthly amount and this is what's left each month for food, books, and everything else.`}/></span><strong style={{color:C.teal}}>{fmt(moD-(y.monthly.housing||0))}/mo</strong></div>
+                      <div style={{display:"flex",justifyContent:"space-between",marginTop:5,paddingTop:5,borderTop:`1px solid ${C.tealMid}`}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Left after rent</span><strong style={{color:C.teal}}>{fmt(moD-(y.monthly.housing||0))}/mo</strong></div>
                     )}
                   </div>
                   {rawGap<0 && (

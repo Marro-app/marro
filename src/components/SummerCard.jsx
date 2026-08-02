@@ -74,7 +74,6 @@ export function SummerCard({ year, yearIndex, nextYear, data, upd, subsMo }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: C.text, display: 'flex', alignItems: 'center', gap: 5 }}>
           Your summer
-          <InfoTip text="The months between when this year's aid stops and your next year begins. Aid doesn't cover them, so this is a separate little plan for the summer — fill in what you'll earn and spend." />
         </span>
         <span style={{ fontSize: 11, color: C.gray }}>{friendlyMonth(window.start)} – {friendlyMonth(window.end)} · {window.months} month{window.months === 1 ? '' : 's'}</span>
       </div>
@@ -87,7 +86,7 @@ export function SummerCard({ year, yearIndex, nextYear, data, upd, subsMo }) {
       {/* Summer rent — pre-filled with school-year rent (placeholder), editable */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '5px 0', borderTop: `1px solid ${C.border}` }}>
         <span style={{ fontSize: 12, color: C.textMid, display: 'flex', alignItems: 'center', gap: 4 }}>
-          Summer rent <InfoTip text="Going home for the summer? Set this to $0. On an away rotation with a second lease? Set it higher. Left blank, it uses your school-year rent." />
+          Summer rent
         </span>
         <input type="number" min="0" inputMode="numeric" value={rentValue} placeholder={String(schoolRent)}
           aria-label={`Summer rent — ${yrLabel}`}
@@ -118,7 +117,7 @@ export function SummerCard({ year, yearIndex, nextYear, data, upd, subsMo }) {
           optional first/last dates), or dated lumps under "Other". */}
       <div style={{ padding: '8px 0', borderTop: `1px solid ${C.border}` }}>
         <div style={{ fontSize: 12, color: C.textMid, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
-          How does your pay come in? <InfoTip text="Pick how often you're paid. We count the paychecks over the summer for you — so you enter your take-home once, not every payday (that would double-count it). Choose Other for a one-time stipend on set dates." />
+          How does your pay come in?
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
           {CADENCES.map((c) => {

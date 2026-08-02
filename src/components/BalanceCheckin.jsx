@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { C } from '../lib/theme.js';
 import { fmt, todayStr } from '../lib/format.js';
 import { normalizeReadings } from '../lib/loans.js';
-import { Card, SectionTitle, Banner, InfoTip } from './primitives.jsx';
+import { Card, SectionTitle, Banner } from './primitives.jsx';
 
 // Balance check-in — the monthly "what's your balance?" card. Moved here from the
 // Loans tab (Money Rework §3a) so it can be the FIRST thing on the Budget tab: the
@@ -74,10 +74,7 @@ export function BalanceCheckin({ data, upd }) {
 
       <form onSubmit={onSubmit} style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div style={{ flex: '1 1 170px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
-            <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor="bal-spendable">Amount in your checking / cash</label>
-            <InfoTip text="What's in your checking/spending account today. Aid or loan money counts once it's landed in your account." />
-          </div>
+          <label style={{ ...labelStyle, whiteSpace: 'nowrap' }} htmlFor="bal-spendable">Checking / cash amount</label>
           <input id="bal-spendable" type="number" min="0" value={spendable} placeholder="$0" required
             aria-label="Amount in your checking / cash, across all accounts you spend from"
             onChange={(e) => { setSpendable(cleanNumInput(e)); setConfirming(false); setJustSaved(false); }}
