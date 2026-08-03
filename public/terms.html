@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <!--
-  DRAFT terms of service for Marro. Plain-language, matches the current app (free
-  budgeting tool, no financial advice, no payments). NOT legal advice — have a person
-  review before publishing. Update "Last updated", contact email, and governing-law
-  jurisdiction (currently New York) before relying on it.
+  Terms of Service for Marro. Comprehensive, company-favorable, plain-language "In short"
+  intros per section. Governing law: California (Orange County). Age 18+. Includes arbitration
+  + class-action waiver, liability cap, indemnification, IP, and an aggregated-data clause.
+  NOT legal advice — have the UCI Law clinic / a licensed attorney review before relying on it.
+  Fill: [MARRO, INC.] entity name + [DATE]s + dispute/opt-out emails before launch.
 -->
 <html lang="en">
 <head>
@@ -14,17 +15,19 @@
   <style>
     @font-face { font-family:'Inter'; src:url('fonts/inter-var.woff2') format('woff2'); font-weight:100 900; font-display:swap; }
     @font-face { font-family:'Newsreader'; src:url('fonts/newsreader-var.woff2') format('woff2'); font-weight:200 800; font-display:swap; }
-    :root { --bg:#101210; --text:#F6EFDD; --dim:rgba(246,239,221,0.62); --faint:rgba(246,239,221,0.52); --amber:#DDA528; --border:rgba(255,255,255,0.12); }
+    :root { --bg:#101210; --card:rgba(246,239,221,0.04); --text:#F6EFDD; --dim:rgba(246,239,221,0.62); --faint:rgba(246,239,221,0.52); --amber:#DDA528; --border:rgba(255,255,255,0.12); }
     * { box-sizing:border-box; }
     body { margin:0; background:var(--bg); color:var(--text); font-family:'Inter',system-ui,-apple-system,sans-serif; line-height:1.65; -webkit-font-smoothing:antialiased; }
     .wrap { max-width:720px; margin:0 auto; padding:56px 24px 96px; }
     a { color:var(--amber); text-decoration:underline; }
     a:hover { text-decoration:underline; }
+    a:focus-visible, .back:focus-visible { outline:2px solid var(--amber); outline-offset:3px; border-radius:3px; }
     .brand { font-family:'Newsreader',Georgia,serif; font-size:26px; font-weight:600; letter-spacing:-0.02em; }
     .brand span { color:var(--amber); }
     h1 { font-family:'Newsreader',Georgia,serif; font-size:34px; font-weight:600; letter-spacing:-0.02em; margin:32px 0 6px; }
-    .updated { color:var(--faint); font-size:13px; margin-bottom:36px; }
-    h2 { font-size:18px; font-weight:600; margin:34px 0 8px; letter-spacing:-0.01em; }
+    .updated { color:var(--faint); font-size:13px; margin-bottom:28px; }
+    h2 { font-size:19px; font-weight:600; margin:38px 0 8px; letter-spacing:-0.01em; scroll-margin-top:24px; }
+    h3 { font-size:16px; font-weight:600; margin:22px 0 6px; color:var(--text); }
     p, li { color:var(--dim); font-size:15px; }
     ul { padding-left:20px; }
     li { margin:5px 0; }
@@ -33,51 +36,173 @@
     hr { border:none; border-top:1px solid var(--border); margin:40px 0; }
     .back { display:inline-block; margin-top:8px; font-size:14px; }
     footer { margin-top:48px; color:var(--faint); font-size:13px; }
+    .inshort { background:var(--card); border:1px solid var(--border); border-left:3px solid var(--amber); border-radius:10px; padding:12px 16px; margin:10px 0 14px; }
+    .inshort p { color:var(--text); font-size:14px; margin:0; }
+    .inshort .lbl { color:var(--amber); font-weight:600; }
+    .notice { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin:20px 0; }
+    .notice p { color:var(--text); font-size:14px; }
+    .toc { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px 20px; margin:20px 0 8px; }
+    .toc ol { margin:6px 0 0; padding-left:22px; }
+    .toc li { margin:3px 0; font-size:14px; }
+    .caps { text-transform:uppercase; letter-spacing:0.02em; font-size:13px; }
   </style>
 </head>
 <body>
   <main class="wrap">
     <div class="brand">Marro<span>.</span></div>
     <h1>Terms of Service</h1>
-    <div class="updated">Last updated: June 13, 2026</div>
+    <div class="updated">Last updated: [DATE]</div>
 
-    <p class="lead">These terms govern your use of Marro. By signing in and using the app, you agree to them. Please read them — especially the part about Marro being a planning tool, not financial advice.</p>
+    <p class="lead">These Terms of Service and End-User License Agreement (the &ldquo;Terms&rdquo;) are a binding contract between you and [MARRO, INC.] (&ldquo;Marro,&rdquo; &ldquo;we,&rdquo; &ldquo;us&rdquo;). They govern your use of the Marro app, website, and related services (the &ldquo;Service&rdquo;). By signing in or using Marro, you agree to these Terms and to our <a href="/privacy.html">Privacy Policy</a>.</p>
 
-    <h2>1. What Marro is</h2>
-    <p>Marro is a free web application that helps medical students organize and track a personal budget. It lets you record categories, expenses, deposits, savings goals, and notes, and shows you charts and projections based on what you enter.</p>
+    <div class="notice">
+      <p class="caps"><strong>Important:</strong> Section 19 contains a binding individual arbitration agreement, a class-action and jury-trial waiver, and a coordinated-arbitration procedure. It affects how disputes are resolved. You may opt out of arbitration within 30 days (Section 19.7). Section 16 limits our liability and Section 17 requires you to indemnify us.</p>
+    </div>
 
-    <h2>2. Not financial advice</h2>
-    <p>Marro is an informational and organizational tool only. Its numbers, projections, and recommendations are estimates based on the data you provide and are <strong>not</strong> financial, tax, legal, or investment advice. Always confirm important decisions with your school's financial aid office or a qualified professional. You are responsible for your own financial choices.</p>
+    <h2>Summary of key points</h2>
+    <div class="inshort">
+      <p><span class="lbl">In short:</span> Marro is a free planning tool for students — not financial advice. You keep your own data; we may use anonymous, group-level data to improve and run the business. You must be at least 13, and if you&rsquo;re under 18 a parent or guardian must agree with you. We limit our liability, and most disputes are handled by individual arbitration unless you opt out. The full details are below.</p>
+    </div>
 
-    <h2>3. Eligibility and your account</h2>
-    <p>You must be at least 16 and able to form a binding agreement to use Marro. You sign in with a Google account, and you're responsible for keeping access to that account secure. You're responsible for the activity that happens under your account.</p>
+    <div class="toc">
+      <strong>Contents</strong>
+      <ol>
+        <li><a href="#s1">What Marro is</a></li>
+        <li><a href="#s2">Eligibility</a></li>
+        <li><a href="#s3">Your account</a></li>
+        <li><a href="#s4">License to use Marro</a></li>
+        <li><a href="#s5">Acceptable use</a></li>
+        <li><a href="#s6">Your content &amp; responsibilities</a></li>
+        <li><a href="#s7">Aggregated &amp; de-identified data</a></li>
+        <li><a href="#s8">Feedback</a></li>
+        <li><a href="#s9">Intellectual property</a></li>
+        <li><a href="#s10">Not financial advice</a></li>
+        <li><a href="#s11">Third-party services</a></li>
+        <li><a href="#s12">Changes to the Service</a></li>
+        <li><a href="#s13">Changes to these Terms</a></li>
+        <li><a href="#s14">Availability &amp; security</a></li>
+        <li><a href="#s15">Disclaimer of warranties</a></li>
+        <li><a href="#s16">Limitation of liability</a></li>
+        <li><a href="#s17">Indemnification</a></li>
+        <li><a href="#s18">Term &amp; termination</a></li>
+        <li><a href="#s19">Dispute resolution &amp; arbitration</a></li>
+        <li><a href="#s20">Governing law</a></li>
+        <li><a href="#s21">General</a></li>
+        <li><a href="#s22">Contact</a></li>
+      </ol>
+    </div>
 
-    <h2>4. Acceptable use</h2>
-    <p>Please use Marro only for its intended purpose. Don't attempt to break, overload, reverse-engineer, or gain unauthorized access to the service or other users' data, and don't use it for anything unlawful.</p>
+    <h2 id="s1">1. What Marro is</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> A budgeting and financial-organization tool for med students. It organizes information — it doesn&rsquo;t submit anything to your school or make official decisions.</p></div>
+    <p>Marro is a web and mobile application that helps medical students organize and track budgets, expenses, financial aid, loans, savings goals, and related information, and shows charts and projections based on what you enter. It is an organizational and informational tool only. It does not determine financial-aid eligibility, calculate official awards, submit information to any school or authority, or replace official records or instructions from any school, lender, government agency, or financial-aid administrator.</p>
 
-    <h2>5. Your data</h2>
-    <p>The budget data you enter stays yours. How we store and handle it is described in our <a href="/privacy.html">Privacy Policy</a>. You can request deletion of your account and data at any time.</p>
+    <h2 id="s2">2. Eligibility</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> You must be at least 13. If you&rsquo;re under 18, a parent or guardian has to agree to these Terms with you.</p></div>
+    <p>You may use Marro only if you are at least 13 years old. <strong>Marro is not available to anyone under 13.</strong> If you are under 18 (a minor), you may use Marro only with the involvement and consent of a parent or legal guardian who agrees to these Terms on your behalf and takes responsibility for your use. By using Marro, you represent that you are at least 18 and able to enter into a binding contract, or that you are between 13 and 17 and your parent or legal guardian has read and agreed to these Terms for you. If you use Marro on behalf of another person, you represent that you are authorized to bind them to these Terms.</p>
 
-    <h2>6. Availability and changes</h2>
-    <p>Marro is provided as-is and may change, pause, or be discontinued at any time. We try to keep your data safe and the app available, but we can't guarantee uninterrupted or error-free service. We recommend keeping your own records of anything important.</p>
+    <h2 id="s3">3. Your account</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> Sign in with Google, keep your account secure, and you&rsquo;re responsible for what happens under it.</p></div>
+    <p>You sign in with a Google account. You are responsible for keeping your account and credentials secure and for all activity that occurs under your account. Do not share your account or use anyone else&rsquo;s. Notify us promptly at <a href="mailto:hello@joinmarro.com">hello@joinmarro.com</a> if you suspect unauthorized access. We may require additional security measures if reasonably necessary to protect the Service or its users.</p>
 
-    <h2>7. Disclaimer of warranties</h2>
-    <p>Marro is provided "as is" and "as available," without warranties of any kind, whether express or implied, including fitness for a particular purpose and accuracy of any projections or calculations.</p>
+    <h2 id="s4">4. License to use Marro</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> We give you a personal, limited right to use Marro. Don&rsquo;t copy, resell, reverse-engineer, scrape, or use it to build a competing product.</p></div>
+    <p>Subject to your compliance with these Terms, we grant you a limited, personal, revocable, nonexclusive, nontransferable, and nonsublicensable license to use the Service for your personal, noncommercial financial-planning purposes. The Service is licensed, not sold, and we reserve all rights not expressly granted. You may not, and may not help anyone else: copy, distribute, sell, rent, sublicense, or commercially exploit the Service; modify or create derivative works; reverse engineer, decompile, or attempt to discover the source code, models, or nonpublic interfaces (except where that restriction is prohibited by law); remove or circumvent any security, access-control, or proprietary notice; use the Service or its output to develop, train, or benchmark a competing product, service, or dataset; access the Service by bots, scrapers, or other automated means without our written permission; or use the Service for any unlawful, infringing, or unauthorized purpose.</p>
 
-    <h2>8. Limitation of liability</h2>
-    <p>To the fullest extent permitted by law, Marro and its creators will not be liable for any indirect, incidental, or consequential damages, or for any financial losses, arising from your use of — or inability to use — the service.</p>
+    <h2 id="s5">5. Acceptable use</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> Don&rsquo;t break, abuse, or misuse Marro or other people&rsquo;s data.</p></div>
+    <p>You agree not to use the Service to: violate any law or third-party right; submit false, fraudulent, infringing, or unlawful information; impersonate anyone; upload malware or harmful code; interfere with, overload, or gain unauthorized access to the Service or any related system or data; probe or test its security without our written authorization; collect or misuse others&rsquo; personal information; facilitate fraud, identity theft, or improper access to financial aid; upload passwords, private keys, or other high-sensitivity credentials; or help anyone do any of these.</p>
 
-    <h2>9. Changes to these terms</h2>
-    <p>We may update these terms from time to time. If we make material changes, we'll update this page and the date above. Continuing to use Marro after a change means you accept the new terms.</p>
+    <h2 id="s6">6. Your content &amp; responsibilities</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> Your data stays yours. You give us permission to store and process it to run the Service, and you&rsquo;re responsible for its accuracy.</p></div>
+    <p>&ldquo;User Content&rdquo; is the information you enter into the Service. You keep ownership of your User Content. You grant Marro a worldwide, nonexclusive, royalty-free, sublicensable license to host, store, reproduce, process, and display your User Content as needed to operate, secure, support, and improve the Service, to create Aggregated Data (Section 7), and to comply with law. You are responsible for the accuracy, legality, and appropriateness of your User Content, and for independently verifying financial-aid amounts, deadlines, tax matters, and other information before relying on it. Marro is not an official system of record — keep your own copies of anything important.</p>
 
-    <h2>10. Governing law</h2>
-    <p>These terms are governed by the laws of the State of New York, without regard to its conflict-of-laws rules.</p>
+    <h2 id="s7">7. Aggregated &amp; de-identified data</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> We create anonymous, group-level statistics that can&rsquo;t identify you, and we own and may use or share those. We never sell your personal information.</p></div>
+    <p>We may create aggregated, statistical, and de-identified data derived from use of the Service (for example, medians, ranges, counts, and comparisons across groups of users, schools, or programs) in a form that does not identify, and cannot reasonably be linked to, any individual (&ldquo;Aggregated Data&rdquo;). Aggregated Data is not personal information. As between you and Marro, Marro owns Aggregated Data and may use, retain, disclose, license, and sell it for any lawful business purpose — including operating and improving the Service, benchmarking and comparison features, research, and relationships with partners — before, during, and after your use of the Service, and this right survives termination.</p>
+    <p>To protect you, we will: (a) take reasonable measures to ensure Aggregated Data cannot be associated with any individual; (b) maintain and use it only in aggregated or de-identified form and not attempt to re-identify it (except to test our own de-identification as permitted by law); and (c) require recipients to do the same. <strong>We do not sell or disclose your individual records in personally identifiable form, and we never sell your personal information.</strong> More detail is in our <a href="/privacy.html">Privacy Policy</a>.</p>
 
-    <h2>11. Contact</h2>
-    <p>Questions about these terms? Email <a href="mailto:hello@joinmarro.com">hello@joinmarro.com</a>.</p>
+    <h2 id="s8">8. Feedback</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> If you send us ideas, we can use them freely.</p></div>
+    <p>If you send us suggestions, ideas, or feedback, you grant us a perpetual, irrevocable, worldwide, royalty-free, sublicensable license to use them for any purpose without restriction or compensation. We may develop or use features similar to any feedback or ideas you submit, with no obligation to you.</p>
+
+    <h2 id="s9">9. Intellectual property</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> Marro and everything in it (name, logo, code, design) belongs to us.</p></div>
+    <p>Marro and its licensors own all right, title, and interest in the Service, including its software, code, interfaces, design, look and feel, content, trademarks, logos, data compilations, and Aggregated Data, and all related intellectual-property rights. The &ldquo;Marro&rdquo; name and logos may not be used without our prior written consent. Nothing in these Terms transfers any of our intellectual property to you. We retain the right to independently develop, acquire, and use products, concepts, and know-how, including any similar to what you may develop or suggest.</p>
+
+    <h2 id="s10">10. Not financial advice</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> Marro gives you information and estimates, not professional advice. Always confirm important decisions yourself.</p></div>
+    <p>Marro is not a financial, investment, tax, accounting, legal, or lending advisor and does not provide such advice. Numbers, projections, benchmarks, and comparisons are estimates based on the data available and may be incomplete or inaccurate; they are for general information only and are not a recommendation. You remain responsible for reviewing and complying with all applicable financial-aid terms, school policies, loan documents, scholarship requirements, tax obligations, and deadlines. Using Marro does not create any advisory, fiduciary, lender-borrower, or professional relationship between you and Marro.</p>
+
+    <h2 id="s11">11. Third-party services</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> Marro may link to or use other companies&rsquo; services, which have their own terms.</p></div>
+    <p>The Service may interoperate with or link to third-party services governed by their own terms and privacy policies. We don&rsquo;t control and aren&rsquo;t responsible for them. Any open-source or third-party components included in the Service are subject to their own license terms, which control for those components.</p>
+
+    <h2 id="s12">12. Changes to the Service</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> We may update, change, or discontinue features at any time.</p></div>
+    <p>We may add, change, suspend, or discontinue any part of the Service at any time, with or without notice, and we are not obligated to provide any particular feature, update, or support. Updates may install automatically.</p>
+
+    <h2 id="s13">13. Changes to these Terms</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> We can update these Terms; continuing to use Marro means you accept the changes.</p></div>
+    <p>We may modify these Terms at any time by posting the updated version in or through the Service and updating the date above. If a change requires your consent under law, it takes effect when you accept it; otherwise, changes are effective when posted, and your continued use means you accept them to the extent permitted by law. If you don&rsquo;t agree, stop using the Service.</p>
+
+    <h2 id="s14">14. Availability &amp; security</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> We try to keep Marro available and secure, but can&rsquo;t guarantee it. Use good security on your own devices.</p></div>
+    <p>The Service may be unavailable at times due to maintenance, technical issues, or events beyond our control. We use measures intended to protect the Service and your data, but no system is completely secure and we can&rsquo;t guarantee security. You are responsible for using appropriate security on your own devices and networks.</p>
+
+    <h2 id="s15">15. Disclaimer of warranties</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> Marro is provided &ldquo;as is,&rdquo; with no warranties.</p></div>
+    <p class="caps">To the maximum extent permitted by law, the Service is provided &ldquo;as is,&rdquo; &ldquo;as available,&rdquo; and &ldquo;with all faults.&rdquo; Marro and its affiliates, founders, and suppliers disclaim all warranties, whether express, implied, or statutory, including any implied warranties of merchantability, fitness for a particular purpose, title, non-infringement, accuracy, and quiet enjoyment. We do not warrant that the Service will be uninterrupted, error-free, secure, current, complete, or accurate, or that it will produce any particular financial or other result. Some jurisdictions don&rsquo;t allow certain exclusions, so some may not apply to you.</p>
+
+    <h2 id="s16">16. Limitation of liability</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> Our liability to you is capped, and we&rsquo;re not liable for indirect or consequential losses.</p></div>
+    <p class="caps">To the maximum extent permitted by law, Marro and its affiliates, founders, and suppliers will not be liable for any indirect, incidental, special, exemplary, consequential, or punitive damages, or for any loss of data, profits, revenue, savings, goodwill, or use, arising out of or relating to the Service or these Terms, under any theory of liability, even if advised of the possibility. To the maximum extent permitted by law, our total aggregate liability for all claims arising out of or relating to the Service or these Terms will not exceed the greater of (a) the amounts you paid Marro in the 12 months before the event giving rise to the claim, or (b) one hundred U.S. dollars ($100). Any claim must be brought within one (1) year after it arises, or it is permanently barred, to the extent permitted by law.</p>
+
+    <h2 id="s17">17. Indemnification</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> If someone sues us because of how you used Marro or what you posted, you cover it.</p></div>
+    <p>To the maximum extent permitted by law, you will defend, indemnify, and hold harmless Marro and its affiliates, founders, employees, and agents from any third-party claims, losses, damages, liabilities, and expenses (including reasonable attorneys&rsquo; fees) arising out of or relating to: your use of the Service; your User Content; your violation of these Terms or any law or third-party right; or your negligence or misconduct. We may assume the exclusive defense of any matter subject to indemnification, and you will cooperate with us.</p>
+
+    <h2 id="s18">18. Term &amp; termination</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> You can stop any time; we can suspend or end access if you break the rules or we discontinue the Service.</p></div>
+    <p>These Terms apply while you use the Service. You may stop at any time by ceasing use, deleting your account (email <a href="mailto:hello@joinmarro.com">hello@joinmarro.com</a>), and uninstalling. We may suspend or terminate your access at any time, with or without notice, including if you violate these Terms, create a security or legal risk, or if we discontinue the Service. On termination, your license ends and you must stop using the Service. Sections that by their nature should survive — including those on your content license, Aggregated Data, IP, disclaimers, liability, indemnification, and dispute resolution — survive.</p>
+
+    <h2 id="s19">19. Dispute resolution, arbitration &amp; class-action waiver</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> Most disputes are resolved by individual arbitration, not court, and not as a class action. You can opt out within 30 days.</p></div>
+    <p class="caps"><strong>Please read this section carefully — it affects your legal rights, including your right to sue in court and to have a jury trial.</strong></p>
+
+    <h3>19.1 Informal resolution first</h3>
+    <p>Before starting arbitration, the party with a dispute must send a written notice describing it and the relief requested. Notices to Marro go to [DISPUTE NOTICE EMAIL]. The parties will try in good faith to resolve it individually for 60 days; this is a required precondition to arbitration, and any deadline is paused during this period.</p>
+
+    <h3>19.2 Agreement to arbitrate</h3>
+    <p>Except for the excluded disputes below, you and Marro agree that any dispute arising out of or relating to these Terms or the Service will be resolved by final and binding individual arbitration, not in court. This agreement is governed by the Federal Arbitration Act. The arbitrator decides all issues except that a court decides the enforceability of the class-action waiver in Section 19.5.</p>
+
+    <h3>19.3 Excluded disputes</h3>
+    <p>Either party may bring an individual claim in small-claims court if it qualifies, or seek court relief to protect intellectual property or prevent unauthorized access. Nothing here stops you from reporting concerns to a government agency. Claims that law prohibits from pre-dispute arbitration are excluded.</p>
+
+    <h3>19.4 Procedures</h3>
+    <p>Arbitration is administered by the American Arbitration Association (AAA) under its Consumer Arbitration Rules, as modified here (see adr.org). It may be conducted by phone, video, written submissions, or in person in your county. Marro pays the fees it is required to pay under those rules. Each party bears its own attorneys&rsquo; fees unless the law or arbitrator provides otherwise. The arbitrator issues a written, reasoned decision.</p>
+
+    <h3>19.5 Class-action &amp; jury-trial waiver</h3>
+    <p class="caps">You and Marro waive the right to a jury trial. Each party may bring claims only in an individual capacity, and not as a plaintiff or class member in any class, collective, consolidated, coordinated, mass, private-attorney-general, or representative proceeding, except as expressly allowed by the coordinated-arbitration procedure in Section 19.6. The arbitrator may award relief only to the individual party and only as needed for that party&rsquo;s claim. A court decides this section&rsquo;s enforceability.</p>
+
+    <h3>19.6 Coordinated (mass) arbitration</h3>
+    <p>If 25 or more similar demands are brought against Marro with coordinated counsel, they will be resolved in staged batches to keep the process efficient: grouped into batches of up to 50, one batch at a time, starting with an initial bellwether batch of up to 20, followed by a single 90-day global mediation of the rest, with remaining demands proceeding in later batches. Deadlines are paused for demands awaiting their batch, and any claimant may opt out of this procedure into an individual arbitration within 30 days of filing. This procedure is intended to preserve, not eliminate, each person&rsquo;s right to individualized resolution.</p>
+
+    <h3>19.7 30-day right to opt out of arbitration</h3>
+    <p>You may opt out of this entire Section 19 by sending written notice to [ARBITRATION OPT-OUT EMAIL] within 30 days after you first accept these Terms, including your name, account email, and a clear statement that you opt out. Opting out doesn&rsquo;t affect anything else in these Terms.</p>
+
+    <h2 id="s20">20. Governing law &amp; venue</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> California law applies. Court disputes go to Orange County, California — but this doesn&rsquo;t take away rights your home state gives you that can&rsquo;t be waived.</p></div>
+    <p>These Terms are governed by the laws of the State of California, without regard to its conflict-of-laws rules, except that the Federal Arbitration Act governs Section 19. For any dispute not subject to arbitration, you and Marro consent to the exclusive jurisdiction and venue of the state and federal courts located in Orange County, California. This does not limit any nonwaivable right you may have to bring a claim under the consumer-protection law of your home state.</p>
+
+    <h2 id="s21">21. General</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> Standard housekeeping: we can assign these Terms, you can&rsquo;t; if one part is invalid the rest still applies.</p></div>
+    <p>These Terms and the <a href="/privacy.html">Privacy Policy</a> are the entire agreement between you and Marro about the Service. You may not assign these Terms; we may, including in a merger, acquisition, or sale of assets. If any provision is unenforceable, it will be limited or severed and the rest stays in effect. Our failure to enforce a provision isn&rsquo;t a waiver. We aren&rsquo;t liable for delays caused by events beyond our reasonable control. Headings are for convenience only, and &ldquo;including&rdquo; means &ldquo;including without limitation.&rdquo; You consent to transact electronically, and your electronic acceptance has the same effect as a signature.</p>
+
+    <h2 id="s22">22. Contact</h2>
+    <p>Questions about these Terms? Email <a href="mailto:hello@joinmarro.com">hello@joinmarro.com</a>.</p>
 
     <hr/>
-    <a class="back" href="/">← Back to Marro</a>
+    <a class="back" href="/">&larr; Back to Marro</a>
     <footer>See also our <a href="/privacy.html">Privacy Policy</a>.</footer>
   </main>
 </body>

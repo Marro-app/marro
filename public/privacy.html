@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <!--
-  DRAFT privacy policy for Marro. Reviewed for plain-language accuracy against the
-  current app (Google sign-in + Supabase storage, no bank links, no ads, no sale of data).
-  NOT legal advice — have a person review before relying on it for Google verification.
-  Update the "Last updated" date and the contact email before publishing.
+  Privacy Policy for Marro. Comprehensive, CCPA/CPRA-aware, plain-language "In short" intros.
+  Broad aggregate-data posture: we never sell PERSONAL info, but we may use/share/sell anonymous
+  group-level (aggregated/de-identified) data. Age 18+. NOT legal advice — have the UCI Law clinic /
+  a licensed attorney review before relying on it for Google verification or launch.
+  Fill: [MARRO, INC.] entity name + [DATE]s + [PRIVACY EMAIL] before launch.
 -->
 <html lang="en">
 <head>
@@ -20,11 +21,13 @@
     .wrap { max-width:720px; margin:0 auto; padding:56px 24px 96px; }
     a { color:var(--amber); text-decoration:underline; }
     a:hover { text-decoration:underline; }
+    a:focus-visible, .back:focus-visible { outline:2px solid var(--amber); outline-offset:3px; border-radius:3px; }
     .brand { font-family:'Newsreader',Georgia,serif; font-size:26px; font-weight:600; letter-spacing:-0.02em; }
     .brand span { color:var(--amber); }
     h1 { font-family:'Newsreader',Georgia,serif; font-size:34px; font-weight:600; letter-spacing:-0.02em; margin:32px 0 6px; }
-    .updated { color:var(--faint); font-size:13px; margin-bottom:36px; }
-    h2 { font-size:18px; font-weight:600; margin:34px 0 8px; letter-spacing:-0.01em; }
+    .updated { color:var(--faint); font-size:13px; margin-bottom:28px; }
+    h2 { font-size:19px; font-weight:600; margin:38px 0 8px; letter-spacing:-0.01em; scroll-margin-top:24px; }
+    h3 { font-size:16px; font-weight:600; margin:22px 0 6px; color:var(--text); }
     p, li { color:var(--dim); font-size:15px; }
     ul { padding-left:20px; }
     li { margin:5px 0; }
@@ -33,64 +36,127 @@
     hr { border:none; border-top:1px solid var(--border); margin:40px 0; }
     .back { display:inline-block; margin-top:8px; font-size:14px; }
     footer { margin-top:48px; color:var(--faint); font-size:13px; }
+    .inshort { background:var(--card); border:1px solid var(--border); border-left:3px solid var(--amber); border-radius:10px; padding:12px 16px; margin:10px 0 14px; }
+    .inshort p { color:var(--text); font-size:14px; margin:0; }
+    .inshort .lbl { color:var(--amber); font-weight:600; }
+    .toc { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px 20px; margin:20px 0 8px; }
+    .toc ol { margin:6px 0 0; padding-left:22px; }
+    .toc li { margin:3px 0; font-size:14px; }
+    table { width:100%; border-collapse:collapse; margin:12px 0; font-size:13.5px; }
+    th, td { border:1px solid var(--border); padding:8px 10px; text-align:left; vertical-align:top; color:var(--dim); }
+    th { color:var(--text); font-weight:600; background:var(--card); }
+    .tablewrap { overflow-x:auto; }
   </style>
 </head>
 <body>
   <main class="wrap">
     <div class="brand">Marro<span>.</span></div>
     <h1>Privacy Policy</h1>
-    <div class="updated">Last updated: June 13, 2026</div>
+    <div class="updated">Last updated: [DATE]</div>
 
-    <p class="lead">Marro is a personal budgeting tool for medical students. We try to collect as little as possible, we never sell your personal info, and we don't show ads. This page explains exactly what we store and why.</p>
+    <p class="lead">Marro is a personal budgeting tool for medical students. We try to collect as little as possible, we <strong>never sell your personal information</strong>, and we don&rsquo;t show you third-party ads inside the app. This page explains exactly what we store, why, and the choices you have. It is part of our <a href="/terms.html">Terms of Service</a>.</p>
 
-    <h2>Who we are</h2>
-    <p>Marro ("we", "us") is a web application that helps medical students plan and track their budgets. You can reach us any time at <a href="mailto:hello@joinmarro.com">hello@joinmarro.com</a>.</p>
+    <h2>Summary of key points</h2>
+    <div class="inshort">
+      <p><span class="lbl">In short:</span> We collect your Google basics, your school, and the budget data you enter. We use it to run the app and to build anonymous, group-level insights that can&rsquo;t identify you. We never sell your personal information. You can access or delete your data, and — depending on where you live — you have additional privacy rights described below. Marro is for people 13 and older; if you&rsquo;re under 18, a parent or guardian must agree with you.</p>
+    </div>
 
-    <h2>What we collect</h2>
+    <div class="toc">
+      <strong>Contents</strong>
+      <ol>
+        <li><a href="#p1">Who we are</a></li>
+        <li><a href="#p2">What we collect</a></li>
+        <li><a href="#p3">How we use it</a></li>
+        <li><a href="#p4">Learning from students as a group</a></li>
+        <li><a href="#p5">Do we sell or share your information?</a></li>
+        <li><a href="#p6">Who we share it with</a></li>
+        <li><a href="#p7">Cookies &amp; local storage</a></li>
+        <li><a href="#p8">Your Google data</a></li>
+        <li><a href="#p9">How long we keep it &amp; deletion</a></li>
+        <li><a href="#p10">How we keep it safe</a></li>
+        <li><a href="#p11">Your privacy rights</a></li>
+        <li><a href="#p12">Sensitive information</a></li>
+        <li><a href="#p13">Children</a></li>
+        <li><a href="#p14">Changes to this policy</a></li>
+        <li><a href="#p15">Contact</a></li>
+      </ol>
+    </div>
+
+    <h2 id="p1">1. Who we are</h2>
+    <p>Marro ([MARRO, INC.], &ldquo;we,&rdquo; &ldquo;us&rdquo;) is a web application that helps medical students plan and track their budgets. You can reach us any time at <a href="mailto:hello@joinmarro.com">hello@joinmarro.com</a>.</p>
+
+    <h2 id="p2">2. What we collect</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> Your Google basics, your school, and the budget data you type in. We don&rsquo;t connect to your bank or take payment details, and we don&rsquo;t track you across other sites.</p></div>
+    <div class="tablewrap">
+    <table>
+      <thead><tr><th>What</th><th>Examples</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td>Google account basics</td><td>Name, email, profile picture</td><td>Create and identify your account; sign you in</td></tr>
+        <tr><td>Your school</td><td>Medical school and campus you select</td><td>Tailor the app to your school; power comparisons</td></tr>
+        <tr><td>Your budget data (User Content)</td><td>Categories, expenses, deposits, goals, subscriptions, notes, aid/loan figures you enter</td><td>Provide the core features; sync across devices; build anonymous group insights</td></tr>
+        <tr><td>App usage &amp; device data</td><td>Interactions, feature use, crash/performance logs, approximate location from IP</td><td>Operate, secure, debug, and improve the app</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>We do <strong>not</strong> connect to your bank, we do <strong>not</strong> collect payment information, and we do <strong>not</strong> track your activity across other websites for advertising. Please don&rsquo;t enter passwords to other accounts, private keys, or other high-sensitivity credentials into Marro.</p>
+
+    <h2 id="p3">3. How we use it</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> To run the app, keep it secure, improve it, and communicate with you.</p></div>
+    <p>We use your information to: log you in and operate the app; save your budget and sync it across your devices; show you your own numbers; keep the Service secure and prevent fraud and abuse; improve the Service and build new features; create anonymous group-level insights (Section 4); communicate with you about the Service; and comply with law and enforce our <a href="/terms.html">Terms</a>.</p>
+
+    <h2 id="p4">4. Learning from students as a group</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> Some of what makes Marro useful is the bigger picture across many students. That&rsquo;s anonymous, group-level data that can&rsquo;t identify you — and we may use or share it, including with partners. Your own records stay private.</p></div>
+    <p>Some of what makes Marro useful comes from the bigger picture &mdash; things like what a typical month costs for students at a school, or how aid packages tend to shape budgets. That bigger picture is aggregated, de-identified data: group patterns across many students, never any one person&rsquo;s numbers, from which you cannot reasonably be identified. We use it to build better features, to show helpful comparisons (like how your budget compares to students in your class year), for research, and to work with partner organizations. Because this data does not identify anyone, we may use, share, license, or sell it for these purposes, and we own it. When we maintain de-identified data we take reasonable measures to keep it from being linked to any individual, commit to keep it in de-identified form and not to re-identify it, and require partners to do the same. <strong>Your own records always stay private to your account, and we never sell your personal information.</strong></p>
+
+    <h2 id="p5">5. Do we sell or share your information?</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> We never sell your personal information, and we don&rsquo;t &ldquo;share&rdquo; it for cross-site advertising. We may sell or share anonymous group-level data, which isn&rsquo;t personal information.</p></div>
+    <p>We do not sell your personal information for money, and we do not &ldquo;share&rdquo; your personal information for cross-context behavioral advertising, as those terms are defined by California law. We may sell or license Aggregated Data (Section 4), which is not personal information and cannot identify you. We honor opt-out preference signals such as the Global Privacy Control (see Section 11). We do not disclose your individual financial or educational records in identifiable form to advertisers or data brokers. <strong>We do not knowingly sell or share the personal information of users under 18, and we do not knowingly include data from users under 18 in Aggregated Data that we sell or license.</strong></p>
+
+    <h2 id="p6">6. Who we share it with</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> A small number of service providers that help run Marro, plus legal or business-transfer situations.</p></div>
+    <p>We use a small number of service providers that process data only to provide their service to us under contract:</p>
     <ul>
-      <li><strong>Your Google account basics.</strong> When you sign in with Google, we receive your name, email address, and profile picture. We use these only to create and identify your account.</li>
-      <li><strong>Your school.</strong> The medical school (and campus, if applicable) you select. You provide this; you can change it any time in settings.</li>
-      <li><strong>Your budget data.</strong> Everything you enter in the app — categories, expenses, deposits, savings goals, subscriptions, and notes. This is the core of the service and stays tied to your account.</li>
+      <li><strong>Google</strong> &mdash; sign-in (authentication).</li>
+      <li><strong>Supabase</strong> &mdash; database and authentication backend (hosted on Amazon Web Services).</li>
+      <li><strong>Vercel</strong> &mdash; website hosting.</li>
     </ul>
-    <p>We do <strong>not</strong> connect to your bank, we do <strong>not</strong> collect payment information, and we do <strong>not</strong> track your activity across other websites.</p>
+    <p>If and when we add artificial-intelligence features, an AI model provider (for example, Anthropic) would process the information you submit on your behalf to generate the output you request, and would be contractually restricted from using it to train its own models except as disclosed. We may also disclose information to comply with law or lawful requests, to enforce our Terms, to protect rights and safety, or in connection with a merger, acquisition, financing, or sale of assets. Otherwise, we don&rsquo;t share your personal information with third parties.</p>
 
-    <h2>How we use it</h2>
-    <p>Your information is used to operate the app: to log you in, save your budget, sync it across your devices, and show you your own numbers. That's it. We do not use your data for advertising, and we never sell your personal info to anyone.</p>
+    <h2 id="p7">7. Cookies &amp; local storage</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> Only what&rsquo;s needed to keep you signed in and let the app work offline. No advertising trackers.</p></div>
+    <p>Marro stores a login token and small preferences (like your theme and a cached copy of your budget) in your browser&rsquo;s local storage. These are necessary for the app to function and to work offline. We don&rsquo;t use advertising or third-party tracking cookies.</p>
 
-    <h2>Learning from students as a group</h2>
-    <p>Some of what makes Marro useful comes from the bigger picture — things like what a typical month costs for students at a school, or how aid packages tend to shape budgets. That bigger picture is group patterns across many students, never any one person's numbers, and nothing in it can identify you. We use it to build better features, to show helpful comparisons (like how your budget stacks up against students in your class year), and to work with partner organizations that support students financially. Your own records stay private to your account no matter what, and we never sell your personal info.</p>
+    <h2 id="p8">8. Your Google data</h2>
+    <p>Marro&rsquo;s use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>, including the Limited Use requirements. We only request basic profile and email scopes, and use that data solely to provide the sign-in and account features described above.</p>
 
-    <h2>Where it's stored</h2>
-    <p>Your account and budget data are stored in a <a href="https://supabase.com/privacy" target="_blank" rel="noopener">Supabase</a> database (hosted on Amazon Web Services). Access is protected by row-level security, so your data is only readable by your own signed-in account. A copy is also cached locally in your browser so the app works offline.</p>
+    <h2 id="p9">9. How long we keep it &amp; deletion</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> As long as your account exists. You can delete it any time; anonymous group data already created stays.</p></div>
+    <p>We keep your personal information for as long as your account exists and as needed to provide the Service, then for the period needed to meet legal obligations, resolve disputes, and enforce our agreements. You can ask us to delete your account and associated data at any time by emailing <a href="mailto:hello@joinmarro.com">hello@joinmarro.com</a>, and we&rsquo;ll remove it promptly, except information we&rsquo;re permitted or required to keep and Aggregated Data already created (which no longer identifies you).</p>
 
-    <h2>Who we share it with</h2>
-    <p>We use a small number of service providers to run Marro. They process data only to provide their service to us:</p>
-    <ul>
-      <li><strong>Google</strong> — sign-in (authentication).</li>
-      <li><strong>Supabase</strong> — database and authentication backend.</li>
-      <li><strong>Vercel</strong> — website hosting.</li>
-    </ul>
-    <p>We may disclose information if required by law. Otherwise, we don't share your data with third parties.</p>
+    <h2 id="p10">10. How we keep it safe</h2>
+    <p>Your data is stored in a <a href="https://supabase.com/privacy" target="_blank" rel="noopener">Supabase</a> database (hosted on Amazon Web Services), protected by row-level security so it&rsquo;s only readable by your own signed-in account; a copy is also cached locally in your browser so the app works offline. We use administrative, technical, and organizational measures intended to protect your information, but no method of storage or transmission is completely secure, and we can&rsquo;t guarantee absolute security. Keep your credentials confidential and your devices secure.</p>
 
-    <h2>Cookies and local storage</h2>
-    <p>Marro stores a login token and small preferences (like your light/dark theme and a cached copy of your budget) in your browser's local storage. These are necessary for the app to function and to keep you signed in. We don't use advertising or third-party tracking cookies.</p>
+    <h2 id="p11">11. Your privacy rights</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> Depending on where you live (including California), you can access, correct, delete, or get a copy of your data, and opt out of any sale/share. We won&rsquo;t discriminate against you for using these rights.</p></div>
+    <p>Depending on your state, you may have the right to: know and access the personal information we hold about you; delete it; correct it; obtain a portable copy; opt out of any sale or sharing; limit the use of sensitive personal information; and not be discriminated against for exercising your rights. Some rights are subject to legal exceptions.</p>
+    <p>To exercise these rights, email <a href="mailto:hello@joinmarro.com">hello@joinmarro.com</a> or use the controls in the app. We honor opt-out preference signals such as the Global Privacy Control (GPC) for the browser or device that sends them. We verify requests by matching the information you provide against our records and may ask for more information to confirm your identity; you may use an authorized agent, subject to verification. We respond within the timeframes required by law. Because we do not track you across other websites, Marro does not respond differently to browser &ldquo;Do Not Track&rdquo; signals beyond honoring recognized opt-out preference signals as described above.</p>
 
-    <h2>Keeping your data and deleting it</h2>
-    <p>We keep your data for as long as your account exists. You can ask us to delete your account and all associated data at any time by emailing <a href="mailto:hello@joinmarro.com">hello@joinmarro.com</a>, and we'll remove it promptly.</p>
+    <h2 id="p12">12. Sensitive information</h2>
+    <p>Some information you enter may be &ldquo;sensitive personal information&rdquo; under California law, and log-in credentials are treated as sensitive. We use it only to provide and secure the Service and for other purposes the law permits, and we do not use or disclose it to infer characteristics about you, and we do not sell it.</p>
 
-    <h2>Your Google data</h2>
-    <p>Marro's use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>, including the Limited Use requirements. We only request basic profile and email scopes, and we use that data solely to provide the sign-in and account features described above.</p>
+    <h2 id="p13">13. Children and minors</h2>
+    <div class="inshort"><p><span class="lbl">In short:</span> Marro is for ages 13 and up. If you&rsquo;re under 18, a parent or guardian must agree with you, and we don&rsquo;t knowingly collect data from anyone under 13.</p></div>
+    <p>Marro is intended for students who are at least 13 years old. We do not knowingly collect personal information from children under 13; if we learn that we have, we will delete it. If you are under 18, you may use Marro only with the permission of, and supervision by, a parent or legal guardian who has read and agreed to our <a href="/terms.html">Terms of Service</a> on your behalf.</p>
+    <p>Parents or guardians who believe a child under 13 has provided us information, or who wish to review, correct, or delete a minor&rsquo;s information, can contact us at <a href="mailto:hello@joinmarro.com">hello@joinmarro.com</a>. If you are a California resident under 18 with a registered account, you may request removal of content you have publicly posted through the Service by emailing us; note that removal may not be complete or comprehensive as permitted by law.</p>
 
-    <h2>Children</h2>
-    <p>Marro is intended for medical students and is not directed to anyone under 16. We don't knowingly collect data from children.</p>
+    <h2 id="p14">14. Changes to this policy</h2>
+    <p>If we make material changes, we&rsquo;ll update this page and the &ldquo;Last updated&rdquo; date above and notify you as required by law. Continued use of Marro after a change means you accept the updated policy to the extent permitted by law.</p>
 
-    <h2>Changes to this policy</h2>
-    <p>If we make material changes, we'll update this page and the "Last updated" date above. Continued use of Marro after a change means you accept the updated policy.</p>
+    <h2 id="p15">15. Contact</h2>
+    <p>Questions about your privacy or to exercise your rights? Email <a href="mailto:hello@joinmarro.com">hello@joinmarro.com</a>.</p>
 
     <hr/>
-    <p>Questions about your privacy? Email <a href="mailto:hello@joinmarro.com">hello@joinmarro.com</a>.</p>
-
-    <a class="back" href="/">← Back to Marro</a>
+    <a class="back" href="/">&larr; Back to Marro</a>
     <footer>See also our <a href="/terms.html">Terms of Service</a>.</footer>
   </main>
 </body>
