@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { C, applyTheme, THEMES } from './lib/theme.js';
 import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed, isAdmin, logEvent, exportUserData, exportUserDataExcel, deleteAccount, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY } from './lib/data.js';
+import { recordConsentIfPending } from './lib/consent.js';
 import { appStorage } from './lib/mockStorage.js';
 import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
@@ -377,6 +378,10 @@ export function App() {
         // On error (e.g. offline) leave profile null so we don't block — re-check next boot.
         try{
           const sb = await getSupabase();
+          // Persist any pending registration consent (stashed at signup, carried
+          // across the OAuth/email round-trip) onto the profile — best-effort,
+          // before we read the row back so the record is fresh.
+          await recordConsentIfPending(sb);
           const {data:prof, error} = await sb.from("profiles").select("school").maybeSingle();
           if(!error) setProfile(prof || {school:null});
         }catch{/* profile fetch is best-effort — school just stays unset */}

@@ -62,7 +62,7 @@ function PasswordField({ id, label, value, onChange, autoComplete, error, disabl
 // it can also drive the modal's heading text) — this component only renders
 // the fields, validation, and submit/resend logic for whichever mode is
 // active.
-export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassword, initialEmail, onSwitchToSignup }){
+export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassword, initialEmail, onSwitchToSignup, signupBlocked = false, onSignupConsent }){
   const uid = useId();
   const [email, setEmail] = useState(initialEmail || '');
   const [password, setPassword] = useState('');
@@ -109,6 +109,9 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (offline || pending) return;
+    // Guard the Enter-to-submit path too (the button is already disabled): no
+    // account creation until the consent attestation is checked.
+    if (mode === 'signup' && signupBlocked) return;
     setError(null);
     setNotice(null);
     setNeedsConfirm(false);
@@ -146,6 +149,10 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
         window.location.href = window.location.pathname;
         return; // page is navigating away — leave `pending` true, no further UI updates needed
       } else {
+        // Record the consent intent just before creating the account, so it
+        // survives the email-confirmation round-trip and is persisted on the
+        // next authenticated boot (see lib/consent.js).
+        onSignupConsent?.();
         const { error: signUpErr } = await sb.auth.signUp({
           email,
           password,
@@ -272,7 +279,7 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
       <button
         type="submit"
         className="lp-btn lp-btn-fill lp-epsubmit"
-        disabled={disabled || !!validationError}
+        disabled={disabled || !!validationError || signupBlocked}
         aria-busy={pending}
       >
         {pending ? 'Please wait…' : (mode === 'signin' ? 'Log in' : 'Create account')}

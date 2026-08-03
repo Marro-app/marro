@@ -463,6 +463,14 @@ html:has(.lp)::-webkit-scrollbar-thumb:hover{background:rgba(246,239,221,.45)}
 
 .lp-authgoogle{width:100%}
 
+/* ===== REGISTRATION CONSENT (clickwrap) ===== */
+.lp-consent{display:flex;align-items:flex-start;gap:10px;margin:4px 0 14px;cursor:pointer;font-size:13px;line-height:1.5;color:var(--lp-cream63)}
+.lp-consent-box{flex:none;width:18px;height:18px;margin-top:1px;accent-color:var(--lp-cream);cursor:pointer}
+.lp-consent-box:focus-visible{outline:2px solid var(--lp-cream);outline-offset:2px}
+.lp-consent-note{margin:14px 0 0;font-size:12px;line-height:1.5;color:var(--lp-cream40);text-align:center}
+.lp-consent-note a{color:var(--lp-cream63);text-decoration:underline}
+.lp-consent-note a:focus-visible{outline:2px solid var(--lp-cream);outline-offset:2px;border-radius:2px}
+
 /* ===== EMAIL/PASSWORD FORM FIELDS (Phase A, now rendered inside AuthModal) ===== */
 .lp-eptabs{display:flex;gap:8px;margin-bottom:16px}
 .lp-eptab{flex:1;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--lp-border);background:transparent;color:var(--lp-cream63);font:inherit;font-size:14px;font-weight:600;cursor:pointer;transition:background .15s ease,color .15s ease}
