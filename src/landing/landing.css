@@ -70,11 +70,14 @@ html:has(.lp)::-webkit-scrollbar-thumb:hover{background:rgba(246,239,221,.45)}
 .lp-btn:focus-visible{outline:2px solid var(--lp-cream);outline-offset:3px}
 .lp-btn:active{transform:scale(.98)}
 .lp-btn-fill{background:var(--lp-cream);color:#14150F;border:none}
-.lp-btn-fill:hover{background:#fff8e6}
+.lp-btn-fill:hover:not(:disabled){background:#fff8e6}
 .lp-btn-ghost{background:transparent;color:var(--lp-cream);border:1px solid var(--lp-border)}
-.lp-btn-ghost:hover{background:var(--lp-glass)}
+.lp-btn-ghost:hover:not(:disabled){background:var(--lp-glass)}
+/* Disabled: keep the button's own base background (cream/transparent) — a
+   previous `:disabled:hover{background:inherit}` turned the filled button
+   dark-on-dark (invisible) on hover. Scoping the hover rules above to
+   :not(:disabled) means a disabled button never changes on hover. */
 .lp-btn:disabled{opacity:.5;cursor:not-allowed}
-.lp-btn:disabled:hover{background:inherit}
 
 /* ===== FIXED MEDIA CANVAS ===== */
 /* One fixed canvas pinned to the right half of the viewport (desktop) — the
