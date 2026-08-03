@@ -5,7 +5,39 @@ import { popoverStyle, wrapPop } from '../lib/ui-helpers.js';
 import { useLiftCard, useEscClose } from '../lib/hooks.js';
 import { Icon } from './icons.jsx';
 
-export const MonthPicker = ({value, onChange}) => {
+// Academic-year months (MONTH_NAMES) run Aug→Jul, so a single year's month list
+// spans TWO calendar years — the rollover is at index 5 (Jan). When a startYear
+// is known, we split the month grid under year headings (Aug–Dec under the start
+// year, Jan–Jul under the next) so a month is never ambiguous about which
+// calendar year it belongs to. Without a startYear it falls back to one flat grid.
+const MONTH_YEAR_SPLIT = 5; // MONTH_NAMES index where the calendar year rolls over (Jan)
+const monthGroups = (startYear) => {
+  const y = Number(startYear);
+  // Only split when we have a real 4-digit year; otherwise show one flat grid.
+  if (!Number.isFinite(y) || y < 1900) return [{year:null, from:0, to:12}];
+  return [{year:y, from:0, to:MONTH_YEAR_SPLIT}, {year:y+1, from:MONTH_YEAR_SPLIT, to:12}];
+};
+const MonthGrid = ({startYear, selectedMi, onPick}) => (
+  <>
+    {monthGroups(startYear).map((g,gi)=>(
+      <div key={gi} style={gi>0?{marginTop:8}:undefined}>
+        {g.year!=null && <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",color:C.gray,textTransform:"uppercase",margin:"0 2px 4px"}}>{g.year}</div>}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:3}}>
+          {MONTH_NAMES.slice(g.from,g.to).map((m,idx)=>{
+            const mi=g.from+idx, sel=mi===selectedMi;
+            return (
+              <button key={mi} type="button" onClick={()=>onPick(mi)} aria-pressed={sel} style={{padding:"5px 2px",borderRadius:8,border:"none",fontSize:11,fontWeight:sel?700:400,background:sel?C.selBg:"transparent",color:sel?C.text:C.gray,cursor:"pointer",transition:"background 0.1s"}}>
+                {m}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    ))}
+  </>
+);
+
+export const MonthPicker = ({value, onChange, startYear}) => {
   const [open, setOpen] = useState(false);
   const btnRef = React.useRef(null);
   useLiftCard(open, btnRef);
@@ -18,13 +50,7 @@ export const MonthPicker = ({value, onChange}) => {
       {open && <>
         <div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
         <div style={popoverStyle(220, "right")}>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:3}}>
-            {MONTH_NAMES.map((m,mi)=>(
-              <button key={mi} onClick={()=>{onChange(mi);setOpen(false);}} style={{padding:"5px 2px",borderRadius:8,border:"none",fontSize:11,fontWeight:mi===value?700:400,background:mi===value?C.selBg:"transparent",color:mi===value?C.text:C.gray,cursor:"pointer",transition:"background 0.1s"}}>
-                {m}
-              </button>
-            ))}
-          </div>
+          <MonthGrid startYear={startYear} selectedMi={value} onPick={mi=>{onChange(mi);setOpen(false);}}/>
         </div>
       </>}
     </div>
@@ -60,16 +86,9 @@ export const PeriodPicker = ({value, onChange, yearsList}) => {
           <button onClick={()=>{onChange({type:"year",ayId:browseYr,label:yLabel(browseYr)});setOpen(false);}} style={{width:"100%",padding:"6px 8px",borderRadius:8,border:`1px solid ${value.type==="year"&&value.ayId===browseYr?C.sel:C.border}`,background:value.type==="year"&&value.ayId===browseYr?C.selBg:"transparent",color:C.text,fontSize:11,fontWeight:600,cursor:"pointer",marginBottom:8,transition:"all .1s"}}>
             Full year — {yLabel(browseYr)}
           </button>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:3}}>
-            {MONTH_NAMES.map((m,mi)=>{
-              const sel = value.type==="month" && value.ayId===browseYr && value.mi===mi;
-              return (
-                <button key={mi} onClick={()=>{onChange({type:"month",ayId:browseYr,mi,label:`${m} (${yLabel(browseYr)})`});setOpen(false);}} style={{padding:"5px 2px",borderRadius:8,border:"none",fontSize:11,fontWeight:sel?700:400,background:sel?C.selBg:"transparent",color:sel?C.text:C.gray,cursor:"pointer",transition:"background 0.1s"}}>
-                  {m}
-                </button>
-              );
-            })}
-          </div>
+          <MonthGrid startYear={yLabel(browseYr)}
+            selectedMi={value.type==="month" && value.ayId===browseYr ? value.mi : -1}
+            onPick={mi=>{onChange({type:"month",ayId:browseYr,mi,label:`${MONTH_NAMES[mi]} (${yLabel(browseYr)})`});setOpen(false);}}/>
         </div>
       </>}
     </div>

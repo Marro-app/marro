@@ -4,7 +4,7 @@ import { C, CHART_COLORS, tipProps } from '../lib/theme.js';
 import { fmt, fmtS, MONTH_NAMES, MONTH_FULL, sanitizeMoneyInput } from '../lib/format.js';
 import { USMLE_STEP_FEE_ESTIMATE } from '../lib/constants.js';
 import { Card, SectionTitle, Divider, InfoTip, Pill, XBtn, Modal } from '../components/primitives.jsx';
-import { Icon, CatIcon, CatIconPicker } from '../components/icons.jsx';
+import { Icon, CatIcon, CatIconPicker, ChangeIconButton } from '../components/icons.jsx';
 import { MonthPicker } from '../components/pickers.jsx';
 import { SubscriptionsTab } from './SubscriptionsTab.jsx';
 import { useApp } from '../context/AppContext.js';
@@ -20,7 +20,7 @@ export function BudgetTab(){
           moSpend, moSpendable, moSurplus, runningBalance, totalAccumulatedBalance,
           priorYearsCarryover, annDisburse, annOther, allEntriesFlat,
           getMonthVal, spentInMonth, unbudgetedCats, unbudgetedTotal, promoteToBudget,
-          toggleMonthCat, setMo, setYrF, reorderCats, addCat,
+          toggleMonthCat, setMo, reorderCats, addCat,
           newCatName, setNewCatName, newCatIcon, setNewCatIcon, iconPickOpen, setIconPickOpen } = useApp();
   const [dragCat, setDragCat] = useState(null);
   const [dragOverCat, setDragOverCat] = useState(null);
@@ -72,9 +72,11 @@ export function BudgetTab(){
         <div style={{fontSize:12,fontWeight:600,color:C.textMid,marginBottom:8}}>Create new category</div>
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
           <div style={{display:"flex",gap:8}}>
-            <button className="btn-pop" type="button" onClick={()=>setIconPickOpen(o=>!o)} title="Choose icon" aria-expanded={iconPickOpen} style={{width:36,height:36,borderRadius:8,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,border:`1px solid ${iconPickOpen?C.sel:C.border}`,background:iconPickOpen?C.selBg:"transparent",color:C.text,cursor:"pointer",transition:"all .15s"}}>
-              <Icon name={newCatIcon} size={16} strokeWidth={1.5}/>
-            </button>
+            {/* Icon picker: the bordered plate reads as a button; a scrim + pencil
+                surfaces the "change icon" affordance on hover/focus. */}
+            <ChangeIconButton onClick={()=>setIconPickOpen(o=>!o)} ariaLabel="Change category icon" expanded={iconPickOpen}>
+              <Icon name={newCatIcon} size={18} strokeWidth={1.5}/>
+            </ChangeIconButton>
             <input placeholder="Category name" value={newCatName} onChange={e=>setNewCatName(e.target.value)} style={{flex:1,fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px",background:C.bg,color:C.text}}/>
             <button className="btn-fill" onClick={()=>{if(newCatName.trim()){addCat();setShowAddCat(false);setIconPickOpen(false);}}} disabled={!newCatName.trim()} style={{padding:"8px 16px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:!newCatName.trim()?C.surface:C.teal,color:!newCatName.trim()?C.gray:C.bg,cursor:!newCatName.trim()?"not-allowed":"pointer"}}>Add</button>
           </div>
@@ -85,7 +87,7 @@ export function BudgetTab(){
           <Card>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
               <SectionTitle>Monthly plan</SectionTitle>
-              <MonthPicker value={selMonth} onChange={setSelMonth}/>
+              <MonthPicker value={selMonth} onChange={setSelMonth} startYear={yrStartYear}/>
             </div>
             <div style={{fontSize:11,color:C.gray,marginBottom:12}}>Set how much you <em>intend</em> to spend each month — log actual spending with <strong>Quick add</strong>.</div>
 
@@ -191,7 +193,7 @@ export function BudgetTab(){
               {[
                 {l:"Total aid sent to you",      v:fmt(annDisburse)+"/yr",    c:C.teal},
                 {l:"Other income",              v:fmt(annOther)+"/yr",       c:C.text},
-                {l:"Monthly spendable",         v:fmt(moSpendable)+"/mo",    c:C.teal,bold:true},
+                {l:"Monthly spending money",    v:fmt(moSpendable)+"/mo",    c:C.teal,bold:true},
                 {l:"Monthly plan",              v:fmt(moSpend)+"/mo",        c:C.text},
                 {l:"Monthly surplus",           v:fmtS(moSurplus)+"/mo",     c:moSurplus>=0?C.green:C.neg,bold:true},
               ].map(r=>(
@@ -201,7 +203,7 @@ export function BudgetTab(){
                 </div>
               ))}
               <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0 2px",fontSize:13,fontWeight:700}}>
-                <span>Planned surplus <InfoTip text="What you'd have left if you stick to your budget — not your actual bank balance."/> <span style={{fontSize:10,color:C.gray,fontWeight:400}}>if you stay on budget · through {MONTH_FULL[selMonth]}</span></span>
+                <span>Projected leftover <InfoTip text="What you'd have left if you stick to your budget — not your actual bank balance."/> <span style={{fontSize:10,color:C.gray,fontWeight:400}}>if you stay on budget · through {MONTH_FULL[selMonth]}</span></span>
                 <span style={{color:runningBalance>=0?C.teal:C.neg}}>{fmtS(runningBalance)}</span>
               </div>
               {moSurplus!==0 && (
@@ -241,18 +243,27 @@ export function BudgetTab(){
             </Card>
 
             <Card>
-              <button type="button" onClick={()=>setShowHealthChecks(s=>!s)} aria-expanded={showHealthChecks} aria-controls="health-checks-panel"
-                style={{display:"flex",alignItems:"center",gap:8,width:"100%",minHeight:32,background:"none",border:"none",padding:0,marginBottom:showHealthChecks?14:0,cursor:"pointer",textAlign:"left",font:"inherit"}}>
+              {/* The ENTIRE header row toggles, not just the chevron. Negative
+                  margins cancel the Card's 18px/20px padding so the button reaches
+                  the card edges; the same padding is added back inside (box-sizing:
+                  border-box) so the label sits where it did — clicking anywhere on
+                  the row, including the whitespace beside the chevron, toggles. */}
+              <button type="button" id="health-checks-btn" onClick={()=>setShowHealthChecks(s=>!s)} aria-expanded={showHealthChecks} aria-controls="health-checks-panel"
+                style={{display:"flex",alignItems:"center",justifyContent:"flex-start",gap:8,width:"auto",boxSizing:"border-box",minHeight:44,margin:"-18px -20px 0",padding:"18px 20px 6px",background:"none",border:"none",cursor:"pointer",textAlign:"left",font:"inherit"}}>
                 <Icon name="chevron" size={12} style={{transform:showHealthChecks?"rotate(180deg)":"none",transition:"transform .15s",color:C.gray,flexShrink:0}}/>
                 <span style={{fontSize:13,fontWeight:600,color:C.text}}>Health checks</span>
               </button>
-              {showHealthChecks && (
-                <div id="health-checks-panel">
+              {/* Always mounted (aria-controls target never dangles) and animated
+                  open/closed via the .collapse-panel grid-rows transition — so a
+                  rotated chevron always corresponds to a visibly-open panel. */}
+              <div id="health-checks-panel" role="region" aria-labelledby="health-checks-btn" className={`collapse-panel${showHealthChecks?' open':''}`}>
+                <div className="collapse-inner">
+                  <div style={{paddingTop:14}}>
                   {[
-                    ["Housing ratio",    moSpendable>0?Math.round((yr.monthly.housing||0)/moSpendable*100)+"%":"—", (yr.monthly.housing||0)/moSpendable<0.6,(yr.monthly.housing||0)/moSpendable<0.75,"Target <60% of spendable"],
+                    ["Housing ratio",    moSpendable>0?Math.round((yr.monthly.housing||0)/moSpendable*100)+"%":"—", (yr.monthly.housing||0)/moSpendable<0.6,(yr.monthly.housing||0)/moSpendable<0.75,"Target <60% of spending money"],
                     ["Monthly balance",  moSurplus>=0?"Positive":"Negative", moSurplus>=0, false, ""],
                     ["Savings",          (yr.monthly.savings||0)>0?fmt(yr.monthly.savings||0)+"/mo":"None", (yr.monthly.savings||0)>0, false, "Even $50/mo adds up"],
-                    ["Exam fund",        (yr.monthly.exams||0)>0?fmt(yr.monthly.exams||0)+"/mo":"$0/mo", ay<=1||(yr.monthly.exams||0)>0, ay>1, `Steps cost ~${fmt(USMLE_STEP_FEE_ESTIMATE)} each`],
+                    ["Exam fund",        (yr.monthly.exams||0)>0?fmt(yr.monthly.exams||0)+"/mo":"$0/mo", ay<=1||(yr.monthly.exams||0)>0, ay>1, `Steps cost about ${fmt(USMLE_STEP_FEE_ESTIMATE)} each`],
                   ].map(([label,val,ok,warn,tip])=>(
                     <div key={label} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
                       <span style={{color:C.gray}}>{label}</span>
@@ -262,12 +273,13 @@ export function BudgetTab(){
                       </div>
                     </div>
                   ))}
+                  </div>
                 </div>
-              )}
+              </div>
             </Card>
 
             <Card>
-              <SectionTitle>Planned surplus <InfoTip text="What you'd have left if you stick to your budget — not your actual bank balance."/></SectionTitle>
+              <SectionTitle>Projected leftover <InfoTip text="What you'd have left if you stick to your budget — not your actual bank balance."/></SectionTitle>
               <div style={{fontSize:26,fontWeight:700,color:totalAccumulatedBalance>=0?C.teal:C.neg,margin:"6px 0",fontFamily:"'Newsreader',Georgia,serif"}}>{fmtS(totalAccumulatedBalance)}</div>
               <div style={{fontSize:11,color:C.gray,lineHeight:1.6}}>
                 {priorYearsCarryover!==0
@@ -279,11 +291,10 @@ export function BudgetTab(){
               {totalAccumulatedBalance<0 && <div style={{marginTop:8,padding:"6px 10px",background:C.negLight,borderRadius:8,fontSize:11,color:C.neg}}>You&apos;re running a cumulative deficit. Review spending or adjust your budget.</div>}
             </Card>
 
-            <Card>
-              <SectionTitle>Notes</SectionTitle>
-              <textarea value={yr.notes||""} onChange={e=>setYrF(ay,"notes",e.target.value)} placeholder="Reminders, upcoming costs..."
-                style={{width:"100%",fontSize:12,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",resize:"vertical",minHeight:64,fontFamily:"inherit",color:C.text,background:C.bg,boxSizing:"border-box"}}/>
-            </Card>
+            {/* The free-text "Notes" block was removed from the UI (founder
+                call — looked cheap, rarely used). The underlying yr.notes data
+                field is left intact so existing notes still sync and nothing
+                breaks; it's simply no longer rendered here. */}
           </div>
         </div>
     </>

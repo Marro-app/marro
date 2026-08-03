@@ -21,3 +21,7 @@ node_modules
 .vercel
 dist/
 .vite/
+
+# Local scratch/design-draft folders (kept on disk, never committed)
+marro-mockups/
+docs/scratch/
