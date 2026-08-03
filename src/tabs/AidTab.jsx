@@ -344,18 +344,33 @@ export function AidTab(){
             </tbody>
           </table>
         </ScrollX>
-        <div style={{marginTop:10,padding:"8px 12px",background:totDisburse-totSpend>=0?C.tealLight:C.negLight,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${totDisburse-totSpend>=0?C.tealMid:C.negMid}`,borderRadius:8,fontSize:12,color:totDisburse-totSpend>=0?C.teal:C.neg,fontWeight:600}}>
-          {data.years.length}-year net: {fmtS(totDisburse-totSpend)}
-          {/* The old copy here said "most med students borrow to bridge this —
-              that's what the loans are for." That's wrong now: the loans the
-              student entered are already counted above, so a shortfall means
-              they'd need to borrow MORE than they've recorded. */}
-          {totDisburse-totSpend<0 && (
-            <div style={{marginTop:6,fontSize:11.5,fontWeight:400,color:C.textMid,lineHeight:1.5}}>
-              Your plan spends more than your aid and loans cover. You&apos;d need to borrow more, or trim your budget — your aid office can help you plan it.
+        {/* Years whose monthly budget is still at $0 across every category — either
+            never touched (BLANK_MONTHLY) or reset. Their "Monthly plan" figure isn't
+            a real spending estimate, so it silently inflates the net below unless
+            called out (founder feedback). */}
+        {(()=>{
+          const blankKeys=['housing','food','transport','personal','books','exams','savings','social'];
+          const unfilled=data.years.map((y,i)=>({y,i})).filter(({y})=>blankKeys.every(k=>!(Number(y.monthly?.[k])||0)));
+          return (
+            <div style={{marginTop:10,padding:"8px 12px",background:totDisburse-totSpend>=0?C.tealLight:C.negLight,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${totDisburse-totSpend>=0?C.tealMid:C.negMid}`,borderRadius:8,fontSize:12,color:totDisburse-totSpend>=0?C.teal:C.neg,fontWeight:600}}>
+              {data.years.length}-year net: {fmtS(totDisburse-totSpend)}
+              {/* The old copy here said "most med students borrow to bridge this —
+                  that's what the loans are for." That's wrong now: the loans the
+                  student entered are already counted above, so a shortfall means
+                  they'd need to borrow MORE than they've recorded. */}
+              {totDisburse-totSpend<0 && (
+                <div style={{marginTop:6,fontSize:11.5,fontWeight:400,color:C.textMid,lineHeight:1.5}}>
+                  Your plan spends more than your aid and loans cover. You&apos;d need to borrow more, or trim your budget — your aid office can help you plan it.
+                </div>
+              )}
+              {unfilled.length>0 && (
+                <div style={{marginTop:6,fontSize:11.5,fontWeight:400,color:C.textMid,lineHeight:1.5}}>
+                  Includes {unfilled.length===data.years.length?"":`${unfilled.length} `}year{unfilled.length>1?"s":""} with no monthly budget entered yet ({unfilled.map(({y,i})=>yearDisplay(y,i).primary).join(", ")}) — this total assumes $0 spending {unfilled.length>1?"for them":"for it"} until you fill one in.
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          );
+        })()}
       </Card>
 
       {/* Committed loan money that belongs to no year on this tab — surfaced

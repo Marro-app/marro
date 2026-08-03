@@ -12,13 +12,13 @@ import { useApp } from '../context/AppContext.js';
 // the over-budget warning / week-selector / CSV-import modals (all previously
 // hoisted to App). Private state: the log-expense form, the week picker, the
 // weekly notice, and CSV import. viewWeek stays shared (via useApp) so browsing
-// an archived week survives a tab switch. addEntry/delEntry live here now;
-// reverseDeposit (shared with Savings undo) comes from context.
+// an archived week survives a tab switch. addEntry lives here; addWeeklyEntry/
+// deleteWeeklyEntry (shared with Quick Add's History view) come from context.
 export function WeeklyTab(){
   const { data, upd, cats, ay, subsMo, moSpendable, yrStartYear,
           viewWeek, setViewWeek, archives, currentWeekStart, currentWeekEnd, currentEntries,
           weeklyBudget, lastWeekSurplus, thisWeekBudget, viewEntries, viewTotal, viewBudget,
-          getMonthValIdx, dismissed, dismiss, reverseDeposit, rolloverReco, addWeeklyEntry } = useApp();
+          getMonthValIdx, dismissed, dismiss, rolloverReco, addWeeklyEntry, deleteWeeklyEntry } = useApp();
   const [wCat, setWCat]     = useState("");
   const [wAmt, setWAmt]     = useState("");
   const [wNote, setWNote]   = useState("");
@@ -40,24 +40,6 @@ export function WeeklyTab(){
     } else if(info.isUnbudgeted){
       setWeeklyNotice({type:"info", cat:info.catLabel, month:MONTH_FULL[info.monthIdx]});
     }
-  };
-  const delEntry = (eid, isArchived) => {
-    let d = JSON.parse(JSON.stringify(data));
-    // If this weekly entry is linked to savings deposits/contributions, reverse them all
-    const linkedSls=(d.savingsLog||[]).filter(s=>s.weeklyEntryId===eid);
-    if(linkedSls.length){
-      linkedSls.forEach(sl=>reverseDeposit(d, sl));
-      upd(d); return;
-    }
-    if(isArchived){
-      d.weeklyArchive=d.weeklyArchive.map(a=>{
-        const ents=a.entries.filter(e=>e.id!==eid);
-        return {...a,entries:ents,total:ents.reduce((s,e)=>s+Number(e.amount),0)};
-      });
-    } else {
-      d.currentWeekEntries=d.currentWeekEntries.filter(e=>e.id!==eid);
-    }
-    upd(d);
   };
   const isPastWeekDate = wDate && getMonday(wDate) < getMonday(new Date());
   const isFutureWeekDate = wDate && getMonday(wDate) > getMonday(new Date());
@@ -362,7 +344,7 @@ export function WeeklyTab(){
                         <div style={{fontSize:11,color:C.gray,marginTop:1}}>{fmtDay(e.date)}{e.note?" · "+e.note:""}</div>
                       </div>
                       <span style={{fontWeight:700,fontSize:13,color:C.text}}>{fmtA(e.amount)}</span>
-                      <XBtn label="Delete entry" onClick={()=>delEntry(e.id,!!viewWeek)}/>
+                      <XBtn label="Delete entry" onClick={()=>deleteWeeklyEntry(e.id,!!viewWeek)}/>
                     </div>
                   );
                 })

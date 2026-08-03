@@ -921,6 +921,29 @@ export function App() {
     }
   };
 
+  // Delete a logged weekly entry (Weekly tab's own list + Quick Add's History
+  // view both call this — single source of truth so they can't drift). An
+  // exams entry may have seeded one or more Step-goal deposits; those must be
+  // reversed first or the goal balance would silently overcount after the
+  // entry disappears.
+  const deleteWeeklyEntry = (eid, isArchived) => {
+    let d = JSON.parse(JSON.stringify(data));
+    const linkedSls = (d.savingsLog||[]).filter(s=>s.weeklyEntryId===eid);
+    if(linkedSls.length){
+      linkedSls.forEach(sl=>reverseDeposit(d, sl));
+      upd(d); return;
+    }
+    if(isArchived){
+      d.weeklyArchive=(d.weeklyArchive||[]).map(a=>{
+        const ents=a.entries.filter(e=>e.id!==eid);
+        return {...a,entries:ents,total:ents.reduce((s,e)=>s+Number(e.amount),0)};
+      });
+    } else {
+      d.currentWeekEntries=(d.currentWeekEntries||[]).filter(e=>e.id!==eid);
+    }
+    upd(d);
+  };
+
   // Log a one-off actual expense (Weekly tab's log form + the header Quick add
   // button both call this). Files to the correct week/archive slot, credits any
   // exam spending toward Step goals, and returns info the caller can use to show
@@ -1118,7 +1141,7 @@ export function App() {
     // shared mutation helpers (don't close over any one tab's private form state)
     setMo, setYrF, syncSubs, promoteToBudget, toggleMonthCat, removeWeeklyEntry,
     reverseDeposit, reverseDepositGroup, addCat, reorderCats, delCat,
-    reinstateYear, addYear, removeYear, addWeeklyEntry, applyRenewal,
+    reinstateYear, addYear, removeYear, addWeeklyEntry, deleteWeeklyEntry, applyRenewal,
   };
 
   return (

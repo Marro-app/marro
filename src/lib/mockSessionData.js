@@ -193,9 +193,9 @@ export function buildMockState() {
     // ── Weekly: a normal week plus one big one-off cost (Step 1 registration)
     // so the Weekly/Budget tabs have something to look at beyond zeros.
     currentWeekEntries: [
-      { id: 'we_mock_1', date: getMonday(new Date()), category: 'food', amount: 42.5, note: 'Groceries' },
-      { id: 'we_mock_2', date: todayStr(), category: 'exams', amount: 745, note: 'USMLE Step 1 registration fee' },
-      { id: 'we_mock_3', date: todayStr(), category: 'transport', amount: 18, note: 'Gas' },
+      { id: 'we_mock_1', date: getMonday(new Date()), catId: 'food', amount: 42.5, note: 'Groceries' },
+      { id: 'we_mock_2', date: todayStr(), catId: 'exams', amount: 745, note: 'USMLE Step 1 registration fee' },
+      { id: 'we_mock_3', date: todayStr(), catId: 'transport', amount: 18, note: 'Gas' },
     ],
     weeklyArchive: [],
     subscriptions: [
