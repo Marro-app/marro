@@ -147,8 +147,25 @@ export function yearMonthRange(year) {
     const d = new Date(iso + "T12:00:00");
     return Number.isNaN(d.getTime()) ? null : (d.getMonth() - 7 + 12) % 12;
   };
-  const from = idx(year?.startDate), to = idx(year?.endDate);
-  if (from == null || to == null || to < from) return { from: 0, to: 11 };
+  // Calendar-monotonic year*12+month, for measuring the REAL elapsed span —
+  // idx() alone maps onto a lossy 0-11 academic-month slot, so a year running
+  // 12+ calendar months (e.g. a mistyped end date a year past start) wraps back
+  // onto its own start month and idx(end) looks identical to (or even less
+  // than) idx(start). That collapsed the picker to a single clickable month
+  // instead of the full year — see bug report 2026-08-02.
+  const ym = (iso) => {
+    if (!iso) return null;
+    const d = new Date(iso + "T12:00:00");
+    return Number.isNaN(d.getTime()) ? null : d.getFullYear() * 12 + d.getMonth();
+  };
+  const from = idx(year?.startDate);
+  const startYm = ym(year?.startDate), endYm = ym(year?.endDate);
+  if (from == null || startYm == null || endYm == null || endYm < startYm) return { from: 0, to: 11 };
+  // The 12-slot Aug→Jul grid can't represent a 13th month anyway, so a span of
+  // 11+ full calendar months (this year or longer) clamps to the last slot
+  // (July) rather than wrapping into a bogus/degenerate range.
+  const elapsed = endYm - startYm;
+  const to = elapsed >= 11 ? 11 : idx(year.endDate);
   return { from, to };
 }
 

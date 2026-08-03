@@ -8,6 +8,7 @@ import { MonthPicker } from '../components/pickers.jsx';
 import { SubscriptionsTab } from './SubscriptionsTab.jsx';
 import { useApp } from '../context/AppContext.js';
 import { targetIndexFor, rowShift } from '../lib/reorder.js';
+import { SHOW_GAP_FORECAST } from '../lib/featureFlags.js';
 
 // Budget — the monthly plan (per-category budgets for the selected month), cash
 // flow, health checks, running balance, and notes, plus the add-category and
@@ -46,6 +47,9 @@ export function BudgetTab(){
   const monthIdxOf = (iso) => { const d = new Date(iso+"T12:00:00"); return Number.isNaN(d.getTime()) ? null : (d.getMonth()-7+12)%12; };
   const leanMonths = (() => {
     const out = new Set();
+    // Suspended behind SHOW_GAP_FORECAST (see featureFlags.js) — founder call,
+    // 2026-08-02, the underlying dry-spell forecast felt unrealistic.
+    if (!SHOW_GAP_FORECAST) return out;
     for (const s of runway?.shortfalls || []) {
       // Only THIS year's dry spells. computeRunway projects across every year
       // through graduation, so without this a shortfall two years out would mark

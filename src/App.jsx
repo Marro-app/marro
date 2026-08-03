@@ -36,7 +36,7 @@ const LandingPage = React.lazy(() => {
 });
 import { ProgramModal, ProfileModal, AvatarModal, MarroIntro, OnboardingFlow, ProgressiveSetup } from './components/onboarding.jsx';
 import { RenewalDialog, ConflictModal, QuickAddModal } from './components/modals.jsx';
-import { HIDDEN_TABS, SHOW_PHASE2_TILES } from './lib/featureFlags.js';
+import { HIDDEN_TABS, SHOW_PHASE2_TILES, SHOW_GAP_FORECAST } from './lib/featureFlags.js';
 import { AppContext } from './context/AppContext.js';
 // Tabs are lazy-loaded so the heavy Recharts dependency (only used by Budget/
 // Charts/Savings) and the other tab code stay OUT of the initial bundle. A
@@ -1642,20 +1642,23 @@ export function App() {
           </div>);
         }
         // Dry-spell / overdrawn warning — only when there's actually a cash gap coming.
-        const dry = runway.state==='gap' ? (runway.shortfalls?.[0] || null) : null;
+        // Suspended behind SHOW_GAP_FORECAST (see featureFlags.js) — founder call,
+        // 2026-08-02, the forecast felt unrealistic. Doesn't touch showVsPlan above,
+        // which uses actual-check-in pace, not this projection.
+        const dry = SHOW_GAP_FORECAST && runway.state==='gap' ? (runway.shortfalls?.[0] || null) : null;
         return (
           <>
-            <div style={{display:"flex",gap:10,marginBottom:viewingCurrentYear&&(runway.state==='gap'||runway.state==='overdrawn')?10:20,flexWrap:"wrap",alignItems:"flex-start"}}>
+            <div style={{display:"flex",gap:10,marginBottom:SHOW_GAP_FORECAST&&viewingCurrentYear&&(runway.state==='gap'||runway.state==='overdrawn')?10:20,flexWrap:"wrap",alignItems:"flex-start"}}>
               <HeaderTile label={sLabel} value={sValue} valueColor={C.teal} glance={s_glance} panel={s_panel}/>
               <HeaderTile label="By end of year" value={fmtS(curYrNet)} valueColor={yeColor} glance={ye_glance} panel={ye_panel}/>
               {showVsPlan && <HeaderTile label="Compared to your plan" value={vpValue} valueColor={vpColor} glance={vp_glance} panel={vp_panel}/>}
             </div>
-            {viewingCurrentYear && runway.state==='gap' && (
+            {SHOW_GAP_FORECAST && viewingCurrentYear && runway.state==='gap' && (
               <div style={{marginBottom:20}}><Banner type="warn">
                 Heads up — your spending money gets tight{dry?.date?` around ${fmtDay(dry.date)}`:""}, before your next aid arrives{runway.nextRefund?.date?` (${runway.nextRefund.isEstimate?"around ":""}${fmtDay(runway.nextRefund.date)})`:""}. Spending about {fmt(runway.trimPerMonthToClose)}/mo less until then would bridge it.{runway.savings>0?` You also have ${fmt(runway.savings)} in savings if you need it.`:""}
               </Banner></div>
             )}
-            {viewingCurrentYear && runway.state==='overdrawn' && (
+            {SHOW_GAP_FORECAST && viewingCurrentYear && runway.state==='overdrawn' && (
               <div style={{marginBottom:20}}><Banner type="warn">
                 Your spending money is down to $0{runway.coveredBySavings?" — your savings can cover it for now.":", with no savings to fall back on yet."}
               </Banner></div>
