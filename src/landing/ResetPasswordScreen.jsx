@@ -1,5 +1,7 @@
 import React, { useId, useState } from 'react';
 import { getSupabase } from '../lib/data.js';
+import { passwordMeetsAll } from '../lib/passwordRules.js';
+import { PasswordRequirements } from './PasswordRequirements.jsx';
 
 // The screen a user lands on after clicking the "Reset password" link in
 // their email (see supabase/email_templates.md "Template 2" — its
@@ -19,8 +21,6 @@ import { getSupabase } from '../lib/data.js';
 // the caller passes `sessionValid` down after checking, and this component
 // never assumes success.
 
-const MIN_PASSWORD_LEN = 6;
-
 export function ResetPasswordScreen({ sessionValid, onRequestNewLink, headingRef }){
   const uid = useId();
   const headingId = `${uid}-heading`;
@@ -30,15 +30,18 @@ export function ResetPasswordScreen({ sessionValid, onRequestNewLink, headingRef
   const [error, setError] = useState(null);
   const [done, setDone] = useState(false);
 
+  // Length/complexity is shown by the live PasswordRequirements checklist (which
+  // gates submit); here we only surface the passwords-don't-match case.
   const validationError = (() => {
-    if (password && password.length < MIN_PASSWORD_LEN){
-      return `Password must be at least ${MIN_PASSWORD_LEN} characters.`;
-    }
     if (confirm && password !== confirm){
       return "Passwords don't match.";
     }
     return null;
   })();
+
+  // Can only submit once every password rule is met and the confirm matches —
+  // mirrors Supabase's server-side check so there's no post-submit rejection.
+  const resetReady = passwordMeetsAll(password) && confirm.length > 0 && confirm === password;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -50,6 +53,10 @@ export function ResetPasswordScreen({ sessionValid, onRequestNewLink, headingRef
     }
     if (validationError){
       setError(validationError);
+      return;
+    }
+    if (!resetReady){
+      setError('Please meet all the password requirements.');
       return;
     }
     setPending(true);
@@ -137,6 +144,8 @@ export function ResetPasswordScreen({ sessionValid, onRequestNewLink, headingRef
           />
         </div>
 
+        <PasswordRequirements password={password} id={`${uid}-pwreq`} />
+
         {validationError && (password || confirm) && (
           <div role="alert" className="lp-eperr">{validationError}</div>
         )}
@@ -145,7 +154,7 @@ export function ResetPasswordScreen({ sessionValid, onRequestNewLink, headingRef
         <button
           type="submit"
           className="lp-btn lp-btn-fill lp-epsubmit"
-          disabled={pending || !!validationError}
+          disabled={pending || !!validationError || !resetReady}
           aria-busy={pending}
         >
           {pending ? 'Updating…' : 'Update password'}

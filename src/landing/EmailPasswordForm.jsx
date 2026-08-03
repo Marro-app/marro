@@ -1,5 +1,7 @@
 import React, { useId, useRef, useState } from 'react';
 import { getSupabase } from '../lib/data.js';
+import { passwordMeetsAll } from '../lib/passwordRules.js';
+import { PasswordRequirements } from './PasswordRequirements.jsx';
 
 // Email + password sign-in/sign-up form fields — rendered inside AuthModal.jsx
 // (see that file for the modal shell: tabs live one level up there so the
@@ -13,8 +15,6 @@ import { getSupabase } from '../lib/data.js';
 // Same lazy-import discipline as SignInButton.jsx: supabase-js is only
 // pulled in on submit, never at module scope, so a cold logged-out visit
 // that never touches this form doesn't pay for it.
-
-const MIN_PASSWORD_LEN = 6; // Supabase's own default minimum
 
 function PasswordField({ id, label, value, onChange, autoComplete, error, disabled, onEnter }){
   const [show, setShow] = useState(false);
@@ -62,7 +62,7 @@ function PasswordField({ id, label, value, onChange, autoComplete, error, disabl
 // it can also drive the modal's heading text) — this component only renders
 // the fields, validation, and submit/resend logic for whichever mode is
 // active.
-export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassword, initialEmail, onSwitchToSignup }){
+export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassword, initialEmail, onSwitchToSignup, signupBlocked = false, onSignupConsent }){
   const uid = useId();
   const [email, setEmail] = useState(initialEmail || '');
   const [password, setPassword] = useState('');
@@ -79,16 +79,20 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
   const [showSignupNudge, setShowSignupNudge] = useState(false);
 
   // Inline pre-submit validation — kept minimal; Supabase's own errors after
-  // submit remain the primary source of truth.
+  // submit remain the primary source of truth. Length/complexity in signup is
+  // handled by the live PasswordRequirements checklist (which gates submit), so
+  // here we only surface the passwords-don't-match case.
   const validationError = (() => {
-    if (mode === 'signup' && password && password.length < MIN_PASSWORD_LEN){
-      return `Password must be at least ${MIN_PASSWORD_LEN} characters.`;
-    }
     if (mode === 'signup' && confirm && password !== confirm){
       return "Passwords don't match.";
     }
     return null;
   })();
+
+  // Signup can only submit once every password rule is met AND the confirm
+  // field matches — mirrors Supabase's server-side password check so the user
+  // never hits a WeakPasswordError after the fact.
+  const signupReady = mode !== 'signup' || (passwordMeetsAll(password) && confirm.length > 0 && confirm === password);
 
   const friendlyError = (err) => {
     const msg = (err && (err.message || err.error_description)) || '';
@@ -109,6 +113,9 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (offline || pending) return;
+    // Guard the Enter-to-submit path too (the button is already disabled): no
+    // account creation until the consent attestation is checked.
+    if (mode === 'signup' && signupBlocked) return;
     setError(null);
     setNotice(null);
     setNeedsConfirm(false);
@@ -116,6 +123,11 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
 
     if (validationError){
       setError(validationError);
+      return;
+    }
+    // Guard the Enter-to-submit path (the button is already disabled): don't
+    // attempt signup until every password requirement is satisfied.
+    if (mode === 'signup' && !signupReady){
       return;
     }
 
@@ -146,6 +158,10 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
         window.location.href = window.location.pathname;
         return; // page is navigating away — leave `pending` true, no further UI updates needed
       } else {
+        // Record the consent intent just before creating the account, so it
+        // survives the email-confirmation round-trip and is persisted on the
+        // next authenticated boot (see lib/consent.js).
+        onSignupConsent?.();
         const { error: signUpErr } = await sb.auth.signUp({
           email,
           password,
@@ -239,6 +255,10 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
         />
       )}
 
+      {mode === 'signup' && (
+        <PasswordRequirements password={password} id={`${uid}-pwreq`} />
+      )}
+
       {validationError && (password || confirm) && (
         <div role="alert" className="lp-eperr">{validationError}</div>
       )}
@@ -272,7 +292,7 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
       <button
         type="submit"
         className="lp-btn lp-btn-fill lp-epsubmit"
-        disabled={disabled || !!validationError}
+        disabled={disabled || !!validationError || signupBlocked || !signupReady}
         aria-busy={pending}
       >
         {pending ? 'Please wait…' : (mode === 'signin' ? 'Log in' : 'Create account')}

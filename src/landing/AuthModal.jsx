@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getSupabase, stashPendingInviteCode } from '../lib/data.js';
+import { stashPendingConsent } from '../lib/consent.js';
 import { GoogleGlyph } from '../components/icons.jsx';
 import { EmailPasswordFields } from './EmailPasswordForm.jsx';
 import { RequestResetForm } from './RequestResetForm.jsx';
@@ -32,6 +33,11 @@ const FOCUSABLE_SELECTOR =
 export function AuthModal({ open, initialMode = 'signin', offline, onClose, triggerRef }){
   const [mode, setMode] = useState(initialMode);
   const [googlePending, setGooglePending] = useState(false);
+  // Clickwrap consent (signup only): the minor/age attestation must be checked
+  // before an account can be created, and it gates BOTH the email "Create
+  // account" submit and the "Continue with Google" button. See lib/consent.js.
+  const [agreed, setAgreed] = useState(false);
+  const signupBlocked = mode === 'signup' && !agreed;
   // "Wrong tab" rescue: when sign-in fails on credentials, EmailPasswordFields
   // offers "New to Marro? Create an account" — switching tabs remounts the
   // fields (key={mode}), so the typed email is carried across here.
@@ -106,6 +112,10 @@ export function AuthModal({ open, initialMode = 'signin', offline, onClose, trig
   if (!open) return null;
 
   const signInGoogle = async () => {
+    // Record the consent intent before the OAuth redirect navigates away, so it
+    // survives the round-trip and is written once the session lands. Only on the
+    // signup tab (the Log in tab is for users who already agreed at signup).
+    if (mode === 'signup') stashPendingConsent({ guardianAttested: agreed });
     setGooglePending(true);
     const sb = await getSupabase();
     sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } });
@@ -167,6 +177,18 @@ export function AuthModal({ open, initialMode = 'signin', offline, onClose, trig
                 </button>
               </div>
 
+              {mode === 'signup' && (
+                <label className="lp-consent">
+                  <input
+                    type="checkbox"
+                    className="lp-consent-box"
+                    checked={agreed}
+                    onChange={(e) => setAgreed(e.target.checked)}
+                  />
+                  <span>I&rsquo;m 18 or older, or my parent or legal guardian has read and agreed to the Terms on my behalf.</span>
+                </label>
+              )}
+
               <EmailPasswordFields
                 mode={mode}
                 offline={offline}
@@ -174,6 +196,8 @@ export function AuthModal({ open, initialMode = 'signin', offline, onClose, trig
                 onForgotPassword={() => setMode('reset-request')}
                 initialEmail={prefillEmail}
                 onSwitchToSignup={(email) => { setPrefillEmail(email || ''); setMode('signup'); }}
+                signupBlocked={signupBlocked}
+                onSignupConsent={() => stashPendingConsent({ guardianAttested: agreed })}
                 key={mode}
               />
 
@@ -182,13 +206,19 @@ export function AuthModal({ open, initialMode = 'signin', offline, onClose, trig
               <button
                 type="button"
                 className="lp-btn lp-btn-ghost lp-authgoogle"
-                disabled={offline || googlePending}
+                disabled={offline || googlePending || signupBlocked}
                 aria-busy={googlePending}
                 onClick={signInGoogle}
               >
                 <GoogleGlyph size={17} />
                 {googlePending ? 'Connecting…' : 'Continue with Google'}
               </button>
+
+              <p className="lp-consent-note">
+                By continuing, you agree to Marro&rsquo;s{' '}
+                <a href="/terms.html" target="_blank" rel="noopener">Terms</a> and{' '}
+                <a href="/privacy.html" target="_blank" rel="noopener">Privacy&nbsp;Policy</a>.
+              </p>
             </>
           )}
         </div>

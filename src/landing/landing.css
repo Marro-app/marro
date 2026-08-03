@@ -463,6 +463,25 @@ html:has(.lp)::-webkit-scrollbar-thumb:hover{background:rgba(246,239,221,.45)}
 
 .lp-authgoogle{width:100%}
 
+/* ===== REGISTRATION CONSENT (clickwrap) ===== */
+.lp-consent{display:flex;align-items:flex-start;gap:10px;margin:4px 0 14px;cursor:pointer;font-size:13px;line-height:1.5;color:var(--lp-cream63)}
+.lp-consent-box{flex:none;width:18px;height:18px;margin-top:1px;accent-color:var(--lp-cream);cursor:pointer}
+.lp-consent-box:focus-visible{outline:2px solid var(--lp-cream);outline-offset:2px}
+.lp-consent-note{margin:14px 0 0;font-size:12px;line-height:1.5;color:var(--lp-cream40);text-align:center}
+.lp-consent-note a{color:var(--lp-cream63);text-decoration:underline}
+.lp-consent-note a:focus-visible{outline:2px solid var(--lp-cream);outline-offset:2px;border-radius:2px}
+
+/* ===== LIVE PASSWORD REQUIREMENTS CHECKLIST (signup + reset) ===== */
+.lp-pwreq{list-style:none;margin:2px 0 12px;padding:0;display:flex;flex-direction:column;gap:5px}
+.lp-pwreq-item{display:flex;align-items:center;gap:8px;font-size:12.5px;line-height:1.35;color:var(--lp-cream63)}
+.lp-pwreq-icon{display:inline-flex;flex:none;width:16px;height:16px;align-items:center;justify-content:center;color:#E5675E}
+/* Met state = green check + brighter label. State is ALSO conveyed by the icon
+   shape (X to check) and sr-only text, so color is never the only signal (WCAG 1.4.1). */
+.lp-pwreq-item.is-met{color:var(--lp-cream)}
+.lp-pwreq-item.is-met .lp-pwreq-icon{color:#54B96B}
+@media (prefers-reduced-motion:no-preference){.lp-pwreq-item,.lp-pwreq-icon{transition:color .15s ease}}
+.lp-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
 /* ===== EMAIL/PASSWORD FORM FIELDS (Phase A, now rendered inside AuthModal) ===== */
 .lp-eptabs{display:flex;gap:8px;margin-bottom:16px}
 .lp-eptab{flex:1;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--lp-border);background:transparent;color:var(--lp-cream63);font:inherit;font-size:14px;font-weight:600;cursor:pointer;transition:background .15s ease,color .15s ease}
