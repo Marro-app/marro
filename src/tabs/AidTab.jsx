@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { C } from '../lib/theme.js';
 import { fmt, fmtS, moTotal, todayStr, sanitizeMoneyInput } from '../lib/format.js';
-import { Card, SectionTitle, XBtn, Pill, Banner, ScrollX, InfoTip } from '../components/primitives.jsx';
+import { Card, SectionTitle, XBtn, Pill, ScrollX, InfoTip } from '../components/primitives.jsx';
 import { Icon } from '../components/icons.jsx';
 import { DateField } from '../components/pickers.jsx';
 import { useApp } from '../context/AppContext.js';
@@ -52,30 +52,50 @@ export function AidTab(){
     return next;
   });
 
+  // Item 8 — friendly full date for overlap messages. ISO "YYYY-MM-DD" strings
+  // sort/compare correctly as plain strings, so the overlap checks below just
+  // use </<=/>= on them; this is only for the human-readable message text.
+  const friendlyDate = iso => iso ? new Date(iso+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "";
+  const shortLabel = y => (y?.label||"").split("—")[0].trim();
+
   return (
     <div role="tabpanel" id="tab-panel" aria-labelledby="tab-aid" tabIndex={0} ref={panelRef} style={{display:"flex",flexDirection:"column",gap:16}}>
       {aidNoteOpen && (
-        <div ref={aidNoteRef}>
-          <Banner type="info" onClose={closeAidNote}>
-            <div style={{fontWeight:700,marginBottom:8}}>How your aid works</div>
-            <div style={{display:"flex",flexDirection:"column",gap:4}}>
-              <div style={{display:"flex",justifyContent:"space-between"}}>
-                <span>Total aid</span><strong style={{color:C.text}}>{fmt(annGrant)}</strong>
-              </div>
-              <div style={{display:"flex",justifyContent:"space-between",color:C.textMid}}>
-                <span>− Tuition &amp; fees</span><span>{fmt(annTuition)}</span>
-              </div>
-              {annHlth>0 && (
-                <div style={{display:"flex",justifyContent:"space-between",color:C.textMid}}>
-                  <span>− Health insurance</span><span>{fmt(annHlth)}</span>
-                </div>
-              )}
+        // Explanatory note (item 7 redesign): the old version stacked a bold
+        // banner title over a second filled teal box — two competing surfaces
+        // that read busy. This is a single quiet raised panel (G3 inline glass):
+        // a calm header, a clean right-aligned ledger with tabular numerals so
+        // the amounts line up, one hairline divider, then a single emphasized
+        // result row. Dismiss + Esc behavior is unchanged (closeAidNote).
+        <div ref={aidNoteRef} style={{position:"relative",borderRadius:12,padding:16,background:C.surface,border:`1px solid ${C.border}`,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)"}}>
+          <div style={{position:"absolute",top:8,right:8}}>
+            <XBtn label="Dismiss" onClick={closeAidNote} size={28}/>
+          </div>
+          <div style={{marginBottom:12,paddingRight:32}}>
+            <div style={{fontSize:13,fontWeight:600,color:C.text,letterSpacing:"-0.01em"}}>How your aid works</div>
+            <div style={{fontSize:11,color:C.gray,marginTop:4,lineHeight:1.5}}>Where this year&apos;s aid goes, and what&apos;s left for you to live on.</div>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:8,fontVariantNumeric:"tabular-nums"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:16,fontSize:12}}>
+              <span style={{color:C.textMid}}>Total aid</span>
+              <span style={{color:C.text,fontWeight:600}}>{fmt(annGrant)}</span>
             </div>
-            <div style={{marginTop:8,padding:"8px 12px",background:C.tealLight,border:`1px solid ${C.tealMid}`,borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontWeight:700,color:C.teal}}>= You get</span>
-              <strong style={{color:C.teal}}>{fmt(annDisburse)} <span style={{fontWeight:500}}>for living costs</span></strong>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:16,fontSize:12}}>
+              <span style={{color:C.textMid}}>Tuition &amp; fees</span>
+              <span style={{color:C.textMid}}>− {fmt(annTuition)}</span>
             </div>
-          </Banner>
+            {annHlth>0 && (
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:16,fontSize:12}}>
+                <span style={{color:C.textMid}}>Health insurance</span>
+                <span style={{color:C.textMid}}>− {fmt(annHlth)}</span>
+              </div>
+            )}
+            <div style={{height:1,background:C.border,margin:"4px 0"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:16}}>
+              <span style={{fontSize:12,fontWeight:600,color:C.text}}>You keep for living costs</span>
+              <span style={{fontSize:14,fontWeight:700,color:C.teal}}>{fmt(annDisburse)}</span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -83,20 +103,47 @@ export function AidTab(){
           Sent to you, the surplus Pill); click/Enter/Space expands the full
           field set. Real <button> for the toggle: native focus + keyboard
           activation, no custom key handling needed. */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:14}}>
+      {/* alignItems:"start" is load-bearing: grid items default to align-items:stretch,
+          which forces every card in a row to the height of its tallest sibling. So
+          expanding ONE card stretched its collapsed row-neighbors to match — they grew
+          tall and blank (summary row up top, empty space below) even though their detail
+          panel wasn't rendered. "start" lets each card size to its own content, so a
+          collapsed card stays a summary row no matter how tall its neighbor gets.
+          minmax(min(100%,300px),1fr) (per DESIGN_SYSTEM "Layout") also stops a hard 300px
+          track from overflowing viewports narrower than 300px. */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,300px),1fr))",gap:16,alignItems:"start"}}>
         {data.years.map((y,i)=>{
           const g=Number(y.grant)||0,tf=Number(y.tuitionFees)||0,hi=Number(y.healthIns)||0;
           const rawGap=g-tf-hi; // unfloored — negative means costs exceed aid
           const disb=Math.max(g-tf-hi,0),oth=(Number(y.otherIncome)||0)*12;
           const moD=(disb+oth)/12,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
           const expanded = expandedYears.has(y.id);
+          // Item 8 — flag overlapping year ranges. Years are stored in order, so
+          // the only neighbors that can overlap are i-1 (ends after this one
+          // starts) and i+1 (starts before this one ends). We flag rather than
+          // silently clamp so the student sees exactly what's wrong and fixes it.
+          const prevYr = data.years[i-1], nextYr = data.years[i+1];
+          const startOverlap = prevYr?.endDate && y.startDate && y.startDate <= prevYr.endDate;
+          const endOverlap   = nextYr?.startDate && y.endDate && y.endDate >= nextYr.startDate;
+          const invertedRange = y.startDate && y.endDate && y.endDate < y.startDate;
           return (
-            <Card key={y.id}>
+            // Item 10 — an expanded card spans the whole grid (grid-column:1/-1)
+            // so its collapsed row-neighbors reflow below/around it instead of
+            // being stretched blank beside it; collapsed cards keep their normal
+            // single track. At mobile width the grid is already one column, so
+            // 1/-1 is a no-op there.
+            <Card key={y.id} style={{gridColumn:expanded?"1 / -1":"auto"}}>
               {/* Pinned top-right so it never wraps down beside the pill */}
               {data.years.length>1 && <div style={{position:"absolute",top:12,right:12,zIndex:1}}><XBtn label="Remove year" onClick={()=>setConfirmYearRemove(y.id)} size={30}/></div>}
 
+              {/* Item 9 — the ENTIRE header row is one full-width button. Negative
+                  margins pull it out to the card's edges and the padding is added
+                  back inside, so the whole header (including the empty space beside
+                  the chevron that used to be dead card-padding) toggles the card.
+                  box-sizing:border-box keeps the padded-back button within bounds.
+                  Extra right padding clears the absolutely-positioned Remove ✕. */}
               <button type="button" onClick={()=>toggleYear(y.id)} aria-expanded={expanded} aria-controls={`aid-year-detail-${y.id}`}
-                style={{display:"flex",width:"100%",minHeight:44,justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",rowGap:6,background:"transparent",border:"none",padding:0,paddingRight:data.years.length>1?34:0,cursor:"pointer",textAlign:"left",font:"inherit",color:"inherit"}}>
+                style={{display:"flex",boxSizing:"border-box",width:"auto",minHeight:44,justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",rowGap:6,margin:"-18px -20px 0",padding:"18px 20px",paddingRight:data.years.length>1?54:20,background:"transparent",border:"none",cursor:"pointer",textAlign:"left",font:"inherit",color:"inherit"}}>
                 <span style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
                   <Icon name="chevron" size={12} style={{transform:expanded?"rotate(180deg)":"none",transition:"transform .15s",color:C.gray,flexShrink:0}}/>
                   <span style={{fontWeight:700,fontSize:14,color:C.text,whiteSpace:"nowrap"}}>{y.label}</span>
@@ -110,11 +157,20 @@ export function AidTab(){
 
               {expanded && (
                 <div id={`aid-year-detail-${y.id}`} style={{marginTop:14}}>
-                  <div style={{display:"flex",gap:6,marginBottom:10,alignItems:"center",flexWrap:"wrap"}}>
+                  <div style={{display:"flex",gap:8,marginBottom:invertedRange||startOverlap||endOverlap?8:10,alignItems:"center",flexWrap:"wrap"}}>
                     <DateField value={y.startDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].startDate=v;upd(d);}} ariaLabel="Year start date" style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
                     <span style={{fontSize:11,color:C.gray}}>→</span>
                     <DateField value={y.endDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].endDate=v;upd(d);}} ariaLabel="Year end date" style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
                   </div>
+                  {(invertedRange||startOverlap||endOverlap) && (
+                    <div role="alert" style={{marginBottom:10,padding:"8px 12px",background:C.dangerLight,border:`1px solid ${C.dangerMid}`,borderRadius:8,fontSize:12,color:C.danger,lineHeight:1.5}}>
+                      {invertedRange
+                        ? "This year's end date is before its start date. Pick an end date that comes after the start date."
+                        : startOverlap
+                          ? `These dates overlap ${shortLabel(prevYr)}, which ends ${friendlyDate(prevYr.endDate)}. Pick a start date after that.`
+                          : `These dates overlap ${shortLabel(nextYr)}, which starts ${friendlyDate(nextYr.startDate)}. Pick an end date before that.`}
+                    </div>
+                  )}
                   {[
                     {label:"Total aid (annual)",   field:"grant",       note:"Includes health insurance. May include loans you'll repay — loan tracking is coming soon."},
                     {label:"Tuition & fees",            field:"tuitionFees", note:"paid directly to school"},
