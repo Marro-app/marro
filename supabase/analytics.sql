@@ -49,12 +49,15 @@ comment on column public.events.user_id is
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- 2. Dashboard read views ────────────────────────────────────────────────────
---    Same design as events.sql's views: inherit RLS from the base table (no
---    SECURITY DEFINER), so querying them via the anon/authenticated client
---    returns nothing — only useful from the service-role connection Studio's
---    SQL Editor uses, or a future admin-only SECURITY DEFINER RPC built on
---    top of them. No client SELECT on raw `events` anywhere. Idempotent
---    (create or replace).
+--    Created WITH (security_invoker = on) so the view runs with the CALLER's
+--    privileges and honors RLS on the base `events` table (which has no SELECT
+--    policy) — querying them via the anon/authenticated client returns nothing.
+--    NOTE: a plain view (without security_invoker) runs as its OWNER and would
+--    BYPASS the caller's RLS, exposing app-wide usage aggregates to any client
+--    (Supabase advisor lint 0010_security_definer_view). These are useful only
+--    from the service-role connection Studio's SQL Editor uses, or the admin-
+--    only SECURITY DEFINER RPCs in section 3 (which read them as the function
+--    owner). No client SELECT on raw `events` anywhere. Idempotent.
 -- ───────────────────────────────────────────────────────────────────────────
 
 -- Daily click counts per element per tab, from ui_click metadata. This is
@@ -63,7 +66,8 @@ comment on column public.events.user_id is
 -- clicks within a ~15s flush window and folds repeats into metadata.n rather
 -- than inserting one row per click) so totals stay accurate even though the
 -- row count under-counts raw clicks.
-create or replace view public.events_ui_click_by_element_daily as
+create or replace view public.events_ui_click_by_element_daily
+  with (security_invoker = on) as
 select
   date_trunc('day', created_at)::date as day,
   coalesce(metadata->>'tab', 'unknown') as tab,
@@ -80,7 +84,8 @@ comment on view public.events_ui_click_by_element_daily is
 
 -- Daily counts per event_name (all events, not just ui_click) — the daily-
 -- granularity companion to events.sql's all-time events_counts_by_name.
-create or replace view public.events_daily_counts_by_name as
+create or replace view public.events_daily_counts_by_name
+  with (security_invoker = on) as
 select
   date_trunc('day', created_at)::date as day,
   event_name,
@@ -95,7 +100,8 @@ comment on view public.events_daily_counts_by_name is
 -- Last-30-days rollup per event_name: total count + distinct users, for a
 -- quick "what''s getting used this month" glance without hand-writing a
 -- date filter each time.
-create or replace view public.events_last_30_days_by_name as
+create or replace view public.events_last_30_days_by_name
+  with (security_invoker = on) as
 select
   event_name,
   count(*) as total_count,
