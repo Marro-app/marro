@@ -13,7 +13,10 @@ import { logEvent } from '../lib/data.js';
 // the projector APY input (all reset when you leave Savings, which is fine — they
 // are transient forms). Shared data/upd + the derived balances come from useApp().
 export function SavingsTab(){
-  const { data, upd, yr, ay, totalAccumulatedBalance, moSurplus, triggerBloom, reverseDepositGroup } = useApp();
+  const { data, upd, yr, ay, totalAccumulatedBalance, moSurplus, aidBreakdown, triggerBloom, reverseDepositGroup } = useApp();
+  // Mostly-borrowed spending money — swaps the "save your surplus" advice for
+  // "return it," since a savings account pays less than the loan charges.
+  const surplusBorrowed = !!aidBreakdown?.isLoanFunded;
   const [savingsDepositGoal, setSavingsDepositGoal] = useState(null);
   const [savingsDepositAmt,  setSavingsDepositAmt]  = useState("");
   const [savingsDepositNote, setSavingsDepositNote] = useState("");
@@ -309,12 +312,12 @@ export function SavingsTab(){
           {/* Growth Projector */}
           <Card>
             <SectionTitle>Growth Projector</SectionTitle>
-            <div style={{fontSize:11,color:C.gray,marginBottom:12}}>How your planned surplus (if you stay on budget) + monthly savings could grow over 60 months at a given APY (e.g. a HYSA).</div>
+            <div style={{fontSize:11,color:C.gray,marginBottom:12}}>How your planned leftover (if you stay on plan) + monthly savings could grow over 60 months at a given APY (e.g. a HYSA).</div>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,flexWrap:"wrap"}}>
               <span style={{fontSize:13,color:C.textMid,fontWeight:500}}>APY</span>
               <input type="number" step="0.1" value={savingsApy} onChange={e=>setSavingsApy(e.target.value)} aria-label="Savings APY percent" style={{width:68,fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"5px 8px",background:C.bg,color:C.text,textAlign:"center"}}/>
               <span style={{fontSize:12,color:C.gray}}>%</span>
-              <span style={{fontSize:12,color:C.gray,marginLeft:4}}>Planned surplus <span style={{fontSize:10}}>(if you stay on budget)</span>: <strong style={{color:totalAccumulatedBalance>=0?C.teal:C.neg}}>{fmtS(totalAccumulatedBalance)}</strong></span>
+              <span style={{fontSize:12,color:C.gray,marginLeft:4}}>Planned leftover <span style={{fontSize:10}}>(if you stay on plan)</span>: <strong style={{color:totalAccumulatedBalance>=0?C.teal:C.neg}}>{fmtS(totalAccumulatedBalance)}</strong></span>
               <span style={{fontSize:12,color:C.gray}}>+ {fmt(yr.monthly.savings||0)}/mo savings</span>
             </div>
             {(()=>{
@@ -363,7 +366,7 @@ export function SavingsTab(){
                       <div style={{flex:1,minWidth:160,background:C.surface,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderRadius:8,padding:"12px 14px",border:`1px solid ${C.border}`}}>
                         <div style={{fontSize:11,color:C.gray,marginBottom:4}}>HYSA interest / year</div>
                         <div style={{fontSize:20,fontWeight:700,color:C.green,fontFamily:"'Newsreader',Georgia,serif"}}>+{fmt(hysaGain)}</div>
-                        <div style={{fontSize:10,color:C.gray,marginTop:2}}>on your {fmt(totalAccumulatedBalance)} planned surplus at {apy||0}% APY</div>
+                        <div style={{fontSize:10,color:C.gray,marginTop:2}}>on your {fmt(totalAccumulatedBalance)} planned leftover at {apy||0}% APY</div>
                       </div>
                     )}
                   </div>
@@ -411,18 +414,28 @@ export function SavingsTab(){
                 recs.push({color:C.teal,text:`You're saving ${fmt(mSav)}/mo (${fmt(annualSav)}/yr). Over your remaining ~${moLeft} months of school, that compounds to ${fmt(Math.round(savGrowth))} at ${apy||0}% APY.`});
               }
 
-              // HYSA recommendation
+              // HYSA recommendation. Swapped when the money is borrowed: a
+              // savings account pays ~4% while the loan charges ~8%, so parking
+              // borrowed cash loses money every month it sits there.
               if(totalAccumulatedBalance>500){
-                const hysaEarn=Math.round(totalAccumulatedBalance*(apy/100));
-                recs.push({color:C.green,text:`Your ${fmt(totalAccumulatedBalance)} planned surplus earns ~${fmt(hysaEarn)}/yr in a ${apy||0}% HYSA vs ~$0 sitting in a checking account.`});
+                if(surplusBorrowed){
+                  recs.push({color:C.blue,text:`Your ${fmt(totalAccumulatedBalance)} planned leftover is borrowed money. A savings account pays less than your loans charge, so returning what you don't need beats saving it.`});
+                } else {
+                  const hysaEarn=Math.round(totalAccumulatedBalance*(apy/100));
+                  recs.push({color:C.green,text:`Your ${fmt(totalAccumulatedBalance)} planned leftover earns ~${fmt(hysaEarn)}/yr in a ${apy||0}% HYSA vs ~$0 sitting in a checking account.`});
+                }
               } else if(totalAccumulatedBalance<0){
-                recs.push({color:C.neg,text:`Planned surplus is ${fmtS(totalAccumulatedBalance)} — you're drawing down your buffer, even if you stay on budget. Review your largest spending categories.`});
+                recs.push({color:C.neg,text:`Planned leftover is ${fmtS(totalAccumulatedBalance)} — you're drawing down your buffer, even if you stay on plan. Review your largest spending categories.`});
               }
 
-              // Monthly surplus routing
+              // Monthly surplus routing — telling a student to route borrowed
+              // money into a savings goal is actively wrong advice, so that
+              // recommendation is replaced rather than supplemented.
               if(moSurplus>50){
                 const unroutedGoals=(data.savingsGoals||[]).filter(g=>(g.saved||0)<g.targetAmount);
-                if(unroutedGoals.length>0){
+                if(surplusBorrowed){
+                  recs.push({color:C.blue,text:`${fmt(moSurplus)}/mo is left over, but it's borrowed. Borrowing less next term costs you nothing; saving it costs you interest.`});
+                } else if(unroutedGoals.length>0){
                   recs.push({color:C.teal,text:`${fmt(moSurplus)}/mo surplus unrouted. Adding it to "${unroutedGoals[0].label}" funds it ${fmt(moSurplus*12)} faster per year.`});
                 } else {
                   recs.push({color:C.teal,text:`${fmt(moSurplus)}/mo surplus available. Consider routing it to a new goal — residency interview travel costs $3–5k on average.`});

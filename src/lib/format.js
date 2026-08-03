@@ -1,7 +1,38 @@
 import { USMLE_STEP_FEE_ESTIMATE } from './constants.js';
 
 export const BLANK_MONTHLY = {housing:0,food:0,transport:0,personal:0,books:0,exams:0,savings:0,social:0,subs:0};
-export const blankYearFields = () => ({ tuitionFees:0, healthIns:0, grant:0, otherIncome:0, housing:0, housingNote:"", livingAllowance:0, notes:"" });
+// `aidThroughDate` (money-rework Phase 1): the date this year's aid is meant to
+// last through — classes end / aid stops. `null` = aid covers the WHOLE year
+// (no summer gap), which is the default so every existing year keeps dividing
+// its aid over a full ~12 months exactly as before (see yearAidBreakdown's
+// school-months divisor in src/lib/aid.js, which reproduces /12 when it's null).
+// `summer` (money-rework §4b): per-year summer-fund inputs, only ever surfaced
+// when there's a real uncovered summer (summerWindow non-null). `rent:null` means
+// "same as the school-year rent" (summerFundNeed treats null as no change).
+// `situation` is one of research/work/volunteer/off/other (+ free-text
+// `situationOther` when "other"). `income` holds ONE take-home stream: a steady
+// paycheck (cadence weekly/biweekly/monthly + amount + optional first/last dates,
+// guessed from the summer window when blank — so a student never inflates their
+// total by entering every payday), or cadence "other" with dated lump(s).
+// Optional on older saved years — every read defaults it.
+export const blankSummerIncome = () => ({ cadence:"", perPaycheck:0, firstDate:null, lastDate:null, lumps:[] });
+export const blankSummer = () => ({ rent:null, situation:"", situationOther:"", income:blankSummerIncome() });
+export const blankYearFields = () => ({ tuitionFees:0, healthIns:0, grant:0, otherIncome:0, housing:0, housingNote:"", livingAllowance:0, notes:"", aidThroughDate:null, name:"", summer:blankSummer() });
+
+// How a year's label reads on screen (money-rework — founder disliked the old
+// "Year 1 — 2026-27" em-dash form). `primary` is the student's custom name if they
+// set one, else the ordinal "Year N"; `secondary` is a quiet range beside it (with
+// the ordinal folded in when a name is showing). `idx` is the year's position.
+export function yearDisplay(year, idx) {
+  const y = year || {};
+  const ordinal = `Year ${(idx ?? 0) + 1}`;
+  const name = (y.name || "").trim();
+  const sy = y.startDate ? new Date(y.startDate + "T12:00:00").getFullYear() : null;
+  const ey = y.endDate ? new Date(y.endDate + "T12:00:00").getFullYear() : (sy != null ? sy + 1 : null);
+  const range = sy != null ? `${sy}–${yr2(ey)}` : "";        // en dash, e.g. "2026–27"
+  return { ordinal, name, range, primary: name || ordinal,
+           secondary: name ? (range ? `${ordinal} · ${range}` : ordinal) : range };
+}
 
 // Tier-1 heuristic academic-year date provider. Budgeting needs the ~12-month
 // financial boundary, not day-precision, so we anchor each year near Aug 1.
@@ -13,7 +44,16 @@ export function generateYearConfigs(startYear, lengthYears){
   const out = [];
   for(let i=0;i<n;i++){
     const sy = startYear + i;
-    out.push({ id:i, label:`Year ${i+1} — ${sy}-${yr2(sy+1)}`, ...blankYearFields(), startDate:`${sy}-08-01`, endDate:`${sy+1}-08-15` });
+    // Bug B2 (money-rework): consecutive years used to end `${sy+1}-08-15`
+    // while the next started `${sy+1}-08-01`, a two-week OVERLAP that tripped
+    // the Aid tab's own overlap validator on default data. Each year now ends
+    // the day before the next starts (`${sy+1}-07-31` — the last day of the
+    // Aug→Jul academic-month array), so consecutive years neither overlap nor
+    // gap. The FINAL year has no next year to butt against, so this same
+    // school-end date (July 31, no trailing August sliver into a year the
+    // student has already graduated out of) IS its graduation-side end: with
+    // no nextYear, summerWindow() returns null for it and no summer is implied.
+    out.push({ id:i, label:`Year ${i+1} — ${sy}-${yr2(sy+1)}`, ...blankYearFields(), startDate:`${sy}-08-01`, endDate:`${sy+1}-07-31` });
   }
   return out;
 }
@@ -29,6 +69,24 @@ export const DEFAULT_CATS = [
   {id:"social",   label:"Social & leisure"},
   {id:"subs",     label:"Subscriptions",  autoCalc:true},
 ];
+
+// A category's color slot, keyed to its IDENTITY, not its position in the list.
+// Colours used to be `CHART_COLORS[listIndex]`, so dragging a category to a new
+// slot made it adopt that slot's colour — a category's colour visibly jumped on
+// every reorder. Now each default category owns its DEFAULT_CATS slot forever,
+// and custom categories get stable slots after the defaults ordered by id (the
+// `cat_<timestamp>` ids are monotonic, so creation order is stable and adding a
+// new one never recolours the existing ones). Every surface that colours a
+// category — the budget list, the pie, the legend, the line chart, weekly bars —
+// must use THIS, or the list and the charts will disagree.
+export function catColorIndex(catId, cats) {
+  const di = DEFAULT_CATS.findIndex(c => c.id === catId);
+  if (di >= 0) return di;
+  const customs = (cats || []).map(c => c.id)
+    .filter(id => !DEFAULT_CATS.some(d => d.id === id)).sort();
+  const ci = customs.indexOf(catId);
+  return DEFAULT_CATS.length + (ci < 0 ? 0 : ci);
+}
 
 export const MONTH_NAMES = ["Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul"];
 export const MONTH_FULL = ["August","September","October","November","December","January","February","March","April","May","June","July"];
@@ -72,6 +130,81 @@ export const fmtS = n => { const r=Math.round(n); if(r===0) return "$0"; return 
 export const fmtD = n => "$"+Math.abs(Number(n)||0).toFixed(2);
 // Short human date for entry lists ("Jun 8") — raw ISO strings read like database output
 export const fmtDay = d => d ? new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}) : "";
+// Same as fmtDay but carries the year. A school year spans two calendar years,
+// so a bare "Nov 6" is ambiguous on anything describing a point in that span.
+export const fmtDayYear = d => d ? new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "";
+
+/**
+ * The MONTH_NAMES indices a school year actually covers, from its real dates.
+ * Marro's month list is a fixed Aug→Jul array, but a year record can be shorter
+ * (e.g. Aug 2026 – May 2027 is 10 months) — without this the Monthly plan would
+ * offer June and July of a year the student isn't enrolled for.
+ * Returns {from, to} inclusive; falls back to the full year on bad/absent dates.
+ */
+export function yearMonthRange(year) {
+  const idx = (iso) => {
+    if (!iso) return null;
+    const d = new Date(iso + "T12:00:00");
+    return Number.isNaN(d.getTime()) ? null : (d.getMonth() - 7 + 12) % 12;
+  };
+  // Calendar-monotonic year*12+month, for measuring the REAL elapsed span —
+  // idx() alone maps onto a lossy 0-11 academic-month slot, so a year running
+  // 12+ calendar months (e.g. a mistyped end date a year past start) wraps back
+  // onto its own start month and idx(end) looks identical to (or even less
+  // than) idx(start). That collapsed the picker to a single clickable month
+  // instead of the full year — see bug report 2026-08-02.
+  const ym = (iso) => {
+    if (!iso) return null;
+    const d = new Date(iso + "T12:00:00");
+    return Number.isNaN(d.getTime()) ? null : d.getFullYear() * 12 + d.getMonth();
+  };
+  const from = idx(year?.startDate);
+  const startYm = ym(year?.startDate), endYm = ym(year?.endDate);
+  if (from == null || startYm == null || endYm == null || endYm < startYm) return { from: 0, to: 11 };
+  // The 12-slot Aug→Jul grid can't represent a 13th month anyway, so a span of
+  // 11+ full calendar months (this year or longer) clamps to the last slot
+  // (July) rather than wrapping into a bogus/degenerate range.
+  const elapsed = endYm - startYm;
+  const to = elapsed >= 11 ? 11 : idx(year.endDate);
+  return { from, to };
+}
+
+// Drop per-month plan overrides (and month-disabled flags) for academic months a
+// year no longer contains — e.g. after its date range is shortened (July → May).
+// Stale edits otherwise linger invisibly: out of the month picker's range and
+// ignored by the year-end math, but still on disk. Mutates `data` in place and
+// returns whether anything changed. A full or invalid/wrapping range keeps
+// everything (yearMonthRange falls back to {0,11}), so it never over-prunes.
+export function pruneOutOfRangeMonths(data, yearId) {
+  const y = (data?.years || []).find((x) => x.id === yearId);
+  if (!y) return false;
+  const { from, to } = yearMonthRange(y);
+  const inRange = (mi) => mi >= from && mi <= to;
+  let changed = false;
+  if (y.monthlyOverrides) {
+    for (const mn of Object.keys(y.monthlyOverrides)) {
+      const mi = MONTH_NAMES.indexOf(mn);
+      if (mi < 0 || !inRange(mi)) { delete y.monthlyOverrides[mn]; changed = true; }
+    }
+  }
+  if (data.monthDisabled) {
+    for (const key of Object.keys(data.monthDisabled)) {
+      const dash = key.indexOf('-');
+      if (dash < 0 || String(key.slice(0, dash)) !== String(yearId)) continue;
+      const mi = MONTH_NAMES.indexOf(key.slice(dash + 1));
+      if (mi < 0 || !inRange(mi)) { delete data.monthDisabled[key]; changed = true; }
+    }
+  }
+  return changed;
+}
+
+// Prune every year — used as a one-time cleanup on load so pre-existing stale
+// overrides (from before the picker clamped to a year's range) don't linger.
+export function pruneAllYears(data) {
+  let changed = false;
+  for (const y of data?.years || []) if (pruneOutOfRangeMonths(data, y.id)) changed = true;
+  return changed;
+}
 // Actual money (logged/imported spending): show cents only when they exist — never round real transactions
 export const fmtA = n => { const v=Math.abs(Number(n)||0); const cents=Math.round(v*100)%100!==0; return "$"+v.toLocaleString(undefined,cents?{minimumFractionDigits:2,maximumFractionDigits:2}:{maximumFractionDigits:0}); };
 export const fmtSA = n => { const v=Number(n)||0; if(Math.round(v*100)===0) return "$0"; return (v>0?"+":"-")+fmtA(v); };
@@ -139,6 +272,19 @@ export const sanitizeMoneyInput = (raw, max = Infinity) => {
   const n = Number(s);
   if (s !== '' && isFinite(n) && n > max) return String(max);
   return s;
+};
+
+// Shared onChange helper for money/number inputs. sanitizeMoneyInput strips
+// leading zeros in the RETURNED string, but a type="number" controlled input
+// bound to a numeric value won't re-render its text when the number is
+// unchanged (typing "050" → sanitizes to "50", but 50===50 so React skips the
+// DOM update and the field keeps showing "050"). Writing the cleaned string
+// back onto the node forces the display to update. Route every money input's
+// onChange through this so they all behave; returns the cleaned string.
+export const cleanNumEvent = (e, max = Infinity) => {
+  const clean = sanitizeMoneyInput(e.target.value, max);
+  if (e.target.value !== clean) e.target.value = clean;
+  return clean;
 };
 
 export const getYearMonthStr = (date) => {

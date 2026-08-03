@@ -1,13 +1,14 @@
-import { useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { C, CHART_COLORS, tipProps } from '../lib/theme.js';
-import { fmt, fmtS, MONTH_NAMES, MONTH_FULL, sanitizeMoneyInput } from '../lib/format.js';
-import { USMLE_STEP_FEE_ESTIMATE } from '../lib/constants.js';
-import { Card, SectionTitle, Divider, InfoTip, Pill, XBtn, Modal } from '../components/primitives.jsx';
+import { useEffect, useRef, useState } from 'react';
+import { C, CHART_COLORS } from '../lib/theme.js';
+import { fmt, MONTH_NAMES, MONTH_FULL, cleanNumEvent, catColorIndex, yearMonthRange } from '../lib/format.js';
+import { Card, SectionTitle, Divider, InfoTip, XBtn, Modal } from '../components/primitives.jsx';
+import { BalanceCheckin } from '../components/BalanceCheckin.jsx';
 import { Icon, CatIcon, CatIconPicker, ChangeIconButton } from '../components/icons.jsx';
 import { MonthPicker } from '../components/pickers.jsx';
 import { SubscriptionsTab } from './SubscriptionsTab.jsx';
 import { useApp } from '../context/AppContext.js';
+import { targetIndexFor, rowShift } from '../lib/reorder.js';
+import { SHOW_GAP_FORECAST } from '../lib/featureFlags.js';
 
 // Budget — the monthly plan (per-category budgets for the selected month), cash
 // flow, health checks, running balance, and notes, plus the add-category and
@@ -16,42 +17,167 @@ import { useApp } from '../context/AppContext.js';
 // header metrics) and the add-category form fields (newCat*) are shared with the
 // Categories tab — both come from useApp().
 export function BudgetTab(){
-  const { data, cats, ay, yr, yrStartYear, selMonth, setSelMonth, subs, subsMo, disabledCats,
-          moSpend, moSpendable, moSurplus, runningBalance, totalAccumulatedBalance,
-          priorYearsCarryover, annDisburse, annOther, allEntriesFlat,
+  const { data, cats, ay, yr, yrStartYear, selMonth, setSelMonth, subs, disabledCats,
+          moSpend, moSpendable, moSurplus,
+          aidBreakdown, runway, upd,
           getMonthVal, spentInMonth, unbudgetedCats, unbudgetedTotal, promoteToBudget,
           toggleMonthCat, setMo, reorderCats, addCat,
           newCatName, setNewCatName, newCatIcon, setNewCatIcon, iconPickOpen, setIconPickOpen } = useApp();
-  const [dragCat, setDragCat] = useState(null);
-  const [dragOverCat, setDragOverCat] = useState(null);
+  // True when this year's spending money is mostly borrowed — gates every
+  // "nice surplus!" affirmation below. See yearAidBreakdown in src/lib/aid.js.
+  const surplusBorrowed = !!aidBreakdown?.isLoanFunded;
+  // Category reorder is pointer-driven rather than HTML5 drag-and-drop: native
+  // DnD can only use the dragged ELEMENT as its drag image, which meant the grip
+  // button (all the `draggable` attribute could sit on) was the only thing that
+  // appeared to lift. Tracking pointer deltas ourselves lets the whole row move
+  // and the other rows slide out of the way, instead of a static drop-line.
+  const [drag, setDrag] = useState(null);
+  // True for the couple of frames right after a drop, while the reordered rows
+  // paint at their final positions — see endDrag for why transitions must be off
+  // during that window.
+  const [settling, setSettling] = useState(false);
+  const dragRef = useRef(null);
+  const rowRefs = useRef(new Map());
+  const reduceMotion = typeof window!=="undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const [showAddCat, setShowAddCat] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [showSubscriptions, setShowSubscriptions] = useState(false);
-  const [showHealthChecks, setShowHealthChecks] = useState(false);
-  const [barHover, setBarHover] = useState(null);
-  const barDim = i => barHover!=null && barHover!==i ? 0.35 : 1;
-  const barMove = s => setBarHover(s && s.isTooltipActive && s.activeTooltipIndex!=null ? s.activeTooltipIndex : null);
+  // ── Budgeting through a dry spell ──────────────────────────────────────────
+  // The academic months a dry spell spans — used to mark them in the month picker.
+  const monthIdxOf = (iso) => { const d = new Date(iso+"T12:00:00"); return Number.isNaN(d.getTime()) ? null : (d.getMonth()-7+12)%12; };
+  const leanMonths = (() => {
+    const out = new Set();
+    // Suspended behind SHOW_GAP_FORECAST (see featureFlags.js) — founder call,
+    // 2026-08-02, the underlying dry-spell forecast felt unrealistic.
+    if (!SHOW_GAP_FORECAST) return out;
+    for (const s of runway?.shortfalls || []) {
+      // Only THIS year's dry spells. computeRunway projects across every year
+      // through graduation, so without this a shortfall two years out would mark
+      // months in the plan you're editing now — and the one-tap fix would write
+      // overrides for months that aren't even in that stretch.
+      if (yr?.startDate && s.date < yr.startDate) continue;
+      if (yr?.endDate && s.date > yr.endDate) continue;
+      const from = monthIdxOf(s.date), to = monthIdxOf(s.nextInflowDate);
+      if (from == null || to == null) continue;
+      // Academic months wrap (Aug=0 … Jul=11), so walk forward with modulo
+      // rather than assuming from <= to. Bounded at 12 so a bad pair can't spin.
+      for (let i = from, n = 0; n < 12; i = (i+1)%12, n++) { out.add(i); if (i === to) break; }
+    }
+    return out;
+  })();
   // Visible, reorderable categories for this month — shared by the plan list
   // and its drag/keyboard reorder logic (both mouse-drag drop targets and
   // ArrowUp/ArrowDown need the same ordered, filtered list).
-  const reorderableCats = cats.filter(c=>!c.locked && !disabledCats.includes(c.id));
+  // Rows that can actually be dragged. `autoCalc` categories (Fixed monthly
+  // costs) are excluded on purpose: they're a derived total, not a budget line
+  // you set, so they're pinned to the bottom of the list. Leaving them in here
+  // was enough to break that — they had no grip so they couldn't be PICKED UP,
+  // but they still occupied a slot, so other rows could be dropped BELOW them.
+  const reorderableCats = cats.filter(c=>!c.locked && !c.autoCalc && !disabledCats.includes(c.id));
+  const pinnedCats = cats.filter(c=>!c.locked && c.autoCalc && !disabledCats.includes(c.id));
+  // Pinned rows render last, so a reorderable row's display index still equals
+  // its index in `reorderableCats` — which is what all the drag math indexes by.
+  const displayCats = [...reorderableCats, ...pinnedCats];
 
-  // Plan vs actual — the one chart Phase 1 keeps on Home (ported from the hidden Charts tab)
-  const budgetVsActual = MONTH_NAMES.map((m,mi)=>{
-    const mk=ay+"-"+m;
-    const disM=data.monthDisabled?.[mk]||[];
-    let budgeted=0;
-    cats.forEach(c=>{
-      if(disM.includes(c.id)) return;
-      if(c.id==="subs"){budgeted+=subsMo;return;}
-      const ov=yr.monthlyOverrides?.[m]?.[c.id];
-      budgeted+=(ov!==undefined?ov:(Number(yr.monthly[c.id])||0));
-    });
-    const calMo=(mi+7)%12;
-    const calYr=yrStartYear+(mi>=5?1:0);
-    const actual=allEntriesFlat.filter(e=>{const dt=new Date(e.date+"T12:00:00");return dt.getMonth()===calMo&&dt.getFullYear()===calYr;}).reduce((a,e)=>a+Number(e.amount),0);
-    return {name:m, Budgeted:Math.round(budgeted), Actual:Math.round(actual)};
-  }).filter(d=>d.Actual>0);
+  // Reorder geometry (target row + how far the others slide) lives in
+  // src/lib/reorder.js so it can be unit-tested — it has caused two visual bugs
+  // already (a spike on drop, then rubber-banding neighbours) and this file
+  // can't be exercised by the test suite.
+  const shiftFor = (i) => rowShift(i, drag);
+
+  // Pointer tracking lives on WINDOW, not on the grip button. The button-plus-
+  // setPointerCapture version could strand a drag: if the capture call threw on
+  // a stale pointer id, or the pointerup landed on another element (easy when
+  // picking rows up and dropping them quickly), `endDrag` never ran — so `drag`
+  // stayed set and every row kept its offset permanently, leaving rows visibly
+  // overlapping and one stranded at the bottom of the card. Window listeners
+  // can't miss the release, and the effect's cleanup is a second guarantee.
+  // Window listeners are attached SYNCHRONOUSLY in startDrag, not from an
+  // effect. An effect only runs after React re-renders, so a fast press-and-
+  // release fired before the listeners existed and nothing caught the release —
+  // the drag was stranded and every row kept its offset. They call through a ref
+  // so the handlers are always the current render's (never a stale `reorderCats`).
+  const handlersRef = useRef({});
+  const listenersRef = useRef(null);
+  const attachDragListeners = () => {
+    if (listenersRef.current) return;
+    const onMove = (e) => handlersRef.current.moveDrag(e);
+    const onEnd = () => handlersRef.current.endDrag();
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onEnd);
+    window.addEventListener('pointercancel', onEnd);
+    listenersRef.current = { onMove, onEnd };
+  };
+  const detachDragListeners = () => {
+    const l = listenersRef.current;
+    if (!l) return;
+    window.removeEventListener('pointermove', l.onMove);
+    window.removeEventListener('pointerup', l.onEnd);
+    window.removeEventListener('pointercancel', l.onEnd);
+    listenersRef.current = null;
+  };
+
+  const startDrag = (e, cat, idx) => {
+    if (e.button != null && e.button !== 0) return;
+    if (dragRef.current) return;                       // ignore a second press mid-drag
+    const heights = reorderableCats.map(c => rowRefs.current.get(c.id)?.offsetHeight || 0);
+    // Snapshot the id order too, so endDrag never has to read a `reorderableCats`
+    // that may have been re-derived since the drag began.
+    const order = reorderableCats.map(c => c.id);
+    const st = { id: cat.id, fromIdx: idx, toIdx: idx, dy: 0, startY: e.clientY, heights, order };
+    dragRef.current = st;
+    attachDragListeners();
+    setDrag(st);
+  };
+
+  const moveDrag = (e) => {
+    const st = dragRef.current;
+    if (!st) return;
+    const dy = e.clientY - st.startY;
+    const next = { ...st, dy, toIdx: targetIndexFor(st.fromIdx, dy, st.heights, st.toIdx) };
+    dragRef.current = next;
+    setDrag(next);
+  };
+
+  const endDrag = () => {
+    const st = dragRef.current;
+    if (!st) return;
+    dragRef.current = null;
+    detachDragListeners();
+    const targetId = st.order[st.toIdx];
+    // On release two things land in the same frame: the list REORDERS (so the
+    // row is already at its new slot in the DOM) and every transform resets to
+    // 0. With transitions live, the row animates from its dragged offset on top
+    // of a position it has already moved to — it travels twice and reads as a
+    // spike. `settling` kills transitions for the frames where that reset
+    // paints, so rows simply land where they belong; normal sliding resumes
+    // straight after. Two rAFs because the first only guarantees the style is
+    // committed, not that the browser has painted it.
+    setSettling(true);
+    setDrag(null);
+    if (targetId && st.toIdx !== st.fromIdx) reorderCats(st.id, targetId);
+    // rAF is throttled to zero in a backgrounded tab, which would leave
+    // `settling` stuck on and silently disable the slide animation for the rest
+    // of the session — so a timer backstops it.
+    let done = false;
+    const clear = () => { if (!done) { done = true; setSettling(false); } };
+    requestAnimationFrame(() => requestAnimationFrame(clear));
+    setTimeout(clear, 120);
+  };
+
+  // Point the window listeners at THIS render's handlers. Must sit below their
+  // declarations (they're `const` — reading them earlier hits the temporal dead
+  // zone and crashes the tab on first paint).
+  handlersRef.current = { moveDrag, endDrag };
+
+  // Last-resort safety: if this tab unmounts mid-drag (tab switch, navigation),
+  // drop the listeners and the half-finished drag rather than leaving both behind.
+  useEffect(() => () => {
+    detachDragListeners();
+    dragRef.current = null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <>
       {showSubscriptions && <Modal title="Fixed monthly costs" onClose={()=>setShowSubscriptions(false)} width={640}><SubscriptionsTab/></Modal>}
@@ -87,21 +213,22 @@ export function BudgetTab(){
           <Card>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
               <SectionTitle>Monthly plan</SectionTitle>
-              <MonthPicker value={selMonth} onChange={setSelMonth} startYear={yrStartYear}/>
+              <MonthPicker value={selMonth} onChange={setSelMonth} startYear={yrStartYear} range={yearMonthRange(yr)} leanMonths={leanMonths}/>
             </div>
-            <div style={{fontSize:11,color:C.gray,marginBottom:12}}>Set how much you <em>intend</em> to spend each month — log actual spending with <strong>Quick add</strong>.</div>
+            <div style={{fontSize:11,color:C.gray,marginBottom:12}}>Set how much you <em>intend</em> to spend each month. Log what you actually spend with <strong>Quick add</strong>.</div>
 
             {/* Housing — read-only */}
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:C.surface,borderRadius:8,marginBottom:10,border:`1px solid ${C.border}`}}>
               <div style={{flex:1}}>
                 <div style={{fontSize:12,fontWeight:600,color:C.text}}>Housing</div>
-                <div style={{fontSize:11,color:C.gray,marginTop:1,display:"flex",alignItems:"center",gap:4}}>Fixed by housing contract <InfoTip text="Housing is set by your housing contract. Edit the rate in the Aid & Detail tab."/></div>
+                <div style={{fontSize:11,color:C.gray,marginTop:1,display:"flex",alignItems:"center",gap:4}}>Fixed by housing contract <InfoTip text="Housing is set by your housing contract. Edit the rate in the Aid & Plan tab."/></div>
               </div>
               <div style={{fontWeight:700,fontSize:14,color:C.text}}>{fmt(yr.monthly.housing||0)}<span style={{fontSize:11,fontWeight:400,color:C.gray}}>/mo</span></div>
             </div>
 
-            {reorderableCats.map((cat,i)=>{
+            {displayCats.map((cat,i)=>{
               const isAuto = cat.autoCalc===true;
+              const isDragging = drag?.id===cat.id;
               const isDisabled = disabledCats.includes(cat.id);
               const amt = isDisabled ? 0 : getMonthVal(cat.id);
               const pct = moSpend>0?Math.round(amt/moSpend*100):0;
@@ -112,24 +239,47 @@ export function BudgetTab(){
               };
               return (
                 <div key={cat.id}
-                  onDragOver={e=>{e.preventDefault();if(dragCat&&dragCat!==cat.id)setDragOverCat(cat.id);}}
-                  onDrop={e=>{e.preventDefault();if(dragCat)reorderCats(dragCat,cat.id);setDragCat(null);setDragOverCat(null);}}
-                  style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`,opacity:dragCat===cat.id?0.4:1,borderTop:dragOverCat===cat.id?`2px solid ${C.sel}`:"2px solid transparent",background:dragOverCat===cat.id?C.bgDark:"transparent"}}>
+                  ref={el=>{if(el)rowRefs.current.set(cat.id,el);else rowRefs.current.delete(cat.id);}}
+                  style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`,
+                    position:"relative",
+                    // Resting rows stay TRANSPARENT so the card's glass material
+                    // shows through. (Painting every row solid flattened the list
+                    // to black — the "lost the glass look" regression.) The dragged
+                    // row still has to hide the rows it slides over, but filling it
+                    // with the PAGE background made it a flat black slab sitting on
+                    // the glass card. A blurred elevated surface occludes just as
+                    // well and reads as a lifted row, matching the material the
+                    // rest of the app uses.
+                    background:isDragging?C.surfaceMid:"transparent",
+                    backdropFilter:isDragging?"blur(24px) saturate(160%)":undefined,
+                    WebkitBackdropFilter:isDragging?"blur(24px) saturate(160%)":undefined,
+                    // The dragged row rides the pointer and lifts above the list;
+                    // every other row slides to open the gap. Transitions are
+                    // suppressed on the dragged row (it must track the pointer
+                    // exactly, with no lag) and honor Reduce Motion elsewhere.
+                    transform:isDragging?`translateY(${drag.dy}px) scale(1.02)`:`translateY(${shiftFor(i)}px)`,
+                    transition:isDragging||reduceMotion||settling?"none":"transform .18s cubic-bezier(.2,.8,.2,1)",
+                    zIndex:isDragging?20:1,
+                    boxShadow:isDragging?"0 8px 24px rgba(0,0,0,0.28)":"none",
+                    borderRadius:isDragging?10:0,
+                    cursor:isDragging?"grabbing":undefined}}>
+                  {/* Only the PRESS is handled on the grip — move/release are
+                      tracked on window for the life of the drag (see the effect
+                      above), so a release outside it can't strand the drag. */}
                   {!isAuto && (
-                    <button type="button" className="xbtn" draggable
-                      onDragStart={()=>setDragCat(cat.id)}
-                      onDragEnd={()=>{setDragCat(null);setDragOverCat(null);}}
+                    <button type="button" className="xbtn"
+                      onPointerDown={e=>startDrag(e,cat,i)}
                       onKeyDown={e=>{
                         if(e.key==="ArrowUp"){e.preventDefault();moveCat(-1);}
                         else if(e.key==="ArrowDown"){e.preventDefault();moveCat(1);}
                       }}
                       aria-label={`Reorder ${cat.label}: use arrow keys`}
                       title="Drag to reorder, or use arrow keys"
-                      style={{width:24,height:24,borderRadius:6,border:"none",background:"transparent",color:C.gray,fontSize:12,cursor:"grab",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,padding:0}}>
+                      style={{width:24,height:24,borderRadius:6,border:"none",background:"transparent",color:C.gray,fontSize:12,cursor:isDragging?"grabbing":"grab",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,padding:0,touchAction:"none"}}>
                       <span aria-hidden="true">⠿</span>
                     </button>
                   )}
-                  <CatIcon name={cat.icon||cat.id} color={CHART_COLORS[i%CHART_COLORS.length]}/>
+                  <CatIcon name={cat.icon||cat.id} color={CHART_COLORS[catColorIndex(cat.id,cats)%CHART_COLORS.length]}/>
                   <div style={{flex:1,minWidth:0}}>
                     <span style={{fontSize:13,color:C.text}}>{cat.id==="subs"?"Fixed monthly costs":cat.label}</span>
                     {cat.id==="subs" && (
@@ -141,7 +291,7 @@ export function BudgetTab(){
                   </div>
                   {isAuto
                     ? <span style={{fontSize:13,fontWeight:600,color:C.blue,minWidth:72,textAlign:"right"}}>{fmt(amt)}<span style={{fontSize:10,color:C.gray,fontWeight:400}}> auto</span></span>
-                    : <input type="number" min="0" value={getMonthVal(cat.id)} onChange={e=>setMo(ay,cat.id,sanitizeMoneyInput(e.target.value))}
+                    : <input type="number" min="0" value={getMonthVal(cat.id)} onChange={e=>setMo(ay,cat.id,cleanNumEvent(e))}
                         aria-label={`Monthly budget for ${cat.label}`}
                         style={{width:80,textAlign:"right",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 8px",background:C.bg,color:C.text,fontWeight:600}}/>
                   }
@@ -161,6 +311,27 @@ export function BudgetTab(){
               </div>
               <span style={{color:moSpend>moSpendable?C.neg:C.text}}>{fmt(moSpend)}/mo</span>
             </div>
+            {/* Live "left to spend" (question 3): what's still unspent of this month's
+                safe-to-spend as the student fills in the plan. Always shown so it reads as
+                a running tally that updates with every edit. Never green when the spendable
+                money is borrowed (founder rule) — colour AND words carry it.
+                A few dollars over is rounding noise, NOT overspending (founder): reading
+                "$2 over — trim a little" when you nudge a maxed month up by $2 is alarmist,
+                so the warning only fires once you're meaningfully over (> $5); at or within
+                a few dollars of the max it reads calmly as "planned it all". */}
+            {(()=>{ const planOver = moSurplus < -5; const planOnTarget = !planOver && moSurplus <= 0; return (
+            <div style={{marginTop:12,padding:"10px 12px",
+              background:planOver?C.negLight:planOnTarget?C.surface:(surplusBorrowed?C.blueLight:C.greenLight),borderRadius:8,fontSize:12,
+              color:planOver?C.neg:planOnTarget?C.textMid:(surplusBorrowed?C.blue:C.green),fontWeight:500,lineHeight:1.5}}>
+              {planOver
+                ? <><strong>{fmt(Math.abs(moSurplus))} over</strong> what’s safe to spend this month — trim a little, or it comes out of your cushion.</>
+                : planOnTarget
+                  ? <>You’ve planned just about every dollar that’s safe to spend this month.</>
+                  : surplusBorrowed
+                    ? <><strong>{fmt(moSurplus)} left to spend</strong> this month — but that money is borrowed, so returning what you don’t need within 120 days cancels its interest.</>
+                    : <><strong>{fmt(moSurplus)} left to spend</strong> this month — a nice bit of room.</>}
+            </div>
+            );})()}
             {unbudgetedCats.length>0 && <div style={{marginTop:16,paddingTop:14,borderTop:`2px dashed ${C.border}`}}>
               <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
                 <span style={{fontSize:12,fontWeight:700,color:C.amber}}>Unbudgeted spending</span>
@@ -183,119 +354,10 @@ export function BudgetTab(){
             </div>}
           </Card>
 
-          <div style={{display:"flex",flexDirection:"column",gap:14}}>
-            <Card>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
-                <SectionTitle>Cash flow</SectionTitle>
-                <span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:10,color:C.gray}}><Icon name="live" size={11} color={C.green} style={{animation:"marroPulse 2s infinite"}}/>Live</span>
-              </div>
-              
-              {[
-                {l:"Total aid sent to you",      v:fmt(annDisburse)+"/yr",    c:C.teal},
-                {l:"Other income",              v:fmt(annOther)+"/yr",       c:C.text},
-                {l:"Monthly spending money",    v:fmt(moSpendable)+"/mo",    c:C.teal,bold:true},
-                {l:"Monthly plan",              v:fmt(moSpend)+"/mo",        c:C.text},
-                {l:"Monthly surplus",           v:fmtS(moSurplus)+"/mo",     c:moSurplus>=0?C.green:C.neg,bold:true},
-              ].map(r=>(
-                <div key={r.l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
-                  <span style={{color:C.gray}}>{r.l}</span>
-                  <span style={{fontWeight:r.bold?700:500,color:r.c}}>{r.v}</span>
-                </div>
-              ))}
-              <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0 2px",fontSize:13,fontWeight:700}}>
-                <span>Projected leftover <InfoTip text="What you'd have left if you stick to your budget — not your actual bank balance."/> <span style={{fontSize:10,color:C.gray,fontWeight:400}}>if you stay on budget · through {MONTH_FULL[selMonth]}</span></span>
-                <span style={{color:runningBalance>=0?C.teal:C.neg}}>{fmtS(runningBalance)}</span>
-              </div>
-              {moSurplus!==0 && (
-                <div style={{marginTop:8,padding:"10px 12px",background:moSurplus>=0?C.greenLight:C.negLight,borderRadius:8,fontSize:12,color:moSurplus>=0?C.green:C.neg,fontWeight:500}}>
-                  {moSurplus>=0
-                    ? `${fmt(moSurplus)} surplus this month — it carries into your running balance and adds to your year-end net.`
-                    : `${fmt(Math.abs(moSurplus))} over budget this month — this draws down your running balance and lowers your year-end net.`}
-                </div>
-              )}
-            </Card>
-
-            {/* Plan vs actual — Phase 1's one chart, ported from the hidden Charts tab */}
-            <Card>
-              <SectionTitle>Plan vs actual</SectionTitle>
-              <div style={{display:"flex",gap:20,marginBottom:10}}>
-                {[["Budgeted",C.teal],["Actual",C.neg]].map(([l,c])=>(
-                  <div key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:C.gray}}>
-                    <div style={{width:10,height:10,borderRadius:3,background:c}}/>{l}
-                  </div>
-                ))}
-              </div>
-              {budgetVsActual.length===0
-                ? <div style={{textAlign:"center",padding:"28px 16px",fontSize:12,color:C.textMid,border:`1px dashed ${C.borderDark}`,borderRadius:12,background:C.surface}}>No spending logged yet — use <strong>Quick add</strong> to log an expense and it&apos;ll show up here.</div>
-                : <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={budgetVsActual} barGap={3} barCategoryGap="32%" onMouseMove={barMove} onMouseLeave={()=>setBarHover(null)}>
-                  <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
-                  <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
-                  <Tooltip separator=": " formatter={v=>fmt(v)} {...tipProps()} cursor={false}/>
-                  <Bar dataKey="Budgeted" fill={C.teal} radius={[6,6,0,0]} maxBarSize={26}>
-                    {budgetVsActual.map((d,i)=><Cell key={i} fill={C.teal} opacity={0.85*barDim(i)} style={{transition:"opacity 150ms ease"}}/>)}
-                  </Bar>
-                  <Bar dataKey="Actual" fill={C.neg} radius={[6,6,0,0]} maxBarSize={26}>
-                    {budgetVsActual.map((d,i)=><Cell key={i} fill={C.neg} opacity={barDim(i)} style={{transition:"opacity 150ms ease"}}/>)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>}
-            </Card>
-
-            <Card>
-              {/* The ENTIRE header row toggles, not just the chevron. Negative
-                  margins cancel the Card's 18px/20px padding so the button reaches
-                  the card edges; the same padding is added back inside (box-sizing:
-                  border-box) so the label sits where it did — clicking anywhere on
-                  the row, including the whitespace beside the chevron, toggles. */}
-              <button type="button" id="health-checks-btn" onClick={()=>setShowHealthChecks(s=>!s)} aria-expanded={showHealthChecks} aria-controls="health-checks-panel"
-                style={{display:"flex",alignItems:"center",justifyContent:"flex-start",gap:8,width:"auto",boxSizing:"border-box",minHeight:44,margin:"-18px -20px 0",padding:"18px 20px 6px",background:"none",border:"none",cursor:"pointer",textAlign:"left",font:"inherit"}}>
-                <Icon name="chevron" size={12} style={{transform:showHealthChecks?"rotate(180deg)":"none",transition:"transform .15s",color:C.gray,flexShrink:0}}/>
-                <span style={{fontSize:13,fontWeight:600,color:C.text}}>Health checks</span>
-              </button>
-              {/* Always mounted (aria-controls target never dangles) and animated
-                  open/closed via the .collapse-panel grid-rows transition — so a
-                  rotated chevron always corresponds to a visibly-open panel. */}
-              <div id="health-checks-panel" role="region" aria-labelledby="health-checks-btn" className={`collapse-panel${showHealthChecks?' open':''}`}>
-                <div className="collapse-inner">
-                  <div style={{paddingTop:14}}>
-                  {[
-                    ["Housing ratio",    moSpendable>0?Math.round((yr.monthly.housing||0)/moSpendable*100)+"%":"—", (yr.monthly.housing||0)/moSpendable<0.6,(yr.monthly.housing||0)/moSpendable<0.75,"Target <60% of spending money"],
-                    ["Monthly balance",  moSurplus>=0?"Positive":"Negative", moSurplus>=0, false, ""],
-                    ["Savings",          (yr.monthly.savings||0)>0?fmt(yr.monthly.savings||0)+"/mo":"None", (yr.monthly.savings||0)>0, false, "Even $50/mo adds up"],
-                    ["Exam fund",        (yr.monthly.exams||0)>0?fmt(yr.monthly.exams||0)+"/mo":"$0/mo", ay<=1||(yr.monthly.exams||0)>0, ay>1, `Steps cost about ${fmt(USMLE_STEP_FEE_ESTIMATE)} each`],
-                  ].map(([label,val,ok,warn,tip])=>(
-                    <div key={label} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}`,fontSize:12}}>
-                      <span style={{color:C.gray}}>{label}</span>
-                      <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        <Pill ok={ok} warn={!ok&&warn}>{val}</Pill>
-                        {tip && <span style={{fontSize:10,color:C.gray}}>{tip}</span>}
-                      </div>
-                    </div>
-                  ))}
-                  </div>
-                </div>
-              </div>
-            </Card>
-
-            <Card>
-              <SectionTitle>Projected leftover <InfoTip text="What you'd have left if you stick to your budget — not your actual bank balance."/></SectionTitle>
-              <div style={{fontSize:26,fontWeight:700,color:totalAccumulatedBalance>=0?C.teal:C.neg,margin:"6px 0",fontFamily:"'Newsreader',Georgia,serif"}}>{fmtS(totalAccumulatedBalance)}</div>
-              <div style={{fontSize:11,color:C.gray,lineHeight:1.6}}>
-                {priorYearsCarryover!==0
-                  ? <>Prior years: <strong style={{color:priorYearsCarryover>=0?C.teal:C.neg}}>{fmtS(priorYearsCarryover)}</strong> · This year so far: <strong style={{color:runningBalance>=0?C.teal:C.neg}}>{fmtS(runningBalance)}</strong></>
-                  : <>Cumulative surplus/deficit from {MONTH_FULL[0]} through {MONTH_FULL[selMonth]}, if you stay on budget.</>
-                }
-              </div>
-              {totalAccumulatedBalance>moSpendable*2 && <div style={{marginTop:8,padding:"6px 10px",background:C.greenLight,borderRadius:8,fontSize:11,color:C.green}}>You&apos;re building a healthy cushion. Consider moving some into a high-yield savings account.</div>}
-              {totalAccumulatedBalance<0 && <div style={{marginTop:8,padding:"6px 10px",background:C.negLight,borderRadius:8,fontSize:11,color:C.neg}}>You&apos;re running a cumulative deficit. Review spending or adjust your budget.</div>}
-            </Card>
-
-            {/* The free-text "Notes" block was removed from the UI (founder
-                call — looked cheap, rarely used). The underlying yr.notes data
-                field is left intact so existing notes still sync and nothing
-                breaks; it's simply no longer rendered here. */}
-          </div>
+          {/* Check-in card sits in the right column, next to the Monthly plan
+              (founder). The Plan-vs-actual chart and the Health-checks card were
+              removed. The `yr.notes` field is still synced, just no longer shown. */}
+          <BalanceCheckin data={data} upd={upd} />
         </div>
     </>
   );

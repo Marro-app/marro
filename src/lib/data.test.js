@@ -142,6 +142,12 @@ describe('applyChanges round-trips every diff family', () => {
     'year field / monthly / override': (c) => {
       c.years[0].grant = 1200; c.years[0].monthly.food = 320; c.years[0].monthlyOverrides.Sep.food = 360;
     },
+    'summer fund add (older year gains one)': (c) => {
+      c.years[0].summer = { rent: 1200, situation: 'research', situationOther: '', income: { cadence: 'biweekly', perPaycheck: 1500, firstDate: '2027-06-01', lastDate: '2027-07-27', lumps: [] } };
+    },
+    'summer income edit + scalar (other cadence lumps)': (c) => {
+      c.years[0].summer = { rent: null, situation: 'other', situationOther: 'startup internship', income: { cadence: 'other', perPaycheck: 0, firstDate: null, lastDate: null, lumps: [{ id: 'sp1', amount: 3000, date: '2027-07-01' }] } };
+    },
     'array append': (c) => { c.categories.push({ id: 'gym', label: 'Gym' }); },
     'array item edit': (c) => { c.subscriptions[0].amount = 22; },
     'array remove': (c) => { c.stepGoals = []; },

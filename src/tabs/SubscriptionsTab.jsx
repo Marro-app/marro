@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { C } from '../lib/theme.js';
-import { fmt, fmtD, subMonthlyTotal, daysUntil } from '../lib/format.js';
+import { fmt, fmtD, subMonthlyTotal, daysUntil, cleanNumEvent } from '../lib/format.js';
 import { Card, SectionTitle, EmptyState, Divider, Pill, Modal } from '../components/primitives.jsx';
 import { BrandIcon } from '../components/icons.jsx';
 import { DateField } from '../components/pickers.jsx';
@@ -32,7 +32,7 @@ function SubEditModal({sub, onSave, onDelete, onClose}) {
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           <div>
             <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Amount ($)</div>
-            <input type="number" value={amt} onChange={e=>setAmt(e.target.value)} aria-label="Amount"
+            <input type="number" value={amt} onChange={e=>setAmt(cleanNumEvent(e))} aria-label="Amount"
               style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
           </div>
           <div>
@@ -114,7 +114,7 @@ export function SubscriptionsTab(){
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               <div>
                 <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Amount ($)</div>
-                <input type="number" placeholder="9.99" value={subAmt} onChange={e=>setSubAmt(e.target.value)}
+                <input type="number" placeholder="9.99" value={subAmt} onChange={e=>setSubAmt(cleanNumEvent(e))}
                   style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
               </div>
               <div>

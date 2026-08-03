@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { C } from '../lib/theme.js';
-import { fmt, fmtA, fmtD, fmtDay, fmtWeekLabel, daysUntil, subMonthlyTotal, todayStr, sanitizeMoneyInput, MAX_QUICK_ADD_AMOUNT } from '../lib/format.js';
+import { C, CHART_COLORS } from '../lib/theme.js';
+import { fmt, fmtA, fmtD, fmtDay, fmtWeekLabel, catColorIndex, daysUntil, subMonthlyTotal, todayStr, sanitizeMoneyInput, MAX_QUICK_ADD_AMOUNT } from '../lib/format.js';
 import { conflictLabel, fmtConflictVal, MONEY_KEYS } from '../lib/data.js';
-import { Icon, BrandIcon } from './icons.jsx';
-import { Pill, Card, Modal, Banner } from './primitives.jsx';
+import { tabProps } from '../lib/ui-helpers.js';
+import { Icon, BrandIcon, CatIcon } from './icons.jsx';
+import { Pill, Card, Modal, Banner, ChoiceGroup } from './primitives.jsx';
 import { DateField } from './pickers.jsx';
 import { useApp } from '../context/AppContext.js';
 
@@ -72,15 +73,35 @@ export function RenewalDialog({sub, onClose, onConfirm}) {
 // Phase 1 simplification: the Weekly tab is hidden from the tabbar, so this is
 // now the primary entry point for logging actual spending. Writes through the
 // same addWeeklyEntry mutator the (still-present, just hidden) Weekly tab uses.
+// A "History" view sits alongside "Add expense" (segmented control) so a
+// logged entry can still be found and removed even with the Weekly tab
+// hidden — deleteWeeklyEntry is the same shared mutator Weekly's own list uses.
+const segBtnStyle = active => ({
+  flex:1, border:"none", background: active?C.tabActiveBg:"transparent", padding:"7px 10px", borderRadius:8,
+  fontSize:12.5, fontWeight:600, color: active?C.ink:C.tabMuted, cursor:"pointer", transition:"all .15s",
+});
+
 export function QuickAddModal({onClose}) {
-  const { cats, addWeeklyEntry } = useApp();
+  const { cats, addWeeklyEntry, deleteWeeklyEntry, currentEntries, archives, currentWeekStart } = useApp();
   const spendCats = cats.filter(c=>!c.locked && !c.autoCalc);
+  const [view, setView] = useState("add"); // "add" | "history"
+  const switchView = v => { setView(v); setArmedId(null); };
   const [catId, setCatId] = useState(spendCats[0]?.id||"");
   const [amt, setAmt]     = useState("");
   const [date, setDate]   = useState(todayStr());
   const [note, setNote]   = useState("");
   const [notice, setNotice] = useState(null);
   const [amtCapped, setAmtCapped] = useState(false);
+  // "Tap to arm, tap again to confirm" delete — a full confirm modal is overkill
+  // for a list you might clear several stray entries from in a row; the auto-reset
+  // guards against a stray second tap days later deleting the wrong thing.
+  const [armedId, setArmedId] = useState(null);
+  useEffect(()=>{
+    if(!armedId) return;
+    const t = setTimeout(()=>setArmedId(null), 2500);
+    return ()=>clearTimeout(t);
+  }, [armedId]);
+
   const onAmtChange = v => {
     const n = Number(v);
     setAmtCapped(v!=="" && isFinite(n) && n>MAX_QUICK_ADD_AMOUNT);
@@ -97,36 +118,110 @@ export function QuickAddModal({onClose}) {
       onClose();
     }
   };
+
+  // History: current week + every archived week, newest first, grouped by
+  // calendar month then by week within it.
+  const weeks = [{weekStart:currentWeekStart, entries:currentEntries, isCurrent:true}, ...archives]
+    .filter(w=>w.entries && w.entries.length>0);
+  const flatEntries = weeks.flatMap(w=>(w.entries||[]).map(e=>({...e, weekStart:w.weekStart, isCurrent:!!w.isCurrent})));
+  const monthGroups = {};
+  flatEntries.forEach(e=>{ (monthGroups[e.date.slice(0,7)] ||= []).push(e); });
+  const monthKeys = Object.keys(monthGroups).sort().reverse();
+
   return (
-    <Modal title="Quick add" onClose={onClose} width={380}>
-      <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <div>
-          <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Category</div>
-          <select value={catId} onChange={e=>setCatId(e.target.value)} aria-label="Category" autoFocus
-            style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}>
-            {spendCats.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
-          </select>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+    <Modal title="Quick add" onClose={onClose} width={400}>
+      <ChoiceGroup role="tablist" ariaLabel="Quick add view" style={{display:"flex",gap:2,padding:3,marginBottom:14,background:C.surface,border:`1px solid ${C.border}`,borderRadius:11}}>
+        <button type="button" {...tabProps(view==="add","qa-tab-add","qa-panel-add")} onClick={()=>switchView("add")} style={segBtnStyle(view==="add")}>Add expense</button>
+        <button type="button" {...tabProps(view==="history","qa-tab-history","qa-panel-history")} onClick={()=>switchView("history")} style={segBtnStyle(view==="history")}>History{flatEntries.length>0?` (${flatEntries.length})`:""}</button>
+      </ChoiceGroup>
+
+      {view==="add" && (
+        <div id="qa-panel-add" role="tabpanel" aria-labelledby="qa-tab-add" style={{display:"flex",flexDirection:"column",gap:12}}>
           <div>
-            <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Amount ($)</div>
-            <input type="number" min="0" placeholder="0.00" value={amt} onChange={e=>onAmtChange(e.target.value)} aria-label="Amount"
+            <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Category</div>
+            <select value={catId} onChange={e=>setCatId(e.target.value)} aria-label="Category" autoFocus
+              style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}>
+              {spendCats.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div>
+              <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Amount ($)</div>
+              <input type="number" min="0" placeholder="0.00" value={amt} onChange={e=>onAmtChange(e.target.value)} aria-label="Amount"
+                style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
+              {amtCapped && <div style={{fontSize:10.5,color:C.gray,marginTop:3}}>Capped at {fmt(MAX_QUICK_ADD_AMOUNT)}.</div>}
+            </div>
+            <div>
+              <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Date</div>
+              <DateField value={date} onChange={setDate} ariaLabel="Expense date"/>
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Note (optional)</div>
+            <input placeholder="e.g. Textbook, flight" value={note} onChange={e=>setNote(e.target.value)} aria-label="Note"
               style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
-            {amtCapped && <div style={{fontSize:10.5,color:C.gray,marginTop:3}}>Capped at {fmt(MAX_QUICK_ADD_AMOUNT)}.</div>}
           </div>
-          <div>
-            <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Date</div>
-            <DateField value={date} onChange={setDate} ariaLabel="Expense date"/>
-          </div>
+          {notice && <Banner type="info">{notice}</Banner>}
+          <button className="btn-fill" onClick={save} disabled={!canSave} style={{padding:"11px",fontSize:14,fontWeight:700,border:"none",borderRadius:8,background:canSave?C.teal:C.surface,color:canSave?C.bg:C.gray,cursor:canSave?"pointer":"not-allowed"}}>Add expense</button>
         </div>
-        <div>
-          <div style={{fontSize:11,color:C.gray,marginBottom:4,fontWeight:500}}>Note (optional)</div>
-          <input placeholder="e.g. Textbook, flight" value={note} onChange={e=>setNote(e.target.value)} aria-label="Note"
-            style={{width:"100%",fontSize:13,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",background:C.bg,color:C.text,boxSizing:"border-box"}}/>
+      )}
+
+      {view==="history" && (
+        <div id="qa-panel-history" role="tabpanel" aria-labelledby="qa-tab-history" className="themed-scroll" style={{maxHeight:360,overflowY:"auto",paddingRight:4}}>
+          {monthKeys.length===0
+            ? <div style={{padding:"28px 8px",textAlign:"center",fontSize:12.5,color:C.gray,lineHeight:1.6}}>No logged expenses yet.<br/>Switch to "Add expense" to log your first one.</div>
+            : monthKeys.map(mk=>{
+                const monthEntries = monthGroups[mk];
+                const monthTotal = monthEntries.reduce((a,e)=>a+Number(e.amount),0);
+                const monthLabel = new Date(mk+"-01T12:00:00").toLocaleDateString("en-US",{month:"long",year:"numeric"});
+                const weekGroupsInMonth = {};
+                monthEntries.forEach(e=>{ (weekGroupsInMonth[e.weekStart] ||= []).push(e); });
+                const weekKeys = Object.keys(weekGroupsInMonth).sort().reverse();
+                return (
+                  <div key={mk} style={{marginBottom:16}}>
+                    <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",padding:"2px 2px 8px"}}>
+                      <span style={{fontSize:12.5,fontWeight:700,color:C.text}}>{monthLabel}</span>
+                      <span style={{fontSize:11.5,color:C.gray}}>{fmt(monthTotal)} logged</span>
+                    </div>
+                    {weekKeys.map(wk=>{
+                      const weekEntries=[...weekGroupsInMonth[wk]].sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id));
+                      const weekTotal=weekEntries.reduce((a,e)=>a+Number(e.amount),0);
+                      return (
+                        <div key={wk} style={{marginBottom:10}}>
+                          <div style={{fontSize:10.5,fontWeight:600,color:C.gray,textTransform:"uppercase",letterSpacing:"0.04em",padding:"6px 8px 6px",display:"flex",justifyContent:"space-between"}}>
+                            <span>Week of {fmtWeekLabel(wk)}</span>
+                            <span style={{textTransform:"none",letterSpacing:0}}>{fmt(weekTotal)}</span>
+                          </div>
+                          {weekEntries.map(e=>{
+                            const cat=cats.find(c=>c.id===e.catId)||{label:"Other"};
+                            const armed=armedId===e.id;
+                            return (
+                              <div key={e.id} style={{display:"flex",alignItems:"center",gap:10,padding:8,borderRadius:9}}>
+                                <CatIcon name={cat.icon||e.catId} color={CHART_COLORS[catColorIndex(e.catId,cats)%CHART_COLORS.length]||C.gray} size={28}/>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontSize:12.5,fontWeight:600,color:C.text}}>{cat.label}</div>
+                                  <div style={{fontSize:11,color:C.gray,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fmtDay(e.date)}{e.note?" · "+e.note:""}</div>
+                                </div>
+                                <span style={{fontSize:13,fontWeight:700,color:C.text}}>{fmt(e.amount)}</span>
+                                <button type="button"
+                                  className={`xbtn${armed?" xbtn-danger":""}`}
+                                  aria-label={armed?`Confirm delete — ${cat.label}, ${fmt(e.amount)} on ${fmtDay(e.date)}`:`Delete — ${cat.label}, ${fmt(e.amount)} on ${fmtDay(e.date)}`}
+                                  title={armed?"Click again to confirm":"Delete entry"}
+                                  onClick={()=>{ if(armed){ deleteWeeklyEntry(e.id, !e.isCurrent); setArmedId(null); } else setArmedId(e.id); }}
+                                  style={{width:26,height:26,borderRadius:13,border:"none",background:armed?C.dangerLight:"transparent",color:armed?C.danger:C.gray,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:13}}>
+                                  {armed ? <span aria-hidden="true">⚠</span> : <Icon name="close" size={13}/>}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
         </div>
-        {notice && <Banner type="info">{notice}</Banner>}
-        <button className="btn-fill" onClick={save} disabled={!canSave} style={{padding:"11px",fontSize:14,fontWeight:700,border:"none",borderRadius:8,background:canSave?C.teal:C.surface,color:canSave?C.bg:C.gray,cursor:canSave?"pointer":"not-allowed"}}>Add expense</button>
-      </div>
+      )}
     </Modal>
   );
 }

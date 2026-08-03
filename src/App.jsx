@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useId } from 'react';
 import { C, applyTheme, THEMES } from './lib/theme.js';
 import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed, isAdmin, logEvent, exportUserData, exportUserDataExcel, deleteAccount, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY } from './lib/data.js';
 import { recordConsentIfPending } from './lib/consent.js';
@@ -7,8 +7,9 @@ import { setAnalyticsContext } from './lib/analytics.js';
 import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
-import { fmt, fmtS, fmtD, fmtDay, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr } from './lib/format.js';
-import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState, classifyCushionSource } from './lib/loans.js';
+import { fmt, fmtS, fmtD, fmtDay, fmtDayYear, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr, yearMonthRange, pruneAllYears } from './lib/format.js';
+import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState } from './lib/loans.js';
+import { yearAidBreakdown, unmatchedLoans, availableMoney, coveredMonthIndices } from './lib/aid.js';
 import { WEEKS_PER_MONTH, USMLE_STEP_FEE_ESTIMATE } from './lib/constants.js';
 import { BRANDS, BRAND_DOMAINS, getBrandDomain, getBrand } from './lib/brands.js';
 import { US_MED_SCHOOLS, degreeForSchool, DO_DUAL, dualOptionsForSchool } from './lib/schools.js';
@@ -16,7 +17,7 @@ import { AV_PALETTE, avColor, AVATARS, AV_GROUPS } from './lib/avatars.js';
 import { popoverStyle, wrapPop, edgeFadeClass, radioProps, tabProps, yrRangeLabel } from './lib/ui-helpers.js';
 import { useLiftCard, useEscClose, useEdgeFade } from './lib/hooks.js';
 import { Icon, MarroLogo, GoogleGlyph } from './components/icons.jsx';
-import { XBtn, Card, SectionTitle, ChoiceGroup, Stepper, TabBtn, YrBtn, Banner, Modal, MetricTile, InfoTip, BlobHealth } from './components/primitives.jsx';
+import { XBtn, Card, SectionTitle, ChoiceGroup, Stepper, TabBtn, YrBtn, Banner, Modal, MetricTile, BlobHealth } from './components/primitives.jsx';
 import { DateField } from './components/pickers.jsx';
 import { AvatarArt, Avatar, AvatarPicker } from './components/avatars.jsx';
 import { LoginScreen } from './components/LoginScreen.jsx'; // kept, no longer rendered — see LandingPage
@@ -35,7 +36,7 @@ const LandingPage = React.lazy(() => {
 });
 import { ProgramModal, ProfileModal, AvatarModal, MarroIntro, OnboardingFlow, ProgressiveSetup } from './components/onboarding.jsx';
 import { RenewalDialog, ConflictModal, QuickAddModal } from './components/modals.jsx';
-import { HIDDEN_TABS, SHOW_PHASE2_TILES } from './lib/featureFlags.js';
+import { HIDDEN_TABS, SHOW_PHASE2_TILES, SHOW_GAP_FORECAST } from './lib/featureFlags.js';
 import { AppContext } from './context/AppContext.js';
 // Tabs are lazy-loaded so the heavy Recharts dependency (only used by Budget/
 // Charts/Savings) and the other tab code stay OUT of the initial bundle. A
@@ -56,62 +57,65 @@ const AdminTab = React.lazy(() => import('./tabs/AdminTab.jsx'));
 let markedFirstRender = false;
 let markedSessionDecided = false;
 
-// ── Runway header-tile copy (Phase 2 commit 7) ──────────────────────────────
-// Maps computeRunway()'s state machine to the tile's value/sub/color per the
-// plan's walkthrough §5/§9 copy table. `alert:true` marks the state that must
-// carry role="alert" on the tile (a11y rule 7 — the gap warning has to be
-// announced, not just colored). Every sub carries its own meaning in plain
-// words, per the "no label ships that a confused M1 would need to google" rule
-// — never a bare number.
-// `sub` is always a SHORT single line that must read on its own; any longer
-// warning/guidance goes in `detail` (a plain string) instead of wrapping the
-// tile. The header renders `detail` behind a small InfoTip icon on the tile
-// (⚠️ for alert states, ℹ️ otherwise) that reveals it on hover/focus/tap — so
-// the tile stays clean and the same height as its siblings, and the full text
-// is still keyboard- and screen-reader-reachable (InfoTip's aria wiring). This
-// replaced an earlier line-clamp that truncated the warning with an ellipsis.
-// `cushionSource` ("loan"|"own"|"mixed"|undefined, from `classifyCushionSource`)
-// only matters for the `growing` state — every other state is unaffected.
-// Founder decision: a "growing" balance built from unspent LOAN money isn't
-// real savings (it's borrowed cash sitting at about 8% interest), so that case
-// must NOT read as "Growing ✓" the way genuine non-loan income does.
-function runwayTileDisplay(runway, cushionSource) {
-  switch (runway.state) {
-    case 'unanchored':
-      return { value: '—', sub: 'add your balance to see this', color: C.gray };
-    case 'growing':
-      if (cushionSource === 'own') return { value: 'Saving more than you spend ✓', sub: 'your balance grows a little each month', color: C.green };
-      return { value: 'Extra loan money', sub: 'you may be able to return some — see your Loans tab', color: C.blue };
-    case 'through_graduation':
-      return {
-        value: 'On track ✓', color: C.green,
-        sub: 'your money lasts through graduation',
-        detail: runway.savings > 0 ? `You have ${fmt(runway.savings)} in savings on top of this.` : undefined,
-      };
-    case 'overdrawn':
-      return {
-        value: '$0', color: C.amber, alert: true,
-        sub: runway.coveredBySavings ? 'overdrawn — your savings covers it' : 'overdrawn — no savings to fall back on yet',
-      };
-    case 'gap':
-      return {
-        value: fmt(runway.spendable), color: C.amber, alert: true,
-        sub: 'short before your next refund',
-        detail: `You run out about ${runway.gapDays} days before your next refund (around ${fmtDay(runway.nextRefund.date)}). Cutting about ${fmt(runway.trimPerMonthToClose)}/mo would close the gap.${runway.savings > 0 ? ` You also have ${fmt(runway.savings)} in savings if you need it.` : ''}`,
-      };
-    case 'counting_down': {
-      if (runway.basicallyOnTrack) return { value: fmt(runway.spendable), sub: "you're basically on track ✓", color: C.green };
-      return {
-        value: fmt(runway.spendable), color: C.text,
-        sub: `your money lasts until around ${fmtDay(runway.runOutDate)}`,
-        detail: runway.savings > 0 ? `You have ${fmt(runway.savings)} in savings on top of this.` : undefined,
-      };
-    }
-    case 'graduated':
-      return { value: '—', sub: 'all done — congrats!', color: C.teal };
-    default:
-      return { value: '—', sub: 'add your balance to see this', color: C.gray };
-  }
+// One labelled figure inside a header tile's expanded panel: a colour dot, a
+// plain-language label, and the dollar figure right-aligned.
+function TileRow({ label, val, dot }) {
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:7,marginTop:5}}>
+      {dot && <span aria-hidden="true" style={{width:7,height:7,borderRadius:2,background:dot,flexShrink:0}}/>}
+      <span style={{color:C.textMid}}>{label}</span>
+      <span style={{flex:1}}/>
+      <span style={{color:C.text,fontWeight:600,fontVariantNumeric:"tabular-nums lining-nums"}}>{val}</span>
+    </div>
+  );
+}
+
+// Small progress ring for the "Compared to your plan" panel — how much of what the
+// plan expected by now is actually in the account (clamped 0–1). Decorative; the
+// panel text carries the real numbers, so it's aria-hidden.
+function MiniRing({ pct, color }) {
+  const r = 15, c = 2 * Math.PI * r, p = Math.max(0, Math.min(1, pct || 0));
+  return (
+    <svg width="42" height="42" viewBox="0 0 42 42" aria-hidden="true" style={{flexShrink:0}}>
+      <circle cx="21" cy="21" r={r} fill="none" stroke={C.surfaceMid} strokeWidth="4"/>
+      <circle cx="21" cy="21" r={r} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"
+        strokeDasharray={c} strokeDashoffset={c*(1-p)} transform="rotate(-90 21 21)"/>
+    </svg>
+  );
+}
+
+// Header tile (money-rework "Option 3" — calm, tap-to-expand). Collapsed: uppercase
+// label, the big number, and ONE plain-language glance (an icon or arrow + a couple
+// of words). Tapped open: the full "how it's worked out" panel replaces the glance —
+// there is no "i" any more. Each tile owns its open state so all three expand
+// independently. The whole collapsed face is a real <button> (aria-expanded /
+// aria-controls, ≥44px, global :focus-visible ring); the reveal uses the shared
+// .collapse-panel grid-rows animation, which snaps under prefers-reduced-motion.
+// Background/border use the app's glass tokens (C.glassCard / C.borderDark) so the
+// tile is theme-correct in light mode too. Module-scope on purpose — defining it
+// inside App's render would remount it (and lose the open state) every render.
+function HeaderTile({ label, value, valueColor, glance, panel }) {
+  const [open, setOpen] = useState(false);
+  const panelId = useId();
+  return (
+    <div style={{flex:"1 1 200px",minWidth:180,background:C.glassCard,backdropFilter:"blur(40px) saturate(180%)",WebkitBackdropFilter:"blur(40px) saturate(180%)",border:`1px solid ${C.borderDark}`,borderRadius:14,overflow:"hidden",boxShadow:"0 4px 16px rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.08)"}}>
+      <button type="button" onClick={()=>setOpen(o=>!o)} aria-expanded={open} aria-controls={panelId}
+        style={{display:"flex",flexDirection:"column",width:"100%",minHeight:44,textAlign:"left",background:"none",border:"none",padding:"13px 15px",margin:0,cursor:"pointer",color:"inherit"}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+          <span style={{fontSize:11,letterSpacing:"0.06em",textTransform:"uppercase",fontWeight:700,color:C.gray}}>{label}</span>
+          <span style={{flex:1}}/>
+          <Icon name="chevron" size={13} style={{color:C.gray,transform:open?"rotate(180deg)":"none",transition:"transform .18s cubic-bezier(0.23,1,0.32,1)"}}/>
+        </div>
+        <div style={{fontSize:25,fontWeight:700,color:valueColor||C.text,fontFamily:"'Newsreader',Georgia,serif",lineHeight:1.05,letterSpacing:"-0.02em",fontVariantNumeric:"tabular-nums lining-nums"}}>{value}</div>
+        {glance && <div style={{display:"flex",alignItems:"center",gap:5,marginTop:9,fontSize:12,color:C.textMid,opacity:open?0:1,height:open?0:"auto",overflow:"hidden",transition:"opacity .15s"}}>{glance}</div>}
+      </button>
+      <div id={panelId} className={"collapse-panel"+(open?" open":"")}>
+        <div className="collapse-inner">
+          <div style={{padding:"0 15px 14px",fontSize:12,lineHeight:1.5}}>{panel}</div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function App() {
@@ -205,6 +209,7 @@ export function App() {
   const [showAddYear, setShowAddYear] = useState(false);
   const [confirmYearRemove, setConfirmYearRemove] = useState(null);
   const [yearUndo, setYearUndo] = useState(null); // last soft-deleted year, for the Undo toast
+  const [confirmPermDel, setConfirmPermDel] = useState(null); // archived year (startDate) pending a permanent delete
   useEffect(()=>{ if(!yearUndo) return; const t=setTimeout(()=>setYearUndo(null),8000); return ()=>clearTimeout(t); },[yearUndo]);
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetConfirmText, setResetConfirmText] = useState(""); // typed "RESET" guard, mirrors the delete-account modal
@@ -389,6 +394,9 @@ export function App() {
           const ey=y.endDate?new Date(y.endDate+"T12:00:00").getFullYear():sy+1;
           y.label=`Year ${i+1} — ${sy}-${yr2(ey)}`;
         });
+        // One-time cleanup: drop plan overrides for months a year no longer contains
+        // (stale July edits from before the picker clamped to the year's range).
+        pruneAllYears(loaded);
         setData(loaded);
         // Profile (school). No row → {school:null} triggers the one-time ProfileModal.
         // On error (e.g. offline) leave profile null so we don't block — re-check next boot.
@@ -442,6 +450,25 @@ export function App() {
     setAy(data.years[0]?.id||0);
     setSelMonth(0);
   },[ready]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep the selected month inside the SELECTED YEAR's real months. Two ways it
+  // can fall out of range: switching to a future year (e.g. an Aug–May year while
+  // today is July), OR shortening the CURRENT year's end date (July → May) while
+  // staying on it. Either way an out-of-range month is bad: budget edits there
+  // write an override the year-end math never reads (curYrNet only sums covered
+  // months), so "By end of year" looked frozen and the picker showed a month the
+  // year doesn't contain. Depends on the year's start/end so a date-range edit
+  // re-clamps too. Clamp to today's month when it's in the year, else month one.
+  const _clampYr = data?.years?.find(yr=>yr.id===ay);
+  useEffect(()=>{
+    if(!data||!ready||!_clampYr) return;
+    const {from,to}=yearMonthRange(_clampYr);
+    setSelMonth(prev=>{
+      if(prev>=from&&prev<=to) return prev;
+      const todayIdx=(new Date().getMonth()-7+12)%12;
+      return (todayIdx>=from&&todayIdx<=to)?todayIdx:from;
+    });
+  },[ay,ready,_clampYr?.startDate,_clampYr?.endDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = useCallback(async d => {
     const ts = Date.now();
@@ -592,12 +619,34 @@ export function App() {
   const subsMo = Math.round(subMonthlyTotal(subs));
 
   // ── Financials ────────────────────────────────────────────────────────────
-  const annGrant    = Number(yr.grant)||0;
-  const annTuition  = Number(yr.tuitionFees)||0;
-  const annHlth     = Number(yr.healthIns)||0;
-  const annDisburse = Math.max(annGrant - annTuition - annHlth, 0);
-  const annOther    = (Number(yr.otherIncome)||0)*12;
-  const moSpendable = (annDisburse + annOther)/12;
+  // All aid math routes through yearAidBreakdown (src/lib/aid.js) so the Aid
+  // tab, Budget tab, Charts bars and header tiles can never disagree — this
+  // formula used to be copy-pasted in six places with no test coverage.
+  // Loans now feed spending money: they're entered once on the Loans tab and
+  // flow from there, so `grant` means grants and scholarships only.
+  const aidBreakdown = yearAidBreakdown(yr, data.loans||[], yrStartYear);
+  const annGrant    = aidBreakdown.grants;
+  const annTuition  = aidBreakdown.tuitionFees;
+  const annHlth     = aidBreakdown.healthIns;
+  const annLoanCash = aidBreakdown.loanCash;
+  const annDisburse = aidBreakdown.sentToYou;
+  const annOther    = aidBreakdown.otherIncomeAnnual;
+  // The YEAR-PLAN number: this year's aid spread evenly over 12 months. Still the
+  // right basis for anything that projects across the WHOLE year (running balance,
+  // year-end net, the Charts bars) or that describes a year other than this one.
+  const moSpendable = aidBreakdown.moSpendable;
+  // The "what can I actually spend now" number — balance-anchored once the student
+  // has checked in a balance, otherwise identical to moSpendable (see availableMoney
+  // in src/lib/aid.js). Deliberately a SEPARATE binding rather than redefining
+  // moSpendable: feeding a remaining-months figure into a whole-year projection
+  // would silently double-count and inflate the year-end net.
+  const safeToSpend   = availableMoney({ year: yr, loans: data.loans||[], readings: data.balanceReadings||[], today: todayStr() });
+  const safeToSpendMo = safeToSpend.perMonth;
+  // What the monthly plan is measured against. When a dry spell is coming, the
+  // honest yardstick is the tighter "until your next money" figure, not the year
+  // average that would run you out before then.
+  const planBase = (safeToSpend.untilNextMoney && safeToSpend.untilNextMoney.perMonth < safeToSpendMo)
+    ? safeToSpend.untilNextMoney.perMonth : safeToSpendMo;
   // Month-disabled categories
   const monthKey = ay+"-"+MONTH_NAMES[selMonth];
   const disabledCats = data.monthDisabled?.[monthKey]||[];
@@ -635,6 +684,31 @@ export function App() {
   cats.forEach(c => { rawMonthly[c.id] = disabledCats.includes(c.id) ? 0 : (c.id==="subs" ? subsMo : getMonthVal(c.id)); });
   const moSpend     = moTotal(rawMonthly);
 
+  // Planned spend for ANY month of this year — same rules as getMonthVal (month
+  // override wins, subscriptions are derived, month-disabled categories drop
+  // out) but for an arbitrary month rather than the one being viewed.
+  const plannedForMonth = (mi) => {
+    const mk = MONTH_NAMES[mi];
+    const ov = yr.monthlyOverrides?.[mk];
+    const disM = data.monthDisabled?.[ay+"-"+mk] || [];
+    let total = 0;
+    cats.forEach(c => {
+      if (disM.includes(c.id)) return;
+      if (c.id === "subs") { total += subsMo; return; }
+      total += (ov && ov[c.id] !== undefined) ? ov[c.id] : (Number(yr.monthly[c.id])||0);
+    });
+    return total;
+  };
+  // Burn rate for the header's "Lasts until" tile. Deliberately keyed to the
+  // month containing TODAY, never `selMonth`: the tile is a global "how long
+  // will my money last", but it used to read whichever month you happened to be
+  // browsing in the Monthly plan card. With per-month plans that differ, simply
+  // paging Nov → Dec → Jan made the run-out date jump around, which read as the
+  // math being broken. (Only visible when the burn falls back to the plan — with
+  // two balance check-ins ≥14 days apart, computeRunway measures it instead.)
+  const curMonthIdx = (new Date().getMonth() - 7 + 12) % 12;
+  const runwayPlannedBurn = plannedForMonth(curMonthIdx);
+
   // Spent in a given academic month (sums all dated entries in that calendar month)
   const allEntriesFlat = [...(data.currentWeekEntries||[]), ...((data.weeklyArchive||[]).flatMap(a=>a.entries||[]))];
   const spentInMonth = (catId, mIdx) => {
@@ -649,10 +723,15 @@ export function App() {
   const unbudgetedCats = cats.filter(c=>!c.locked && !c.autoCalc && disabledCats.includes(c.id) && spentInMonth(c.id,selMonth)>0);
   const unbudgetedTotal = unbudgetedCats.reduce((a,c)=>a+spentInMonth(c.id,selMonth),0);
 
+  // Stays on the YEAR-PLAN number, deliberately. This row is labelled "/mo" and
+  // feeds the same mental model as Projected leftover (plan vs. plan). Deriving
+  // it from the balance-anchored figure made it spike in the final month, when
+  // `monthsLeft` collapses to 1 and the remaining balance stops being a monthly
+  // rate — see the "Left for the rest of the year" reframing in BudgetTab.
   const moSurplus = Math.round(moSpendable - moSpend - unbudgetedTotal);  // this month's net (auto)
 
-  // Per-month net = spendable - planned budget - unbudgeted spending
-  const monthNetFor = (mi) => {
+  // Planned budget + unbudgeted spending for one academic month (no income term).
+  const monthPlanFor = (mi) => {
     const mn=MONTH_NAMES[mi];
     const disM=data.monthDisabled?.[ay+"-"+mn]||[];
     let planned=0, unb=0;
@@ -661,8 +740,22 @@ export function App() {
       if(disM.includes(c.id)){ if(!c.locked&&!c.autoCalc) unb+=spentInMonth(c.id,mi); }
       else { const ov=yr.monthlyOverrides?.[mn]?.[c.id]; planned += (ov!==undefined?ov:(Number(yr.monthly[c.id])||0)); }
     });
-    return moSpendable - planned - unb;
+    return planned + unb;
   };
+  // The months this year's aid actually covers (money-rework §4b). The running
+  // balance and year-end net iterate these, NOT a flat 0–11: dividing the year's
+  // money by the school months (moSpendable) and then re-multiplying it across
+  // all 12 would credit a full month of income for the unfunded summer, inventing
+  // money that never reaches the account. Summer belongs to the summer fund.
+  const coveredIdx = coveredMonthIndices(yr, yrStartYear);
+  const coveredCount = coveredIdx.size || 12;
+  // True money reaching the account this year, spread evenly over the FUNDED
+  // months only — so the 12-month sum below totals exactly this, no phantom.
+  const fullYearIncome = annDisburse + annOther;
+  const moIncome = fullYearIncome / coveredCount;
+  // Per-month net = this month's share of the year's money − planned − unbudgeted.
+  // Unfunded (summer) months contribute nothing to the school-year net.
+  const monthNetFor = (mi) => coveredIdx.has(mi) ? (moIncome - monthPlanFor(mi)) : 0;
   // Running balance: cumulative net Aug → selected month (auto carry-forward)
   let runningBalance = 0;
   for(let mi=0; mi<=selMonth; mi++) runningBalance += monthNetFor(mi);
@@ -676,7 +769,7 @@ export function App() {
     let total = 0;
     for(const y of data.years) {
       if(y.id === ay) break;
-      const yMoSpendable = Math.max((Number(y.grant)||0)-(Number(y.tuitionFees)||0)-(Number(y.healthIns)||0),0)/12 + (Number(y.otherIncome)||0);
+      const yMoSpendable = yearAidBreakdown(y, data.loans||[]).moSpendable;
       const yDisabled = data.monthDisabled||{};
       MONTH_NAMES.forEach((mn,mi)=>{
         const disM = yDisabled[y.id+"-"+mn]||[];
@@ -696,7 +789,7 @@ export function App() {
 
 
   // 5-yr
-  const totDisburse = data.years.reduce((a,y)=>a+Math.max((Number(y.grant)||0)-(Number(y.tuitionFees)||0)-(Number(y.healthIns)||0),0)+(Number(y.otherIncome)||0)*12,0);
+  const totDisburse = data.years.reduce((a,y)=>{const b=yearAidBreakdown(y, data.loans||[]);return a+b.sentToYou+b.otherIncomeAnnual;},0);
   const totSpend    = data.years.reduce((a,y)=>a+moTotal({...y.monthly,subs:subsMo})*12,0);
 
   // ── Phase 2: Debt + Runway header tiles (commit 7) ──────────────────────────
@@ -704,19 +797,25 @@ export function App() {
   // uses for its own debt/runway math, so header and tab never disagree.
   const gradDate = data.years[data.years.length-1]?.endDate || null;
   const today = todayStr();
-  const upcomingRefunds = estimateRefunds(data.years).filter(r=>r.date && r.date > today);
+  // Loans are passed in so real disbursement dates count as incoming money.
+  // Without this, a loan landing between two balance check-ins reads as a huge
+  // NEGATIVE burn ("you're spending less!") — computeRunway nets refunds out of
+  // its burn window, and loan cash used to be covered only by accident, via the
+  // loan money students hand-typed into `grant`.
+  const upcomingRefunds = estimateRefunds(data.years, data.loans||[]).filter(r=>r.date && r.date > today);
+  // Committed loans whose academic year matches no year record — surfaced on
+  // the Aid tab rather than silently dropped from spending money.
+  const strayLoans = unmatchedLoans(data.loans||[], data.years);
   const debtProjection = projectDebtAtGraduation(data.loans||[], gradDate);
-  const runway = computeRunway({ readings: data.balanceReadings||[], plannedMonthlyBurn: moSpend, upcomingRefunds, gradDate, today });
-  // A4 (Phase 2.6 Package A): only meaningful for the tile's "growing" state
-  // — cheap to compute regardless, since classifyCushionSource is pure math
-  // over data already loaded here.
-  const cushionSource = classifyCushionSource({ readings: data.balanceReadings||[], loans: data.loans||[], otherIncome: annOther, today });
+  const runway = computeRunway({ readings: data.balanceReadings||[], plannedMonthlyBurn: runwayPlannedBurn, upcomingRefunds, gradDate, today });
   const refundNudge = refundNudgeState({ years: data.years, readings: data.balanceReadings||[], refundPlaybookSeen: data.refundPlaybookSeen, today, confirmedTerm: refundNudgeConfirmed });
 
   // ── Weekly ────────────────────────────────────────────────────────────────
   const currentWeekStart = getMonday(new Date());
   const currentWeekEnd   = getSunday(currentWeekStart);
   const currentEntries   = data.currentWeekEntries||[];
+  // Year-plan based for the same reason as moSurplus: a weekly allowance derived
+  // from the final month's remaining balance would spike at year end.
   const weeklyBudget     = moSpendable/WEEKS_PER_MONTH;
   const archives         = [...(data.weeklyArchive||[])].sort((a,b)=>b.weekStart.localeCompare(a.weekStart));
 
@@ -741,13 +840,23 @@ export function App() {
   const renewalsSoon = subs.filter(s=>s.active!==false&&daysUntil(s.renewal)!==null&&daysUntil(s.renewal)>0&&daysUntil(s.renewal)<=14);
 
   // ── Mutations ─────────────────────────────────────────────────────────────
-  const setMo = (yi,cid,v) => {
+  // Resolves the year by ID, not array position. Its caller passes `ay` (a year
+  // id) while every READER — `yr` above, monthNetFor, the quick-add deficit —
+  // does `years.find(y => y.id === ay)`. Those agree only while id === index,
+  // which is true on a fresh account but stops being true as soon as a year is
+  // removed or added out of order. Once they diverged, typing a budget wrote the
+  // override onto a DIFFERENT year's record: the field you were editing never
+  // changed (it read the right year, which was never written), so every category
+  // appeared frozen at 0 — and a real budget was silently altered elsewhere.
+  const setMo = (yid,cid,v) => {
     const d=JSON.parse(JSON.stringify(data));
+    const y = d.years.find(x=>x.id===yid) || d.years[0];
+    if(!y) return;
     const mk=MONTH_NAMES[selMonth];
-    if(!d.years[yi].monthlyOverrides) d.years[yi].monthlyOverrides={};
-    if(!d.years[yi].monthlyOverrides[mk]) d.years[yi].monthlyOverrides[mk]={};
+    if(!y.monthlyOverrides) y.monthlyOverrides={};
+    if(!y.monthlyOverrides[mk]) y.monthlyOverrides[mk]={};
     const minV = Math.ceil(spentInMonth(cid,selMonth));  // can't budget below logged spending
-    d.years[yi].monthlyOverrides[mk][cid]=Math.max(Number(v)||0, minV);
+    y.monthlyOverrides[mk][cid]=Math.max(Number(v)||0, minV);
     upd(d);
   };
   const setYrF = (yi,f,v) => {const d=JSON.parse(JSON.stringify(data));d.years[yi][f]=v;upd(d);};
@@ -810,6 +919,29 @@ export function App() {
     } else {
       reverseDeposit(d, slEntry);
     }
+  };
+
+  // Delete a logged weekly entry (Weekly tab's own list + Quick Add's History
+  // view both call this — single source of truth so they can't drift). An
+  // exams entry may have seeded one or more Step-goal deposits; those must be
+  // reversed first or the goal balance would silently overcount after the
+  // entry disappears.
+  const deleteWeeklyEntry = (eid, isArchived) => {
+    let d = JSON.parse(JSON.stringify(data));
+    const linkedSls = (d.savingsLog||[]).filter(s=>s.weeklyEntryId===eid);
+    if(linkedSls.length){
+      linkedSls.forEach(sl=>reverseDeposit(d, sl));
+      upd(d); return;
+    }
+    if(isArchived){
+      d.weeklyArchive=(d.weeklyArchive||[]).map(a=>{
+        const ents=a.entries.filter(e=>e.id!==eid);
+        return {...a,entries:ents,total:ents.reduce((s,e)=>s+Number(e.amount),0)};
+      });
+    } else {
+      d.currentWeekEntries=(d.currentWeekEntries||[]).filter(e=>e.id!==eid);
+    }
+    upd(d);
   };
 
   // Log a one-off actual expense (Weekly tab's log form + the header Quick add
@@ -913,6 +1045,13 @@ export function App() {
     });
     upd(d); setAy(newId);
   };
+  // Permanently drop a soft-deleted year — its saved numbers are gone for good
+  // (guarded by an inline confirm in the reinstate list).
+  const permDeleteYear = (arch) => {
+    const d=JSON.parse(JSON.stringify(data));
+    d.archivedYears=(d.archivedYears||[]).filter(a=>a.startDate!==arch.startDate);
+    upd(d); setConfirmPermDel(null);
+  };
   const addYear = (start,end) => {
     const d=JSON.parse(JSON.stringify(data));
     const newId=Math.max(...d.years.map(y=>y.id),-1)+1;
@@ -960,7 +1099,7 @@ export function App() {
   // Charts
 
   const barData = data.years.map(y=>{
-    const sp=Math.round((Math.max((Number(y.grant)||0)-(Number(y.tuitionFees)||0)-(Number(y.healthIns)||0),0)+(Number(y.otherIncome)||0)*12)/12);
+    const sp=Math.round(yearAidBreakdown(y, data.loans||[]).moSpendable);
     return {name:y.label.split("—")[0].trim().replace("Year ","Y"),Spendable:sp,Spend:Math.round(moTotal({...y.monthly,subs:subsMo}))};
   });
 
@@ -981,7 +1120,7 @@ export function App() {
   const ctx = {
     // core state
     data, setData, upd, save, ay, setAy, cats, profile, session, syncStatus,
-    flash, bloom, triggerBloom, dismissed, dismiss, selMonth, setSelMonth,
+    flash, bloom, triggerBloom, dismissed, dismiss, selMonth, setSelMonth, setTab,
     // shared form/modal state (spans tabs or App-level chrome)
     renewDlg, setRenewDlg, newCatName, setNewCatName, newCatIcon, setNewCatIcon,
     iconPickOpen, setIconPickOpen, viewWeek, setViewWeek,
@@ -989,7 +1128,8 @@ export function App() {
     nyStart, setNyStart, nyEnd, setNyEnd, yearUndo, setYearUndo,
     // derived financial memos
     yr, yrStartYear, subs, subsMo, annGrant, annTuition, annHlth, annDisburse,
-    annOther, moSpendable, monthKey, disabledCats, moSpend, allEntriesFlat,
+    annOther, annLoanCash, aidBreakdown, strayLoans, moSpendable, safeToSpend, safeToSpendMo, planBase, runwayPlannedBurn,
+    monthKey, disabledCats, moSpend, allEntriesFlat,
     spentInMonth, unbudgetedCats, unbudgetedTotal, moSurplus, monthNetFor,
     runningBalance, curYrNet, priorYearsCarryover, totalAccumulatedBalance,
     totDisburse, totSpend, getMonthValIdx, getMonthVal, weeklyBudget,
@@ -1001,7 +1141,7 @@ export function App() {
     // shared mutation helpers (don't close over any one tab's private form state)
     setMo, setYrF, syncSubs, promoteToBudget, toggleMonthCat, removeWeeklyEntry,
     reverseDeposit, reverseDepositGroup, addCat, reorderCats, delCat,
-    reinstateYear, addYear, removeYear, addWeeklyEntry, applyRenewal,
+    reinstateYear, addYear, removeYear, addWeeklyEntry, deleteWeeklyEntry, applyRenewal,
   };
 
   return (
@@ -1063,7 +1203,7 @@ export function App() {
         </div>
       </Modal>}
       {confirmDeleteAccount && <Modal title="Delete your account?" onClose={()=>{if(!deletingAccount)setConfirmDeleteAccount(false);}} width={380}>
-        <div style={{fontSize:13,color:C.textMid,marginBottom:12,lineHeight:1.6}}>This permanently deletes your account and <strong>all</strong> your Marro data — budget, weekly entries, savings, subscriptions, and profile. <strong>This cannot be undone.</strong></div>
+        <div style={{fontSize:13,color:C.textMid,marginBottom:12,lineHeight:1.6}}>This permanently deletes your account and <strong>all</strong> your Marro data: budget, weekly entries, savings, subscriptions, and profile. <strong>This cannot be undone.</strong></div>
         <div style={{fontSize:12,color:C.textMid,marginBottom:8}}>
           If you want a copy of your data first, close this and use <strong>Export my data</strong> in Settings.
         </div>
@@ -1111,7 +1251,7 @@ export function App() {
         </div>
       </Modal>}
       {confirmYearRemove!==null && <Modal title="Remove year" onClose={()=>setConfirmYearRemove(null)} width={350}>
-        <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>Remove <strong>{data.years.find(y=>y.id===confirmYearRemove)?.label}</strong>? Its budget data is kept — you can reinstate this year anytime from <strong>Add year</strong>, and its numbers come right back.</div>
+        <div style={{fontSize:13,color:C.textMid,marginBottom:16,lineHeight:1.6}}>Remove <strong>{(()=>{const ry=data.years.find(y=>y.id===confirmYearRemove);return (ry?.name?.trim())||(ry?.label||"").split("—")[0].trim()||"this year";})()}</strong>? Its budget data is kept. You can reinstate this year anytime from <strong>Add year</strong> and its numbers come right back.</div>
         <div style={{display:"flex",gap:8}}>
           <button className="btn-fill" onClick={()=>setConfirmYearRemove(null)} style={{flex:1.4,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:8,background:C.creamSoft,color:C.text,cursor:"pointer"}}>Cancel</button>
           <button className="btn-fill" onClick={()=>{removeYear(confirmYearRemove);setConfirmYearRemove(null);}} style={{flex:1,padding:"10px",fontSize:13,fontWeight:600,border:`1px solid ${C.dangerMid}`,borderRadius:8,background:C.dangerLight,color:C.danger,cursor:"pointer"}}>Remove</button>
@@ -1121,13 +1261,24 @@ export function App() {
         {(data.archivedYears||[]).length>0 && <div style={{marginBottom:16}}>
           <div style={{fontSize:11,fontWeight:600,color:C.textMid,marginBottom:8}}>Reinstate a removed year</div>
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
-            {data.archivedYears.slice().sort((a,b)=>String(a.startDate||"").localeCompare(String(b.startDate||""))).map(a=>(
-              <button key={a.startDate||a.id} type="button" onClick={()=>{setShowAddYear(false);reinstateYear(a);}}
-                className="menu-row" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,width:"100%",textAlign:"left",padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10,background:"transparent",color:C.text,fontSize:13,cursor:"pointer"}}>
-                <span style={{fontWeight:600}}>{a.label}</span>
-                <span style={{fontSize:12,color:C.teal,fontWeight:600,whiteSpace:"nowrap"}}>Reinstate →</span>
-              </button>
-            ))}
+            {data.archivedYears.slice().sort((a,b)=>String(a.startDate||"").localeCompare(String(b.startDate||""))).map(a=>{
+              const confirming = confirmPermDel===(a.startDate||a.id);
+              return confirming ? (
+                <div key={a.startDate||a.id} role="alert" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"10px 12px",border:`1px solid ${C.dangerMid}`,borderRadius:10,background:C.dangerLight,fontSize:13}}>
+                  <span style={{color:C.text}}>Delete <strong>{a.label.split("—")[0].trim()}</strong> and its saved numbers forever?</span>
+                  <span style={{display:"flex",gap:6,flexShrink:0}}>
+                    <button type="button" onClick={()=>setConfirmPermDel(null)} style={{padding:"6px 11px",minHeight:32,fontSize:12,fontWeight:600,border:`1px solid ${C.border}`,borderRadius:8,background:"transparent",color:C.text,cursor:"pointer"}}>Cancel</button>
+                    <button type="button" onClick={()=>permDeleteYear(a)} style={{padding:"6px 11px",minHeight:32,fontSize:12,fontWeight:600,border:"none",borderRadius:8,background:C.danger,color:C.bg,cursor:"pointer"}}>Delete</button>
+                  </span>
+                </div>
+              ) : (
+                <div key={a.startDate||a.id} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",border:`1px solid ${C.border}`,borderRadius:10}}>
+                  <span style={{fontWeight:600,color:C.text,fontSize:13,flex:1}}>{(a.name||"").trim()||(a.label||"").split("—")[0].trim()}</span>
+                  <button type="button" onClick={()=>{setShowAddYear(false);reinstateYear(a);}} style={{fontSize:12,color:C.teal,fontWeight:600,whiteSpace:"nowrap",background:"none",border:"none",cursor:"pointer",padding:"6px 4px",minHeight:32}}>Reinstate →</button>
+                  <button type="button" aria-label={`Delete ${a.label.split("—")[0].trim()} permanently`} title="Delete permanently" onClick={()=>setConfirmPermDel(a.startDate||a.id)} className="xbtn" style={{width:28,height:28,borderRadius:8,border:"none",background:"transparent",color:C.gray,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><Icon name="close" size={13}/></button>
+                </div>
+              );
+            })}
           </div>
           <div style={{textAlign:"center",fontSize:11,color:C.gray,margin:"14px 0 2px"}}>— or add a new year —</div>
         </div>}
@@ -1301,7 +1452,7 @@ export function App() {
       {/* ── Offline banner ── */}
       {syncStatus==="offline" && (
         <Banner type="warn">
-          <strong>You&apos;re offline</strong> — your changes are saved on this device and will sync automatically when you reconnect.
+          <strong>You&apos;re offline.</strong> Your changes are saved on this device and will sync automatically when you reconnect.
         </Banner>
       )}
 
@@ -1378,28 +1529,143 @@ export function App() {
         {(()=>{const r=yrRangeLabel(data.years.find(y=>y.id===ay));return r?<span style={{fontSize:11,color:C.gray}}>Selected year runs {r}</span>:null;})()}
       </div>
 
-      {/* ── Top metrics — Runway & Debt go live behind featureFlags.SHOW_PHASE2_TILES
-           (Phase 2 commit 7). Runway's copy/color come from runwayTileDisplay() above,
-           one branch per computeRunway() state (walkthrough §5/§9); the gap and overdrawn
-           states carry role="alert" so the warning is announced, not just colored. With
-           only the "Monthly plan" tile left when the flag is off, it's wrapped (rather
-           than left as a bare flex:1 child) so it doesn't stretch to fill the whole row —
-           caps at 320px like a normal card. ── */}
-      <div style={{display:"flex",gap:10,marginBottom:SHOW_PHASE2_TILES?10:20,flexWrap:"wrap"}}>
-        {SHOW_PHASE2_TILES && (()=>{ const rt=runwayTileDisplay(runway, cushionSource); return (
-          <MetricTile label="Runway" value={rt.value} sub={rt.sub} color={rt.color}
-            role={rt.alert?"alert":undefined} ariaLive={rt.alert?"assertive":undefined}
-            subIcon={rt.detail
-              ? <InfoTip text={rt.detail} glyph={rt.alert?"⚠️":"ℹ️"}
-                  label={rt.alert?"Runway warning — full detail":"Runway — more detail"}/>
-              : undefined}/>
-        ); })()}
-        {SHOW_PHASE2_TILES
-          ? <MetricTile label="Monthly plan"  value={fmt(moSpend)} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/>
-          : <div style={{flex:"0 1 320px",minWidth:130}}><MetricTile label="Monthly plan"  value={fmt(moSpend)} sub={subsMo>0?`incl. ${fmtA(subsMo)} fixed costs`:"planned spending"}/></div>
+      {/* ── Two header tiles, built around the three questions a med student actually
+           asks (founder, MONEY_REWORK.md §2): (1) "Safe to spend" — what can I spend
+           THIS month (balance-anchored, so it already adapts to how prior months went);
+           (2) "By end of year" — with my plan across every month, do I finish SHORT or
+           AHEAD. "Am I on track?" (actual vs. expected) lives at the check-in, not here.
+           The old run-out-date tile became a conditional dry-spell warning below (a run-out
+           date only matters when a real cash gap is coming). "Still to arrive" was dropped
+           from the copy — the founder found it confusing. Both tiles follow the selected
+           year: current year = real numbers, future year = the same formula's projection,
+           labeled "planned". ── */}
+      {(()=>{
+        const syLabel = `${yrStartYear}–${yr2(yrStartYear+1)}`; // e.g. "2025–26"
+        // The dry-spell / overdrawn warning is a "right now" fact — only show it when
+        // the SELECTED year is the one containing today. Peeking at a future year to
+        // plan it must not surface a today-cash-gap warning.
+        const viewingCurrentYear = !!(yr?.startDate && yr?.endDate && today>=yr.startDate && today<=yr.endDate);
+        // (1) SAFE TO SPEND — this month. Final-month reframing: monthsLeft floors at 1,
+        // so perMonth stops being a monthly rate — say what it is instead.
+        const finalMonth = safeToSpend.monthsLeft<=1 && safeToSpend.basis==="balance";
+        const sLabel = finalMonth ? "Left for this school year" : "Safe to spend";
+        // Name the PERIOD (so "year" never reads as the calendar year) and keep the
+        // check-in date visible (grounds the number in the real balance). The final-month
+        // label already says "this school year", so its sub only needs the date.
+        const sValue = finalMonth ? fmt(safeToSpend.available) : fmt(safeToSpendMo)+"/mo";
+        // TILE 1 — collapsed glance + expanded panel. Collapsed carries the one thing a
+        // student must not misread: this is the WHOLE month's money, BEFORE rent (rent and
+        // everything else come out of it — founder call). Expanded: a checking/savings
+        // split bar, the labelled figures, then the before-rent + check-in / school-year note.
+        const s_balance = safeToSpend.basis==="balance";
+        const s_glance = (<>
+          <Icon name="wallet" size={13} color={C.teal}/>
+          <span>before rent{s_balance ? "" : " · planned"}</span>
+        </>);
+        const s_panel = s_balance ? (()=>{
+          const chk=safeToSpend.onHand, sav=safeToSpend.savings, arr=safeToSpend.stillToArrive;
+          const tot=Math.max(chk+sav,1);
+          return (<>
+            {sav>0 && (
+              <div style={{display:"flex",height:6,borderRadius:3,overflow:"hidden",background:C.surface,marginBottom:6}} aria-hidden="true">
+                <div style={{width:`${chk/tot*100}%`,background:C.teal}}/>
+                <div style={{width:`${sav/tot*100}%`,background:C.gray}}/>
+              </div>
+            )}
+            <TileRow label="In checking, to spend" val={fmt(chk)} dot={C.teal}/>
+            {arr>0 && <TileRow label="Aid still to arrive" val={fmt(arr)} dot={C.tealMid}/>}
+            {sav>0 && <TileRow label="In savings, kept aside" val={fmt(sav)} dot={C.gray}/>}
+            <div style={{marginTop:9,paddingTop:9,borderTop:`1px solid ${C.border}`,color:C.gray}}>
+              This is your whole month’s money — rent and everything else come out of it. From your {fmtDay(safeToSpend.asOf)} check-in, spread across the rest of the {syLabel} school year. Savings isn’t counted here.
+            </div>
+          </>);
+        })() : (<>
+          <div style={{color:C.textMid}}>This is your aid for the {syLabel} school year, spread across its months — a plan, not a live balance. It’s your whole month’s money, before rent.</div>
+          <div style={{marginTop:7,color:C.gray}}>Check in your balance to see your real spendable number.</div>
+        </>);
+        // TILE 2 — BY END OF YEAR. Plan across all 12 months → surplus(+) or short(−).
+        // Never green when the cushion is borrowed (founder rule); short is negative-toned.
+        // A value that ROUNDS to $0 is "even", not a shortfall — a tiny negative (−$0.40)
+        // still displays "$0", so it must read neutral ("right on your plan"), never amber
+        // "short" (founder). Math.round===0 matches exactly when the value shows $0.
+        const borrowed = !!aidBreakdown?.isLoanFunded;
+        const yeEven = Math.round(curYrNet) === 0;
+        const yeColor = yeEven ? C.textMid : (curYrNet < 0 ? C.neg : (borrowed ? C.blue : C.green));
+        const ye_glance = yeEven
+          ? <span style={{color:C.textMid}}>right on your plan</span>
+          : (<>
+              <Icon name={curYrNet<0?"arrowDown":"arrowUp"} size={13} color={yeColor}/>
+              <span>{curYrNet<0 ? "short on your plan" : "left over"}</span>
+            </>);
+        const ye_panel = (<>
+          <div style={{color:C.textMid}}>{yeEven
+            ? <>On your current plan you’d finish just about <strong style={{color:C.text}}>even</strong> for the {syLabel} school year — your plan uses almost exactly what you have.</>
+            : curYrNet<0
+              ? <>On your current plan you’d finish about <strong style={{color:C.neg}}>{fmt(Math.abs(curYrNet))} short</strong> for the {syLabel} school year.</>
+              : <>On your current plan you’d finish with about <strong style={{color:yeColor}}>{fmt(curYrNet)} to spare</strong>.</>}</div>
+          {borrowed && curYrNet>=0 && !yeEven && (
+            <div style={{marginTop:8,display:"inline-flex",alignItems:"center",gap:6,padding:"3px 9px",borderRadius:8,background:C.blueLight,border:`1px solid ${C.blueMid}`,fontSize:11,color:C.blue,fontWeight:600}}>
+              Borrowed · returnable within 120 days
+            </div>
+          )}
+          <div style={{marginTop:8,color:C.gray}}>
+            {yeEven ? "Nothing extra, nothing short — right on target." : curYrNet<0 ? "Trim your plan or plan to borrow a little more." : borrowed ? "It’s borrowed money you don’t have to spend — returning what you don’t need within 120 days cancels the interest." : "A real cushion, nicely done."} This is a forecast from your plan, not your bank balance.
+          </div>
+        </>);
+        // TILE 3 — VS YOUR PLAN — am I on track? Real ONLY for the current year with
+        // enough check-in history (pace present). Anything less and the tile does not
+        // render at all (founder, Aug 2): it used to fall back to a "for your current
+        // year" note (other-year case) or a "Check in" prompt (no spaced-out history
+        // yet), but a tile that never carries a number reads as clutter — the Budget
+        // tab's own check-in card is where we ask for readings. So: two tiles until
+        // there's a real ahead/behind comparison, three once there is.
+        // drift>0 = spent LESS than planned (ahead); drift<0 = faster than planned.
+        const pace = runway.actualPace;
+        const showVsPlan = !!(viewingCurrentYear && pace);
+        let vpValue, vpColor, vp_glance, vp_panel; // only populated when showVsPlan
+        if (showVsPlan) {
+          const ringColor = !pace.meaningful ? C.green : pace.drift>0 ? C.green : C.amber;
+          const ratio = pace.expected>0 ? pace.actual/pace.expected : 1;
+          if (!pace.meaningful) { vpValue="On track"; vpColor=C.green; vp_glance=<span>on your plan</span>; }
+          else if (pace.drift>0) { vpValue=fmt(pace.drift)+" ahead"; vpColor=C.green; vp_glance=<><Icon name="arrowUp" size={13} color={C.green}/><span>money lasts longer</span></>; }
+          else { vpValue=fmt(Math.abs(pace.drift))+" behind"; vpColor=C.amber; vp_glance=<><Icon name="arrowDown" size={13} color={C.amber}/><span>spending faster</span></>; }
+          vp_panel = (<div style={{display:"flex",gap:12,alignItems:"center"}}>
+            <MiniRing pct={ratio} color={ringColor}/>
+            <div style={{flex:1}}>
+              <div style={{color:C.textMid}}>Your plan expected about <strong style={{color:C.text}}>{fmt(pace.expected)}</strong> by now; you checked in <strong style={{color:C.text}}>{fmt(pace.actual)}</strong>.</div>
+              <div style={{marginTop:6,color:C.gray}}>{
+                !pace.meaningful ? "Right where your plan expects — keep it up."
+                : pace.drift>0 ? "You're ahead, so your money will last longer than planned."
+                : <>You’re spending faster than planned.{pace.runOutDate?<> At this pace your money lasts to {fmtDayYear(pace.runOutDate)} instead of {fmtDayYear(runway.runOutDate)}.</>:""} Trim a little or spend closer to plan.</>
+              }</div>
+            </div>
+          </div>);
         }
-        {SHOW_PHASE2_TILES && <MetricTile label="Debt" value={fmt(debtProjection.total)} sub={debtProjection.isEstimate?"estimate":"at graduation"}/>}
-      </div>
+        // Dry-spell / overdrawn warning — only when there's actually a cash gap coming.
+        // Suspended behind SHOW_GAP_FORECAST (see featureFlags.js) — founder call,
+        // 2026-08-02, the forecast felt unrealistic. Doesn't touch showVsPlan above,
+        // which uses actual-check-in pace, not this projection.
+        const dry = SHOW_GAP_FORECAST && runway.state==='gap' ? (runway.shortfalls?.[0] || null) : null;
+        return (
+          <>
+            <div style={{display:"flex",gap:10,marginBottom:SHOW_GAP_FORECAST&&viewingCurrentYear&&(runway.state==='gap'||runway.state==='overdrawn')?10:20,flexWrap:"wrap",alignItems:"flex-start"}}>
+              <HeaderTile label={sLabel} value={sValue} valueColor={C.teal} glance={s_glance} panel={s_panel}/>
+              <HeaderTile label="By end of year" value={fmtS(curYrNet)} valueColor={yeColor} glance={ye_glance} panel={ye_panel}/>
+              {showVsPlan && <HeaderTile label="Compared to your plan" value={vpValue} valueColor={vpColor} glance={vp_glance} panel={vp_panel}/>}
+            </div>
+            {SHOW_GAP_FORECAST && viewingCurrentYear && runway.state==='gap' && (
+              <div style={{marginBottom:20}}><Banner type="warn">
+                Heads up — your spending money gets tight{dry?.date?` around ${fmtDay(dry.date)}`:""}, before your next aid arrives{runway.nextRefund?.date?` (${runway.nextRefund.isEstimate?"around ":""}${fmtDay(runway.nextRefund.date)})`:""}. Spending about {fmt(runway.trimPerMonthToClose)}/mo less until then would bridge it.{runway.savings>0?` You also have ${fmt(runway.savings)} in savings if you need it.`:""}
+              </Banner></div>
+            )}
+            {SHOW_GAP_FORECAST && viewingCurrentYear && runway.state==='overdrawn' && (
+              <div style={{marginBottom:20}}><Banner type="warn">
+                Your spending money is down to $0{runway.coveredBySavings?" — your savings can cover it for now.":", with no savings to fall back on yet."}
+              </Banner></div>
+            )}
+          </>
+        );
+      })()}
 
       {/* "Did your refund land?" nudge (walkthrough §9) — only when the header's own
           refundNudgeState says a nudge (not the full Playbook card) is the right surface
@@ -1436,7 +1702,7 @@ export function App() {
           ["weekly","Weekly"],
           ["charts","Charts"],
           ["savings","Savings"],
-          ["aid","Aid & Detail",0],
+          ["aid","Aid & Plan",0],
           ["loans","Loans"],
           ["subscriptions","Subscriptions",renewalsDue.length],
           ["customize","Categories"],

@@ -45,12 +45,80 @@ MONTH_NAMES = ["Aug",...,"Jul"]   // index 0=Aug, 11=Jul
 ```
 
 ## Key computed values (in render)
+
+**Two questions, one formula — read before touching any of this.** The app answers
+"how much money do I have?" in two different senses. Both come from
+`availableMoney()` in `src/lib/aid.js`; they differ only in what you pass it.
+
 ```js
 yr          = data.years[ay]
-moSpendable = (annGrant - tuition - healthIns + otherIncome*12) / 12
+
+// (1) YEAR PLAN — this year's aid spread evenly over 12 months.
+//     From yearAidBreakdown(). Used by anything that projects across the WHOLE
+//     year, or that describes a year other than the current one.
+moSpendable = (grants + loanCash - tuition - healthIns + otherIncome*12) / 12
 moSurplus   = moSpendable - moSpend - unbudgetedTotal   // rounded
 weeklyBudget= moSpendable / 4.333 (+ last week's rollover)
+monthNetFor(mi), runningBalance, curYrNet, priorYearsCarryover,
+totalAccumulatedBalance, barData, AidTab per-year + overview   // all year-plan
+
+// (2) SAFE TO SPEND — what's actually spendable right now.
+//     availableMoney({year, loans, readings, today}) →
+//       onHand        latest balance check-in (spendable + savings)
+//       stillToArrive inflows dated after that check-in, before year end
+//       perMonth      (onHand + stillToArrive) / monthsLeft
+//       basis         'balance' | 'projection'
+safeToSpend, safeToSpendMo                                     // Budget cash-flow row
 ```
+
+**The double-count trap.** `moSpendable` is summed once per month to build the
+running balance and year-end net. Feeding those a remaining-months figure counts
+the same money 12 times and silently inflates the totals — this is why (1) and (2)
+are separate bindings rather than one redefined value. If you change a consumer
+from one to the other, re-check `Projected leftover` and the 4-year overview.
+
+**Why (2) exists.** (1) never looks at the bank balance, so it stays frozen all
+year: on Dec 1 it still claimed a full year of money was ahead while the runway
+tile — anchored on a real check-in — said the money ran out in February. Two
+numbers, two stories. (2) fixes that by starting from what's actually in the
+account, which also means past spending never has to be reconstructed: whatever
+was spent simply isn't in the balance anymore. That's what makes a mid-year
+signup, and months the student never tracked, work correctly for free.
+
+`basis: 'projection'` (no check-in yet, or not the current year) makes (2) return
+exactly (1) — the projection is the same formula's degenerate case, not a rival.
+
+**Known edge:** in the final month `monthsLeft` floors at 1, so `perMonth` stops
+being a monthly rate. The Budget tab reframes it as "Left for the rest of the
+year" instead of showing a misleading `/mo`.
+
+### (3) The runway projects on the PLAN, not on measured spending
+
+`computeRunway` used to derive its burn rate from the gap between two balance
+check-ins. It now always uses `plannedMonthlyBurn` (see `runwayPlannedBurn` in
+`App.jsx`, keyed to the month containing TODAY, never the month being browsed).
+
+Why: the headline should rest on a number the student sets and can change. A
+measured rate moved the date for reasons they didn't decide, and did nothing at
+all until two check-ins existed 14+ days apart.
+
+Check-ins now answer a better question — is the plan working? `compareToPlan()`
+returns `expected` (previous balance + money landed since − plan for those days)
+against `actual`, plus the real `actualPerMonth`. It reports two separate flags,
+which must not be conflated:
+
+- `measurable` — enough history to state a pace at all (2 readings, ≥7 days)
+- `meaningful` — the gap from plan is big enough to be worth warning about
+
+`computeRunway` exposes this as `actualPace` (present whenever measurable),
+carrying its own `runOutDate` from the same `projectBalance` so the plan and
+reality projections can never diverge in method.
+
+**⚠ `growing` must keep reading the measured delta.** It used to mean "measured
+burn is ~0". With the plan always supplying a positive burn that could never fire
+again, silently killing the "Extra loan money, you may be able to return some"
+tile (a locked decision — never green when borrowed). Growth detection is now
+independent of which burn drives the projection; `loans.test.js` guards it.
 
 ---
 

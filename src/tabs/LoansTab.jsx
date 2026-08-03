@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { C } from '../lib/theme.js';
-import { fmt, todayStr, sanitizeMoneyInput } from '../lib/format.js';
+import { fmt, fmtDay, todayStr, sanitizeMoneyInput } from '../lib/format.js';
 import { Card, SectionTitle, XBtn, Banner, EmptyState, ChoiceGroup, InfoTip } from '../components/primitives.jsx';
+import { Icon } from '../components/icons.jsx';
 import { DateField } from '../components/pickers.jsx';
 import { useApp } from '../context/AppContext.js';
 import { radioProps } from '../lib/ui-helpers.js';
@@ -56,7 +57,7 @@ const blankLoan = () => {
 const LOAN_TYPE_OPTIONS = [
   { key: 'directUnsubGrad', type: 'federal', label: 'Federal — Direct Unsubsidized (most common)' },
   { key: 'gradPLUS', type: 'federal', label: 'Federal — Grad PLUS' },
-  { key: 'directUnsubUndergrad', type: 'federal', label: 'Federal — from college (undergrad)' },
+  { key: 'directUnsubUndergrad', type: 'federal', label: 'Federal — from undergrad, before med school' },
   { key: 'hpsl', type: 'private', label: 'School health-professions loan (HPSL / Primary Care / LDS — often 5%)' },
   { key: 'private', type: 'private', label: 'Private' },
   { key: 'otherUserRate', type: 'private', label: "Other / I'll enter my rate" },
@@ -155,7 +156,7 @@ function SegButton({ active, onClick, children, ariaLabel }) {
   );
 }
 
-function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
+function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore, projRow }) {
   const [pctText, setPctText] = useState(loan.rate != null ? String(Math.round(loan.rate * 1000) / 10) : '');
   const annualTotal = (loan.disbursements || []).reduce((a, d) => a + (Number(d.amount) || 0), 0);
   const offered = loanOfferedAmount(loan);
@@ -209,6 +210,28 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
   const myWindows = isFederalReturn ? loanReturnWindows([loan], todayStr()) : [];
   const returnWindow = myWindows.length ? myWindows.reduce((a, b) => (b.daysLeft < a.daysLeft ? b : a)) : null;
 
+  // ── Collapsed one-line summary (§3c) ──
+  // Both figures are REUSED, never recomputed here, so the row and the
+  // debt-breakdown card at the top of the tab can never disagree:
+  //   • "at graduation" = this loan's own row in `projectDebtAtGraduation`
+  //     (`projRow.total`), the exact per-loan number the breakdown headline sums.
+  //   • "borrowed"       = `projRow.principal` (which is `loanPrincipal`), the
+  //     accepted/face amount — the same helper the breakdown uses. Falls back to
+  //     `loanPrincipal(loan)` for an uncounted ("offered") loan with no proj row.
+  const borrowed = projRow ? projRow.principal : loanPrincipal(loan);
+  const gradTotal = projRow ? projRow.total : null;
+  // Auto-expand so nothing incomplete can hide: reuse the SAME per-loan `basis`
+  // the debt-breakdown card computes — `basis === 'estimate'` means Marro had to
+  // infer a rate or a money-arrival date (see projectDebtAtGraduation). A loan
+  // with no proj row (still only "offered") or nothing entered yet ($0) also
+  // opens, so a freshly-added loan lands ready to fill instead of hidden.
+  const isIncomplete = (projRow ? projRow.basis === 'estimate' : true) || borrowed <= 0;
+  // Every card is collapsible. An incomplete/estimate loan just DEFAULTS to open (so a
+  // freshly-added or unfinished loan lands ready to fill) — but it still gets a chevron
+  // and can be collapsed, same as any other card. Per-card local state, keyed by loan id.
+  const [open, setOpen] = useState(isIncomplete);
+  const isExpanded = open;
+
   const patch = (fn) => { const d = JSON.parse(JSON.stringify(data)); const l = d.loans[idx]; fn(l, d); upd(d); };
 
   const setAnnual = (v) => {
@@ -242,10 +265,35 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
 
   return (
     <Card style={{ position: 'relative' }}>
-      <div style={{ position: 'absolute', top: 12, right: 12 }}>
+      <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 1 }}>
         <XBtn label={`Remove loan ${loan.name || 'entry'}`} onClick={() => { const d = JSON.parse(JSON.stringify(data)); d.loans = d.loans.filter((l) => l.id !== loan.id); upd(d); }} />
       </div>
 
+      {/* ── Collapsed summary row (§3c) ──
+          The whole row is one real <button> — keyboard-operable (Enter/Space),
+          ≥44px tall, with a visible :focus-visible ring (`.card-row-btn`, see
+          index.html). Its accessible name is the loan's name (in the text), so
+          the decorative chevron needs no separate label. aria-expanded +
+          aria-controls point at the form region below. Bled to the card edges so
+          the tap target fills the card, with right padding clearing the ✕.
+          A loan that must stay open (incomplete/estimate) renders a static
+          heading instead — there is nothing to toggle, so a dead button would be
+          the wrong affordance; the full form is always keyboard-reachable below. */}
+      <button type="button" onClick={() => setOpen((o) => !o)}
+        aria-expanded={isExpanded} aria-controls={`ln-form-${loan.id}`}
+        style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', font: 'inherit', color: C.text,
+          width: 'calc(100% + 40px)', margin: '-18px -20px 0', boxSizing: 'border-box',
+          padding: '16px 52px 16px 20px', minHeight: 44, background: 'none', border: 'none', cursor: 'pointer' }}>
+        <Icon name="chevron" size={16} color={C.textMid} style={{ flexShrink: 0, marginTop: 2,
+          transition: 'transform .15s', transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)' }} />
+        <span style={{ flex: 1, fontSize: 13.5, lineHeight: 1.5 }}>
+          <strong style={{ fontWeight: 600, color: C.text }}>{loan.name || 'Untitled loan'}</strong>
+          <span style={{ color: C.text }}>{' — '}{fmt(borrowed)} borrowed{gradTotal != null ? <> · {fmt(gradTotal)} at graduation{isIncomplete && <span style={{ color: C.amber, fontWeight: 600 }}> · estimate</span>}</> : <> · <span style={{ color: C.amber, fontWeight: 600 }}>needs details</span></>}</span>
+        </span>
+      </button>
+
+      {isExpanded && (
+      <div id={`ln-form-${loan.id}`} style={{ marginTop: 14 }}>
       {/* ── Always visible: name, type, school year, amount ── */}
       <div style={{ marginBottom: 12, paddingRight: 36 }}>
         <label style={labelStyle} htmlFor={`ln-name-${loan.id}`}>Name</label>
@@ -260,7 +308,12 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
           <select id={`ln-type-${loan.id}`} value={pickerKeyFor(loan)} aria-label="Loan type"
             onChange={(e) => {
               const opt = LOAN_TYPE_OPTIONS.find((o) => o.key === e.target.value);
-              patch((l) => { l.subtype = opt.key; l.type = opt.type; });
+              // Clear any explicit fee override on type change — it's typed against the
+              // OLD type's fee field (which may now be hidden entirely, e.g. switching a
+              // Grad PLUS loan to Private), so a stale value would keep silently reducing
+              // "cash received" for a type that's supposed to be fee-free. Falls back to
+              // the new type's own default (0 for private/HRSA, standard fee for federal).
+              patch((l) => { l.subtype = opt.key; l.type = opt.type; l.feePct = null; });
             }}
             style={inputStyle({ width: '100%' })}>
             {LOAN_TYPE_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
@@ -311,12 +364,12 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
                   <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor={`ln-offer-${loan.id}`}>
-                    Amount offered <span style={{ fontWeight: 400, color: C.text }}>(optional)</span>
+                    Amount offered
                   </label>
-                  <InfoTip text="The full amount your award letter offered for this loan. You don't have to take all of it — record it here just for reference. It doesn't change what you owe." />
+                  <InfoTip text="The full amount your award letter offered. You don't have to take all of it. This is only for reference and doesn't change what you owe." />
                 </div>
                 <input id={`ln-offer-${loan.id}`} type="number" min="0" value={loan.offeredAmount ?? ''} placeholder="$0"
-                  aria-label="Amount offered in your award letter, optional"
+                  aria-label="Amount offered in your award letter"
                   onChange={(e) => { const v = cleanNumInput(e); patch((l) => { l.offeredAmount = v === '' ? null : Number(v) || 0; }); }}
                   style={inputStyle({ width: 150 })} />
               </div>
@@ -325,35 +378,35 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
                 <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor={`ln-amt-${loan.id}`}>
                   {awardFraming
-                    ? <>Amount you accepted <span style={{ fontWeight: 400, color: C.text }}>(what you borrow)</span></>
+                    ? <>Amount you accepted</>
                     : <>Loan amount <span style={{ fontWeight: 400, color: C.text }}>(what you’re borrowing)</span></>}
                 </label>
-                {!awardFraming && <InfoTip text="The total you're borrowing from this lender — the amount you'll pay back, plus interest. Everything Marro shows is based on this number." />}
+                {!awardFraming && <InfoTip text="The total you're borrowing from this lender. This is what you'll pay back, plus interest." />}
               </div>
               <input id={`ln-amt-${loan.id}`} type="number" min="0" value={annualTotal || ''} placeholder="$0"
-                aria-label={awardFraming ? 'Amount you accepted — what you actually borrow and pay back' : 'Loan amount — what you are borrowing and pay back'}
+                aria-label={awardFraming ? 'Amount you accepted, which is what you borrow and pay back' : 'Loan amount, which is what you borrow and pay back'}
                 onChange={(e) => setAnnual(cleanNumInput(e))} style={inputStyle({ width: 150 })} />
             </div>
           </div>
-          {awardFraming && (
-            <div style={{ fontSize: 11, color: C.text, marginBottom: 8, lineHeight: 1.5 }}>
-              You can accept less than you&apos;re offered. Everything Marro shows — what you&apos;ll owe and its interest — is based on the amount you accepted.
-            </div>
-          )}
           {awardFraming && offered != null && annualTotal > 0 && annualTotal < offered && (
             <div style={{ fontSize: 11, color: C.text, marginBottom: 10, lineHeight: 1.5 }}>
               You accepted <strong style={{ color: C.text }}>{fmt(annualTotal)}</strong> of the <strong style={{ color: C.text }}>{fmt(offered)}</strong> offered.
             </div>
           )}
-          {/* #1 — the fee reduces the cash you RECEIVE; you still owe the full accepted amount. */}
-          {cash != null && annualTotal > 0 && (
+          {/* Every loan shows what actually lands in the account. With a fee, the
+              cash is less than the amount owed (fee skimmed off the top); with no
+              fee, the full amount lands — either way the student sees the real
+              number they'll have to work with, not just the face amount. */}
+          {annualTotal > 0 && (
             <div style={{ fontSize: 11, color: C.text, marginBottom: 10, lineHeight: 1.5 }}>
-              About <strong style={{ color: C.text }}>{fmt(cash)}</strong> actually reaches your account (after the {feeDisplayPct}% fee). You still owe the full <strong style={{ color: C.text }}>{fmt(annualTotal)}</strong>.
+              {cash != null && cash < annualTotal
+                ? <>About <strong style={{ color: C.text }}>{fmt(cash)}</strong> reaches your account (after the {feeDisplayPct}% fee) — that&apos;s what you keep. You still owe the full <strong style={{ color: C.text }}>{fmt(annualTotal)}</strong>.</>
+                : <>The full <strong style={{ color: C.text }}>{fmt(annualTotal)}</strong> reaches your account — no fee on this loan.</>}
             </div>
           )}
           <div style={{ fontSize: 11, color: C.text, marginBottom: 10, lineHeight: 1.5 }}>
             {isFederal
-              ? <>Don&apos;t have your numbers? Log into studentaid.gov → Dashboard → click a loan for its exact amounts, dates, and rate.</>
+              ? <>Don&apos;t have your numbers? Log into <a href="https://studentaid.gov" target="_blank" rel="noopener noreferrer" style={{ color: C.teal, fontWeight: 600 }}>studentaid.gov</a> → Dashboard → click a loan for its exact amounts, dates, and rate.</>
               : awardFraming
                 ? <>Don&apos;t have your numbers? Check your award letter or ask your school&apos;s financial aid office for the exact amounts and dates.</>
                 : <>Don&apos;t have your numbers? Check your lender&apos;s website or welcome packet for the exact amounts, dates, and rate.</>}
@@ -436,9 +489,20 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
             onChange={(e) => { const t = cleanNumInput(e); setPctText(t); const n = Number(t); patch((l) => { l.rate = t === '' ? null : (isNaN(n) ? l.rate : n / 100); }); }}
             style={inputStyle({ width: 90 })} />
           <span style={{ fontSize: 12, color: C.text }}>%</span>
-          {pctText !== '' && !rateHigh && <span style={{ fontSize: 11, color: C.teal }} aria-hidden="true">✓</span>}
+          {pctText !== '' && !rateHigh && !(rateOverridden && hasSetRate) && <span style={{ fontSize: 11, color: C.teal }} aria-hidden="true">✓</span>}
         </div>
         {rateHigh && <div role="alert" style={{ fontSize: 11, color: C.amber, marginTop: 4 }}>That seems high — double-check?</div>}
+        {/* #6 — the override warning used to live only behind the "i" tooltip, easy
+            to miss. Now surfaced the same way as the "seems high" check above: a
+            visible inline alert the moment the typed rate differs from the fixed
+            rate, naming the exact number being replaced. No blocking confirm click —
+            this is a reversible text field, so a modal would be disproportionate
+            friction; an always-visible warning is enough to catch a stray keystroke. */}
+        {rateOverridden && hasSetRate && !rateHigh && (
+          <div role="alert" style={{ fontSize: 11, color: C.amber, marginTop: 4, lineHeight: 1.5 }}>
+            This replaces the fixed {statPct}% rate for this loan type. Only do this if your paperwork shows something different — clear the field to use {statPct}% again.
+          </div>
+        )}
         {!rateOverridden && !hasSetRate && (
           <div style={{ fontSize: 11, color: C.text, marginTop: 4, lineHeight: 1.5 }}>
             Enter the rate from your loan paperwork.
@@ -473,16 +537,19 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
       </div>
 
       {/* ── More options (#9) ──
-          The WHOLE row is one full-width button, so clicking anywhere along it —
-          not just on the chevron — toggles the section. Keyboard-operable with a
+          The WHOLE row is one button, extended past the card's own 20px side
+          padding (negative margin + matching padding added back) so there's no
+          dead strip between the visible row and the card edge — the founder hit
+          exactly that gap clicking near the chevron. Keyboard-operable with a
           correct aria-expanded/aria-controls; the chevron is decorative. */}
       <button type="button" onClick={toggleMore} aria-expanded={moreOpen} aria-controls={`ln-more-${loan.id}`}
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, width: '100%',
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 6,
+          width: 'calc(100% + 40px)', margin: '0 -20px', boxSizing: 'border-box',
           background: 'none', border: 'none', color: C.text, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-          padding: '12px 0 4px', minHeight: 44, textAlign: 'left' }}>
+          padding: '12px 20px 4px', minHeight: 44, textAlign: 'left' }}>
         <span>{moreOpen ? 'Hide options' : 'More options'}</span>
-        <span aria-hidden="true" style={{ fontSize: 11, color: C.textMid, transition: 'transform .15s',
-          transform: moreOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+        <Icon name="chevron" size={14} color={C.textMid} style={{ transition: 'transform .15s',
+          transform: moreOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }} />
       </button>
       {moreOpen && (
         <div id={`ln-more-${loan.id}`} style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -493,19 +560,23 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
               {STATUS_OPTIONS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
             </select>
           </div>
-          {/* #1 — the loan fee only exists for the federal Direct family + Grad
-              PLUS, and only matters when entering award-letter amounts (in
-              current-balance mode the fee is already baked into the balance).
-              Hidden entirely for HPSL/private/other and in current-balance mode. */}
-          {!asOfMode && typeHasFee && (
+          {/* The loan fee is skimmed off the top before the money reaches you.
+              Shown for EVERY loan type in award-letter mode (not just the federal
+              Direct family): a private/HPSL loan defaults to 0% but the field must
+              still be visible so any fee — including a stale one carried over from
+              a type switch — is always seeable and clearable. Hidden only in
+              current-balance mode, where the fee is already baked into the balance. */}
+          {!asOfMode && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
                 <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor={`ln-fee-${loan.id}`}>Loan fee (%)</label>
-                <InfoTip text="Federal loans take a small fee off the top before the money reaches you. You still owe the full amount you accepted — the fee just means a little less cash lands in your account. Leave blank to use the standard fee, or type your own from your paperwork." />
+                <InfoTip text={typeHasFee
+                  ? "Federal loans take a small fee off the top before the money reaches you. You still owe the full amount you accepted — the fee just means a little less cash lands in your account. Leave blank to use the standard fee, or type your own from your paperwork."
+                  : "Most private and school loans have no fee — leave this at 0 unless your paperwork lists an origination fee. A fee is taken off the top, so a little less cash lands in your account, but you still owe the full amount."} />
               </div>
               <input id={`ln-fee-${loan.id}`} type="number" min="0" max="10" step="0.01"
                 value={loan.feePct != null ? +(loan.feePct * 100).toFixed(3) : ''}
-                placeholder={String(+(feeDefaultPct).toFixed(3))} aria-label="Loan fee as a percent"
+                placeholder={typeHasFee ? String(+(feeDefaultPct).toFixed(3)) : '0'} aria-label="Loan fee as a percent"
                 onChange={(e) => { const v = cleanNumInput(e); patch((l) => { l.feePct = v === '' ? null : (Number(v) / 100); }); }}
                 style={inputStyle({ width: 100 })} />
             </div>
@@ -517,103 +588,14 @@ function LoanCard({ loan, idx, data, upd, moreOpen, toggleMore }) {
           </div>
         </div>
       )}
-    </Card>
-  );
-}
-
-function BalanceCheckin({ data, upd }) {
-  const readings = data.balanceReadings || [];
-  const sorted = [...readings].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-  const last = sorted[sorted.length - 1] || null;
-  const lastSavings = [...sorted].reverse().find((r) => r.savings != null);
-
-  const [spendable, setSpendable] = useState('');
-  const [savings, setSavings] = useState(lastSavings ? String(lastSavings.savings) : '');
-  const [confirming, setConfirming] = useState(false);
-
-  const needsConfirm = (n) => {
-    if (!last) return false;
-    const prev = Number(last.spendable) || 0;
-    if (Math.abs(n - prev) > 20000) return true;
-    if (prev > 0 && (n > prev * 3 || n < prev / 3)) return true;
-    return false;
-  };
-
-  const save = () => {
-    const n = Number(spendable);
-    if (isNaN(n)) return;
-    const d = JSON.parse(JSON.stringify(data));
-    d.balanceReadings = [...(d.balanceReadings || []), {
-      id: `br_${Date.now()}`, date: todayStr(), spendable: n,
-      savings: savings === '' ? null : Number(savings),
-    }];
-    upd(d);
-    setSpendable('');
-    setConfirming(false);
-  };
-
-  const onSubmit = (e) => {
-    e.preventDefault();
-    const n = Number(spendable);
-    if (isNaN(n) || spendable === '') return;
-    if (!confirming && needsConfirm(n)) { setConfirming(true); return; }
-    save();
-  };
-
-  return (
-    <Card>
-      <SectionTitle sub="No bank login, no linking accounts — just the number you see when you check your balance.">
-        About how much do you have available for living costs right now?
-      </SectionTitle>
-      <form onSubmit={onSubmit} style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
-            <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor="bal-spendable">Amount in your checking / cash</label>
-            <InfoTip text="What's in your checking/spending account today. Aid or loan money counts once it's landed in your account." />
-          </div>
-          <input id="bal-spendable" type="number" min="0" value={spendable} placeholder="$0" required
-            aria-label="Amount in your checking / cash, across all accounts you spend from"
-            onChange={(e) => { setSpendable(cleanNumInput(e)); setConfirming(false); }}
-            style={inputStyle({ width: 130 })} />
-        </div>
-        <div>
-          <label style={labelStyle} htmlFor="bal-savings">Set aside in savings</label>
-          <input id="bal-savings" type="number" min="0" value={savings} placeholder="$0"
-            aria-label="Set aside in savings, optional"
-            onChange={(e) => setSavings(cleanNumInput(e))} style={inputStyle({ width: 130 })} />
-        </div>
-        <button type="submit" className="btn-pop" style={{ padding: '8px 18px', minHeight: 36, borderRadius: 8, border: `1px solid ${C.teal}`, background: C.teal, color: C.bg, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-          Save
-        </button>
-      </form>
-      {confirming && (
-        <div role="alert" style={{ marginTop: 10 }}>
-          <Banner type="warn">
-            Big change from last time — just checking?
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <button type="button" onClick={() => setConfirming(false)} style={{ padding: '6px 12px', minHeight: 32, borderRadius: 8, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Let me fix it</button>
-              <button type="button" onClick={save} style={{ padding: '6px 12px', minHeight: 32, borderRadius: 8, border: `1px solid ${C.amber}`, background: C.amber, color: C.bg, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Yes, that’s right</button>
-            </div>
-          </Banner>
-        </div>
-      )}
-
-      {sorted.length > 0 && (
-        <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
-          <div style={{ fontSize: 11, color: C.text, marginBottom: 8, fontWeight: 600 }}>Past check-ins</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
-            {[...sorted].reverse().map((r) => (
-              <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '4px 0' }}>
-                <span style={{ color: C.text }}>{new Date(r.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-                <span style={{ color: C.text, fontWeight: 600 }}>{fmt(r.spendable)}{r.savings != null ? ` + ${fmt(r.savings)} savings` : ''}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+      </div>
       )}
     </Card>
   );
 }
+
+// BalanceCheckin moved to src/components/BalanceCheckin.jsx (Money Rework §3a) —
+// it's now the first card on the Budget tab, not the last on Loans.
 
 // ── 120-day return window (items 18 & 24) ────────────────────────────────────
 // The old design rendered a separate full-width banner PER open window at the
@@ -736,7 +718,7 @@ function RefundPlaybook({ data, upd, moSpend, refundNudgeConfirmed, setRefundNud
       <ol style={{ margin: '12px 0 0', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 12, fontSize: 13, color: C.text, lineHeight: 1.55 }}>
         <li>
           {semesterNeed != null
-            ? <>This stretch needs about <strong>{fmt(semesterNeed)}</strong> ({monthsNeeded} month{monthsNeeded === 1 ? '' : 's'} × your pace of about {fmt(burnAmount)}/month).</>
+            ? <>This has to last until your next money{nextAfter?.date ? <> on <strong>{fmtDay(nextAfter.date)}</strong></> : null} — about <strong>{fmt(semesterNeed)}</strong> ({monthsNeeded} month{monthsNeeded === 1 ? '' : 's'} × your pace of about {fmt(burnAmount)}/month).</>
             : <>Add your budget and a balance check-in and Marro can estimate what this stretch needs to cover.</>}
           {' '}Many students keep about one month&apos;s worth in checking.
         </li>
@@ -766,38 +748,45 @@ function RefundPlaybook({ data, upd, moSpend, refundNudgeConfirmed, setRefundNud
 }
 
 export function LoansTab() {
-  const { data, upd, moSpend, refundNudgeConfirmed, setRefundNudgeConfirmed } = useApp();
+  const { data, upd, moSpend, runwayPlannedBurn, refundNudgeConfirmed, setRefundNudgeConfirmed } = useApp();
   const [moreOpenIds, setMoreOpenIds] = useState(() => new Set());
   const toggleMore = (id) => setMoreOpenIds((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
-
+  // Card expand/collapse is per-card local state inside LoanCard now (keyed by loan id),
+  // so incomplete loans default open but stay collapsible like every other card.
   const loans = data.loans || [];
   const gradDate = data.years?.[data.years.length - 1]?.endDate || null;
   const proj = projectDebtAtGraduation(loans, gradDate);
+  // Per-loan projection rows, keyed by loan id, so each collapsed summary row can
+  // reuse the exact "at graduation" figure the breakdown headline already summed.
+  const projByLoanId = new Map(proj.byLoan.map((r) => [r.loanId, r]));
   const counted = loans.filter((l) => l.status === 'accepted' || l.status === 'disbursed');
 
-  // Item 11: spell out WHY the total is an estimate instead of the old, confusing
-  // "add your loans to make this exact" (shown even after loans were added). Each
-  // reason maps to a real driver of `proj.isEstimate` in loans.js.
+  // Spell out WHY the total isn't exact. Only GENUINELY inferred data (a guessed
+  // date, an off-table rate) counts as an "estimate" now — a fully-filled private
+  // loan is exact for the numbers entered and is described separately, so we stop
+  // calling a complete loan an "estimate" (founder feedback). Reasons map to the
+  // `basis` field on each proj.byLoan row.
   const estimateReasons = [];
-  if (proj.isEstimate && counted.length > 0) {
-    const flags = { private: false, rate: false, dates: false };
+  if (proj.hasInferred && counted.length > 0) {
+    const flags = { rate: false, dates: false };
     for (const l of counted) {
-      const key = loanTypeKey(l);
-      if (key === 'private' || key === 'otherUserRate') flags.private = true;
-      else if (isRateEstimated(l)) flags.rate = true;
+      if (isRateEstimated(l)) flags.rate = true;
       const disb = l.disbursements || [];
       if (l.asOfDate == null && (disb.length === 0 || disb.some((d) => !d.date))) flags.dates = true;
     }
-    if (flags.private) estimateReasons.push('a private or “other” loan, which has no government-set rate or fee formula');
     if (flags.rate) estimateReasons.push('a loan whose school year isn’t in our rate table yet, so its rate is approximate');
     if (flags.dates) estimateReasons.push('a money-arrival date Marro had to guess');
   }
+  // Any fully-filled private/"other" loan — exact for the rate the student typed,
+  // but not government-verified. Drives the softer "based on the rates you
+  // entered" note when nothing is actually inferred.
+  const hasEnteredPrivate = proj.byLoan.some((r) => r.basis === 'entered');
 
   const addLoan = () => { const d = JSON.parse(JSON.stringify(data)); d.loans = [...(d.loans || []), blankLoan()]; upd(d); };
 
   return (
     <div role="tabpanel" id="tab-panel" aria-labelledby="tab-loans" tabIndex={0} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <RefundPlaybook data={data} upd={upd} moSpend={moSpend} refundNudgeConfirmed={refundNudgeConfirmed} setRefundNudgeConfirmed={setRefundNudgeConfirmed} />
+      <RefundPlaybook data={data} upd={upd} moSpend={runwayPlannedBurn ?? moSpend} refundNudgeConfirmed={refundNudgeConfirmed} setRefundNudgeConfirmed={setRefundNudgeConfirmed} />
       <ReminderBanner data={data} upd={upd} />
 
       {loans.length === 0 && (
@@ -815,9 +804,14 @@ export function LoansTab() {
               <Banner type="info">
                 {counted.length === 0
                   ? 'Estimate — add your loans to make this exact.'
-                  : estimateReasons.length > 0
-                    ? <><strong>This total includes an estimate</strong> because it uses {estimateReasons.join('; ')}. Federal loans with a confirmed rate and dates are calculated exactly.</>
-                    : 'This total includes an estimate. Federal loans with a confirmed rate and dates are calculated exactly.'}
+                  : proj.hasInferred
+                    ? (estimateReasons.length > 0
+                        ? <><strong>This total includes an estimate</strong> because it uses {estimateReasons.join('; ')}. Federal loans with a confirmed rate and dates are calculated exactly.</>
+                        : 'This total includes an estimate. Federal loans with a confirmed rate and dates are calculated exactly.')
+                    // No inferred data — the only reason it isn't "exact" is a
+                    // fully-filled private/"other" loan. Say so plainly instead
+                    // of implying Marro guessed.
+                    : <>These totals use the rate you entered for your private or “other” loan, so they’re exact as long as that rate is right. Federal loans are calculated from the government’s set rates.</>}
               </Banner>
             </div>
           )}
@@ -830,7 +824,17 @@ export function LoansTab() {
                   <span style={{ color: C.text }}>{loan?.name || 'Untitled loan'}</span>
                   <span style={{ color: C.text, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                     {fmt(row.total)}
-                    {row.isEstimate && (
+                    {/* A fully-filled private loan (basis 'entered') is exact for
+                        the rate typed in — label it "(your rate)", not "(estimate)",
+                        which wrongly implies Marro guessed. Only genuinely inferred
+                        loans keep the "(estimate)" badge. */}
+                    {row.basis === 'entered' && (
+                      <>
+                        <span style={{ color: C.text, fontWeight: 400 }}>(your rate)</span>
+                        <InfoTip text="Exact for the rate you entered — Marro just can't verify a private or “other” loan's terms the way it can a federal loan." />
+                      </>
+                    )}
+                    {row.basis === 'estimate' && (
                       <>
                         <span style={{ color: C.text, fontWeight: 400 }}>(estimate)</span>
                         {/* #5 — the "estimate" is explainable: exactly why this loan
@@ -848,21 +852,25 @@ export function LoansTab() {
         </Card>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 14 }}>
+      {/* Masonry: a multi-column flow (not a grid) so cards pack tightly and reposition
+          to fill space when one expands — no dead gap left beside a tall card. Each card
+          is wrapped with break-inside:avoid so it never splits across a column. */}
+      <div style={{ columnWidth: 320, columnGap: 14 }}>
         {loans.map((loan, i) => (
-          <LoanCard key={loan.id} loan={loan} idx={i} data={data} upd={upd}
-            moreOpen={moreOpenIds.has(loan.id)} toggleMore={() => toggleMore(loan.id)} />
+          <div key={loan.id} style={{ breakInside: 'avoid', marginBottom: 14 }}>
+            <LoanCard loan={loan} idx={i} data={data} upd={upd}
+              moreOpen={moreOpenIds.has(loan.id)} toggleMore={() => toggleMore(loan.id)}
+              projRow={projByLoanId.get(loan.id)} />
+          </div>
         ))}
-        <button type="button" aria-label="Add loan" onClick={addLoan}
-          style={{ width: '100%', font: 'inherit', background: 'transparent', border: `2px dashed ${C.border}`, borderRadius: 12, minHeight: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', color: C.text, transition: 'border-color 0.15s, color 0.15s' }}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = C.teal; e.currentTarget.style.color = C.teal; }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.text; }}>
-          <span style={{ fontSize: 24, fontWeight: 300, lineHeight: 1 }}>+</span>
-          <span style={{ fontSize: 12, fontWeight: 600 }}>Add loan</span>
-        </button>
       </div>
-
-      <BalanceCheckin data={data} upd={upd} />
+      <button type="button" aria-label="Add loan" onClick={addLoan}
+        style={{ width: '100%', marginTop: 4, font: 'inherit', background: 'transparent', border: `2px dashed ${C.border}`, borderRadius: 12, minHeight: 64, display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', color: C.text, transition: 'border-color 0.15s, color 0.15s' }}
+        onMouseEnter={(e) => { e.currentTarget.style.borderColor = C.teal; e.currentTarget.style.color = C.teal; }}
+        onMouseLeave={(e) => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.color = C.text; }}>
+        <span style={{ fontSize: 20, fontWeight: 300, lineHeight: 1 }}>+</span>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>Add loan</span>
+      </button>
     </div>
   );
 }

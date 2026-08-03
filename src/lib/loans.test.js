@@ -3,9 +3,10 @@ import {
   FEDERAL_GRAD_UNSUB_RATES, FEDERAL_GRAD_PLUS_RATES, FEDERAL_ORIGINATION_FEE, FEDERAL_GRAD_PLUS_FEE, HRSA_RATE,
   effectiveRate, isRateEstimated, effectiveFeePct, statutoryRate, isInterestDeferred,
   loanPrincipal, cashReceived, loanOfferedAmount, accruedInterest, loanTypeKey,
-  projectDebtAtGraduation, computeRunway, estimateRefunds, loanReturnWindows,
+  projectDebtAtGraduation, computeRunway, projectBalance, compareToPlan, estimateRefunds, loanReturnWindows,
   refundPlaybookTrigger, returnSavingsAtGraduation, classifyCushionSource,
 } from './loans.js';
+import { DAYS_PER_MONTH } from './constants.js';
 
 // A minimal, valid loan — override fields per test.
 const makeLoan = (over = {}) => ({
@@ -194,7 +195,29 @@ describe('projectDebtAtGraduation', () => {
   });
 
   it('an empty loans list returns a zeroed, estimate-flagged result rather than crashing', () => {
-    expect(projectDebtAtGraduation([], gradDate)).toEqual({ total: 0, byLoan: [], isEstimate: true });
+    expect(projectDebtAtGraduation([], gradDate)).toEqual({ total: 0, byLoan: [], isEstimate: true, hasInferred: false });
+  });
+
+  it('basis: a federal loan with confirmed rate + dates is exact, not an estimate', () => {
+    const { byLoan, hasInferred } = projectDebtAtGraduation([makeLoan({ academicYear: 2025 })], gradDate);
+    expect(byLoan[0].basis).toBe('exact');
+    expect(byLoan[0].isEstimate).toBe(false);
+    expect(hasInferred).toBe(false);
+  });
+
+  it("basis: a fully-filled private loan is 'entered' (exact for the typed rate), not an inferred estimate", () => {
+    const priv = makeLoan({ id: 'p1', type: 'private', rate: 0.095, disbursements: [{ id: 'd1', date: '2025-09-01', amount: 10000 }] });
+    const { byLoan, isEstimate, hasInferred } = projectDebtAtGraduation([priv], gradDate);
+    expect(byLoan[0].basis).toBe('entered');
+    expect(byLoan[0].isEstimate).toBe(true);   // still not government-verified
+    expect(hasInferred).toBe(false);           // ...but nothing was actually guessed
+  });
+
+  it("basis: a private loan with a guessed date is a real 'estimate'", () => {
+    const priv = makeLoan({ id: 'p1', type: 'private', rate: 0.095, disbursements: [{ id: 'd1', date: null, amount: 10000 }] });
+    const { byLoan, hasInferred } = projectDebtAtGraduation([priv], gradDate);
+    expect(byLoan[0].basis).toBe('estimate');
+    expect(hasInferred).toBe(true);
   });
 
   it('the award-letter offer never inflates what you owe — projection runs off the accepted amount only', () => {
@@ -235,6 +258,12 @@ describe('computeRunway', () => {
     ];
     const r = computeRunway({ readings, plannedMonthlyBurn: 2000, upcomingRefunds: [], gradDate, today: '2026-10-05' });
     expect(r.state).toBe('growing');
+    // A rising balance still reports the plan comparison — it's the clearest
+    // "you're ahead", and the tile must not go blank there. Spent ~$0 against a
+    // $2000/mo plan → well ahead of plan (drift positive).
+    expect(r.actualPace).not.toBeNull();
+    expect(r.actualPace.perMonth).toBe(0);
+    expect(r.actualPace.drift).toBeGreaterThan(0);
   });
 
   it('state: through_graduation — money (with savings cushion) comfortably outlasts gradDate', () => {
@@ -266,9 +295,15 @@ describe('computeRunway', () => {
     const upcomingRefunds = [{ date: '2027-01-12', amount: 14200, term: '2027-spring' }];
     const r = computeRunway({ readings, plannedMonthlyBurn: 2130.8, upcomingRefunds, gradDate, today: '2026-10-05' });
     expect(r.state).toBe('gap');
-    expect(r.runOutDate).toBe('2026-12-31');
+    // The dry spell is still caught — cash runs out 2026-12-31, 12 days early.
     expect(r.gapDays).toBe(12);
+    expect(r.shortfalls[0].date).toBe('2026-12-31');
     expect(r.trimPerMonthToClose).toBeGreaterThan(0);
+    // ...but runOutDate now counts the $14,200 landing 2027-01-12, so it's the
+    // date the money is ACTUALLY gone, not the date the current cash alone ran
+    // dry. Reporting 2026-12-31 as "you run out" contradicted Safe to spend,
+    // which had always counted that refund.
+    expect(r.runOutDate > '2027-01-12').toBe(true);
   });
 
   it('trim math floors tiny gaps (<7 days) to "basically on track" instead of an alarming gap', () => {
@@ -277,10 +312,14 @@ describe('computeRunway', () => {
       { id: 'r1', date: '2026-09-01', spendable: 3100, savings: 0 },
       { id: 'r2', date: '2026-10-01', spendable: 3000, savings: 0 },
     ];
-    const upcomingRefunds = [{ date: '2029-03-22', amount: 5000, term: '2029-spring' }];
+    // $3,000 at the planned $100/mo runs dry 2029-04-01; the money lands 4 days
+    // later, so there IS a dip but it's under the 7-day alarm floor.
+    const upcomingRefunds = [{ date: '2029-04-05', amount: 5000, term: '2029-spring' }];
     const r = computeRunway({ readings: tight, plannedMonthlyBurn: 100, upcomingRefunds, gradDate: '2030-01-01', today: '2026-10-05' });
-    expect(r.state).toBe('counting_down');
-    expect(r.basicallyOnTrack).toBe(true);
+    // A dip that short is noise, not a crisis, so it never becomes a 'gap'. With
+    // the $5,000 counted the money then reaches graduation. Either way: calm.
+    expect(r.state).not.toBe('gap');
+    expect(r.shortfalls[0].daysShort).toBeLessThan(7);
   });
 
   it('measured burn requires a ≥14-day window between readings, else falls back to the plan', () => {
@@ -362,9 +401,10 @@ describe('computeRunway', () => {
       { id: 'r2', date: '2027-02-01', spendable: 9000, savings: 0 }, // 184 days apart, $6000 spent
     ];
     const r = computeRunway({ readings, plannedMonthlyBurn: 999, upcomingRefunds: [], gradDate: '2028-01-01', today: '2027-02-05' });
-    expect(r.burn.source).toBe('measured');
+    // The headline burn is the PLAN now; the measured rate lives on actualPace.
+    expect(r.burn.source).toBe('plan');
     // $6000 over 184 days ≈ $990.87/mo
-    expect(r.burn.amount).toBeCloseTo((6000 / 184) * 30.44, 1);
+    expect(r.actualPace.perMonth).toBeCloseTo((6000 / 184) * 30.44, 1);
   });
 
   it('a known refund landing strictly between two readings is netted out of the delta (straddle case) — does not read as negative spending', () => {
@@ -374,10 +414,10 @@ describe('computeRunway', () => {
     ];
     const upcomingRefunds = [{ date: '2027-01-12', amount: 14200, term: '2027-spring' }];
     const r = computeRunway({ readings, plannedMonthlyBurn: 2000, upcomingRefunds, gradDate: '2028-01-01', today: '2027-01-25' });
-    // Without netting the refund out, delta would be deeply negative ("growing" by a huge amount).
-    // With it netted out: (1000 - 12500 + 14200) = 2700 spent over 31 days ≈ real spending, not a refund-driven illusion.
-    expect(r.burn.source).toBe('measured');
-    expect(r.burn.amount).toBeCloseTo((2700 / 31) * 30.44, 1);
+    // Without crediting the refund the balance jump reads as "growing" — the
+    // student looks like they spent nothing, when really they spent $2,700.
+    expect(r.state).not.toBe('growing');
+    expect(r.actualPace.perMonth).toBeCloseTo((2700 / 31) * 30.44, 1);
   });
 
   it('a refund whose date falls OUTSIDE the reading window is not netted out (only straddling refunds count)', () => {
@@ -387,7 +427,7 @@ describe('computeRunway', () => {
     ];
     const upcomingRefunds = [{ date: '2027-01-12', amount: 14200, term: '2027-spring' }]; // way outside the window
     const r = computeRunway({ readings, plannedMonthlyBurn: 2000, upcomingRefunds, gradDate: '2028-01-01', today: '2026-10-05' });
-    expect(r.burn.amount).toBeCloseTo((2000 / 30) * 30.44, 1);
+    expect(r.actualPace.perMonth).toBeCloseTo((2000 / 30) * 30.44, 1);
   });
 
   it('after a refund lands and a later reading absorbs it, runway recomputes to a healthier state ("clears" the gap)', () => {
@@ -407,7 +447,9 @@ describe('computeRunway', () => {
       ],
       plannedMonthlyBurn: 2130.8, upcomingRefunds: [{ date: '2027-01-12', amount: 14200, term: '2027-spring' }], gradDate: '2028-05-01', today: '2027-02-05',
     });
-    expect(after.state).toBe('through_graduation');
+    // The point is the gap clears. Which healthy state it lands in depends on
+    // the plan burn now, so assert the meaningful thing rather than the label.
+    expect(after.state).not.toBe('gap');
     expect(after.runOutDate > '2027-02-01').toBe(true);
   });
 });
@@ -449,6 +491,96 @@ describe('estimateRefunds', () => {
   });
 });
 
+describe('estimateRefunds — loan money is incoming cash too', () => {
+  const year = { id: 0, label: 'Year 1', grant: 5000, tuitionFees: 34000, healthIns: 4200, startDate: '2025-08-01' };
+  const privateLoan = (over = {}) => makeLoan({
+    type: 'private', subtype: 'private', academicYear: 2025, status: 'disbursed',
+    disbursements: [
+      { id: 'd1', date: '2025-08-05', amount: 25000, dateConfirmed: true },
+      { id: 'd2', date: '2026-01-10', amount: 25000, dateConfirmed: true },
+    ],
+    ...over,
+  });
+
+  it('adds loan disbursements on their own real dates', () => {
+    const refunds = estimateRefunds([year], [privateLoan()]);
+    expect(refunds.map((r) => r.date)).toEqual(['2025-08-05', '2025-08-11', '2026-01-01', '2026-01-10']);
+  });
+
+  it('scales every inflow so the year sums to what actually reaches the student', () => {
+    // Gross in = 5000 grant + 50000 loans = 55000; school takes 38200; so
+    // 16800 reaches the account and the refunds must total exactly that.
+    const refunds = estimateRefunds([year], [privateLoan()]);
+    const total = refunds.reduce((a, r) => a + r.amount, 0);
+    expect(total).toBeCloseTo(16800, 6);
+  });
+
+  it('does NOT model a disbursement as fully spendable — tuition comes out first', () => {
+    // The regression this scaling exists to prevent: a naive implementation
+    // would report the full 25000 disbursement as incoming spendable cash.
+    const refunds = estimateRefunds([year], [privateLoan()]);
+    const fallLoan = refunds.find((r) => r.date === '2025-08-05');
+    expect(fallLoan.amount).toBeLessThan(25000);
+    expect(fallLoan.amount).toBeCloseTo(25000 * (16800 / 55000), 6); // ≈7636
+  });
+
+  it('takes the origination fee off before counting loan cash as inflow', () => {
+    const federal = makeLoan({
+      academicYear: 2025, status: 'disbursed', subtype: 'directUnsubGrad',
+      disbursements: [{ id: 'd1', date: '2025-08-05', amount: 50000, dateConfirmed: true }],
+    });
+    const noCosts = { ...year, grant: 0, tuitionFees: 0, healthIns: 0 };
+    const [r] = estimateRefunds([noCosts], [federal]);
+    expect(r.amount).toBeCloseTo(50000 * (1 - FEDERAL_ORIGINATION_FEE), 6);
+  });
+
+  it('marks a disbursement whose date was never confirmed as an estimate', () => {
+    const loan = privateLoan({ disbursements: [{ id: 'd1', date: '2025-08-05', amount: 25000, dateConfirmed: false }] });
+    const [r] = estimateRefunds([{ ...year, grant: 0, tuitionFees: 0, healthIns: 0 }], [loan]);
+    expect(r.isEstimate).toBe(true);
+  });
+
+  it('ignores offered loans, other years, and current-balance loans', () => {
+    const noCosts = { ...year, grant: 0, tuitionFees: 0, healthIns: 0 };
+    expect(estimateRefunds([noCosts], [privateLoan({ status: 'offered' })])).toEqual([]);
+    expect(estimateRefunds([noCosts], [privateLoan({ academicYear: 2031 })])).toEqual([]);
+    expect(estimateRefunds([noCosts], [privateLoan({ asOfBalance: 100, asOfDate: '2026-01-01' })])).toEqual([]);
+  });
+
+  it('lets loans create a refund in a year where grants alone were swallowed by costs', () => {
+    // Grants (5000) < costs (38200), so the grants-only model yielded nothing.
+    expect(estimateRefunds([year], [])).toEqual([]);
+    expect(estimateRefunds([year], [privateLoan()]).length).toBeGreaterThan(0);
+  });
+});
+
+describe('computeRunway — a loan landing mid-window must not read as negative burn', () => {
+  const gradDate = '2029-05-15';
+
+  it('nets an expected loan disbursement out of the measured spending pace', () => {
+    // Balance jumps 4000 → 22000 because 20000 landed on the 15th. Real
+    // spending was 2000. Without netting, burn reads as -18000/mo ("growing").
+    const readings = [
+      { id: 'r1', date: '2026-09-01', spendable: 4000, savings: 0 },
+      { id: 'r2', date: '2026-10-01', spendable: 22000, savings: 0 },
+    ];
+    const upcomingRefunds = [{ term: 'loan', amount: 20000, date: '2026-09-15', isEstimate: false }];
+    const r = computeRunway({ readings, plannedMonthlyBurn: 3000, upcomingRefunds, gradDate, today: '2026-10-02' });
+    expect(r.state).not.toBe('growing');                                   // spending, not growth
+    expect(r.actualPace.perMonth).toBeCloseTo((2000 / 30) * DAYS_PER_MONTH, 6); // 30-day window → ~2029/mo
+  });
+
+  it('without the disbursement accounted for, the same readings look like growth', () => {
+    // Documents exactly what breaks if loans stop reaching upcomingRefunds.
+    const readings = [
+      { id: 'r1', date: '2026-09-01', spendable: 4000, savings: 0 },
+      { id: 'r2', date: '2026-10-01', spendable: 22000, savings: 0 },
+    ];
+    const r = computeRunway({ readings, plannedMonthlyBurn: 3000, upcomingRefunds: [], gradDate, today: '2026-10-02' });
+    expect(r.state).toBe('growing');
+  });
+});
+
 describe('loanReturnWindows', () => {
   it('computes a 120-day deadline and daysLeft per disbursement', () => {
     const loans = [makeLoan({ disbursements: [{ id: 'd1', date: '2026-08-05', amount: 20000, dateConfirmed: true }] })];
@@ -467,6 +599,21 @@ describe('loanReturnWindows', () => {
     const loans = [makeLoan({ disbursements: [{ id: 'd1', date: '2026-08-05', amount: 20000 }] })]; // dateConfirmed omitted
     const [w] = loanReturnWindows(loans, '2026-08-10');
     expect(w.dateConfirmed).toBe(false);
+  });
+
+  // A student who pre-enters a future year's loans must NOT see a live "N days
+  // left to return money you didn't need" for cash that hasn't been disbursed
+  // yet — you can't return money that never arrived. The window opens only once
+  // the disbursement date is on or before today.
+  it('does not open a window for a disbursement dated in the future', () => {
+    const loans = [makeLoan({ disbursements: [{ id: 'd1', date: '2028-08-05', amount: 20000, dateConfirmed: true }] })];
+    expect(loanReturnWindows(loans, '2026-07-28')).toEqual([]);
+  });
+
+  it('opens the window the day the money lands and not before', () => {
+    const loans = [makeLoan({ disbursements: [{ id: 'd1', date: '2026-08-05', amount: 20000, dateConfirmed: true }] })];
+    expect(loanReturnWindows(loans, '2026-08-04')).toEqual([]);          // day before disbursement
+    expect(loanReturnWindows(loans, '2026-08-05')).toHaveLength(1);       // day it lands
   });
 
   // ⚠ REGRESSION (2026-07-18 hotfix, break-testing finding C1): break-testing
@@ -869,5 +1016,176 @@ describe('classifyCushionSource', () => {
     const loan = makeLoan({ academicYear: 2024, disbursements: [{ id: 'd1', date: '2024-08-05', amount: 10000 }] });
     // loanInflowAnnual = 10000, otherIncome = 1000 → share = 1000/11000 ≈ 9%, well under 25%
     expect(classifyCushionSource({ readings: [], loans: [loan], otherIncome: 1000, today })).toBe('mixed');
+  });
+});
+
+describe('projectBalance — money still coming, and the dry spells on the way', () => {
+  const base = { startDate: '2026-08-01', startBalance: 6000, dailyBurn: 100, horizon: '2027-08-01' };
+
+  it('with no inflows, it is just balance ÷ burn (the old behaviour)', () => {
+    const { runOutDate, shortfalls } = projectBalance({ ...base, inflows: [] });
+    expect(runOutDate).toBe('2026-09-30'); // 6000 / 100 = 60 days
+    expect(shortfalls).toEqual([]);
+  });
+
+  it('an inflow pushes the run-out date later', () => {
+    const withMoney = projectBalance({ ...base, inflows: [{ date: '2026-09-01', amount: 3000 }] });
+    const without = projectBalance({ ...base, inflows: [] });
+    expect(withMoney.runOutDate > without.runOutDate).toBe(true);
+  });
+
+  it('records a dry spell when the money runs out before the next inflow arrives', () => {
+    // 6000 at 100/day lasts 60 days (to Sep 30); the money lands Nov 1.
+    const { shortfalls } = projectBalance({ ...base, inflows: [{ date: '2026-11-01', amount: 9000 }] });
+    expect(shortfalls).toHaveLength(1);
+    expect(shortfalls[0].date).toBe('2026-09-30');
+    expect(shortfalls[0].nextInflowDate).toBe('2026-11-01');
+    expect(shortfalls[0].daysShort).toBe(32);
+    expect(shortfalls[0].shortBy).toBeGreaterThan(0);
+  });
+
+  it('reports NO dry spell when the money lands before the cash runs out', () => {
+    const { shortfalls } = projectBalance({ ...base, inflows: [{ date: '2026-09-01', amount: 9000 }] });
+    expect(shortfalls).toEqual([]);
+  });
+
+  it('catches a dry spell that happens even though the money lasts overall (the regression risk)', () => {
+    // This is the case that must never be silently swallowed: there IS a gap in
+    // the autumn, but the January money means the year still ends solvent.
+    const r = projectBalance({
+      startDate: '2026-08-01', startBalance: 6000, dailyBurn: 64, horizon: '2027-08-01',
+      inflows: [{ date: '2027-01-10', amount: 11611 }],
+    });
+    expect(r.shortfalls).toHaveLength(1);
+    expect(r.runOutDate > '2027-01-10').toBe(true);  // solvent well past the gap
+  });
+
+  it('records a dry spell per gap when several inflows are spaced out', () => {
+    const { shortfalls } = projectBalance({
+      startDate: '2026-08-01', startBalance: 1000, dailyBurn: 100, horizon: '2028-01-01',
+      inflows: [{ date: '2026-10-01', amount: 1000 }, { date: '2026-12-01', amount: 1000 }],
+    });
+    expect(shortfalls).toHaveLength(2);
+  });
+
+  it('ignores money landing after the horizon', () => {
+    const inside = projectBalance({ ...base, inflows: [{ date: '2026-09-01', amount: 3000 }] });
+    const beyond = projectBalance({ ...base, inflows: [{ date: '2030-01-01', amount: 3000 }] });
+    expect(beyond.runOutDate).toBe('2026-09-30');
+    expect(beyond.runOutDate < inside.runOutDate).toBe(true);
+  });
+
+  it('ignores money dated before the start, and zero/negative amounts', () => {
+    expect(projectBalance({ ...base, inflows: [{ date: '2026-01-01', amount: 5000 }] }).runOutDate).toBe('2026-09-30');
+    expect(projectBalance({ ...base, inflows: [{ date: '2026-09-01', amount: 0 }] }).runOutDate).toBe('2026-09-30');
+  });
+
+  it('carries the isEstimate flag through, so a guessed date is never shown as fact', () => {
+    const { shortfalls } = projectBalance({ ...base, inflows: [{ date: '2026-11-01', amount: 9000, isEstimate: true }] });
+    expect(shortfalls[0].isEstimate).toBe(true);
+  });
+
+  it('returns no run-out date when nothing is being spent', () => {
+    expect(projectBalance({ ...base, dailyBurn: 0, inflows: [] }).runOutDate).toBe(null);
+  });
+});
+
+describe('compareToPlan — is the plan actually working?', () => {
+  // $6,000 on Oct 1, plan $1,935/mo. By Nov 1 (31 days) the plan expects
+  // 6000 - 1935/30.44*31 = about $4,029 left.
+  const base = { plannedMonthlyBurn: 1935, inflows: [], today: '2026-11-01' };
+  const on = (date, spendable, savings = 0) => ({ id: `r_${date}`, date, spendable, savings });
+
+  it('reports overspending as a negative drift', () => {
+    const r = compareToPlan({ ...base, readings: [on('2026-10-01', 6000), on('2026-11-01', 3600)] });
+    expect(r.meaningful).toBe(true);
+    expect(r.expected).toBeCloseTo(6000 - (1935 / 30.44) * 31, 6);
+    expect(r.actual).toBe(3600);
+    expect(r.drift).toBeLessThan(0);                    // behind the plan
+    expect(r.actualPerMonth).toBeGreaterThan(1935);     // spending faster than planned
+  });
+
+  it('reports underspending as a positive drift', () => {
+    const r = compareToPlan({ ...base, readings: [on('2026-10-01', 6000), on('2026-11-01', 5200)] });
+    expect(r.drift).toBeGreaterThan(0);
+    expect(r.actualPerMonth).toBeLessThan(1935);
+  });
+
+  it('adds money that landed BETWEEN the check-ins, so a payment is not read as underspending', () => {
+    const withInflow = compareToPlan({
+      ...base, readings: [on('2026-10-01', 6000), on('2026-11-01', 14000)],
+      inflows: [{ date: '2026-10-15', amount: 10000 }],
+    });
+    // Without crediting the $10,000 this would look like a huge windfall; with it
+    // credited, they actually spent roughly the plan.
+    expect(Math.abs(withInflow.drift)).toBeLessThan(500);
+    expect(withInflow.actualPerMonth).toBeGreaterThan(0);
+  });
+
+  it('stays quiet when there is only one check-in', () => {
+    expect(compareToPlan({ ...base, readings: [on('2026-10-01', 6000)] }).meaningful).toBe(false);
+  });
+
+  it('stays quiet over a window too short to judge', () => {
+    const r = compareToPlan({ ...base, readings: [on('2026-10-29', 6000), on('2026-11-01', 3000)], today: '2026-11-01' });
+    expect(r.meaningful).toBe(false); // 3 days: one big purchase would imply an absurd pace
+  });
+
+  it('stays quiet when the drift is small enough to be noise', () => {
+    const expected = 6000 - (1935 / 30.44) * 31;
+    const r = compareToPlan({ ...base, readings: [on('2026-10-01', 6000), on('2026-11-01', Math.round(expected - 20))] });
+    expect(r.meaningful).toBe(false);
+  });
+
+  it('counts savings as part of the balance, not just checking', () => {
+    const r = compareToPlan({ ...base, readings: [on('2026-10-01', 3000, 3000), on('2026-11-01', 1000, 2600)] });
+    expect(r.actual).toBe(3600);
+  });
+
+  it('never reports a negative spending pace when the balance grew', () => {
+    const r = compareToPlan({ ...base, readings: [on('2026-10-01', 6000), on('2026-11-01', 9000)] });
+    expect(r.actualPerMonth).toBe(0);
+  });
+});
+
+describe('computeRunway — plan drives the projection, check-ins judge the plan', () => {
+  const gradDate = '2029-05-15';
+  const on = (date, spendable, savings = 0) => ({ id: `r_${date}`, date, spendable, savings });
+
+  it('projects on the PLAN, so the date does not move just because spending varied', () => {
+    // Same plan, very different measured pace between the two check-ins.
+    const steady = computeRunway({ readings: [on('2026-09-01', 6000), on('2026-10-01', 5800)], plannedMonthlyBurn: 1000, upcomingRefunds: [], gradDate, today: '2026-10-02' });
+    const splurge = computeRunway({ readings: [on('2026-09-01', 6000), on('2026-10-01', 3000)], plannedMonthlyBurn: 1000, upcomingRefunds: [], gradDate, today: '2026-10-02' });
+    expect(steady.burn.source).toBe('plan');
+    expect(splurge.burn.amount).toBe(1000);
+    // Dates differ only because the starting balances differ, not the pace.
+    expect(steady.burn.amount).toBe(splurge.burn.amount);
+  });
+
+  it('gives a date from a SINGLE check-in (the old measured path needed two, 14 days apart)', () => {
+    const r = computeRunway({ readings: [on('2026-10-01', 6000)], plannedMonthlyBurn: 1000, upcomingRefunds: [], gradDate, today: '2026-10-02' });
+    expect(r.runOutDate).toBeTruthy();
+    expect(r.burn.source).toBe('plan');
+  });
+
+  it('STILL reports growing when the balance is rising, even though the plan burn is positive', () => {
+    // The regression this guards: `growing` used to mean "measured burn ~0". With
+    // the plan always supplying a positive burn that could never fire again, and
+    // the "Extra loan money, you may be able to return some" tile would have died
+    // silently with it.
+    const r = computeRunway({ readings: [on('2026-09-01', 6000), on('2026-10-01', 7500)], plannedMonthlyBurn: 2000, upcomingRefunds: [], gradDate, today: '2026-10-02' });
+    expect(r.state).toBe('growing');
+  });
+
+  it('carries actualPace so the app can say what happens at the real rate', () => {
+    const r = computeRunway({ readings: [on('2026-09-01', 6000), on('2026-10-01', 3000)], plannedMonthlyBurn: 1000, upcomingRefunds: [], gradDate, today: '2026-10-02' });
+    expect(r.actualPace.perMonth).toBeGreaterThan(1000);      // outspending the plan
+    expect(r.actualPace.drift).toBeLessThan(0);
+    expect(r.actualPace.runOutDate < r.runOutDate).toBe(true); // reality is sooner than the plan
+  });
+
+  it('has no actualPace from a single check-in', () => {
+    const r = computeRunway({ readings: [on('2026-10-01', 6000)], plannedMonthlyBurn: 1000, upcomingRefunds: [], gradDate, today: '2026-10-02' });
+    expect(r.actualPace).toBe(null);
   });
 });

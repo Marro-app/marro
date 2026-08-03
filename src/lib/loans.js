@@ -356,6 +356,20 @@ export function cashReceived(loan) {
 }
 
 /**
+ * The same "cash that actually lands" figure as `cashReceived`, but always a
+ * NUMBER so it can be summed. `cashReceived` deliberately returns null when
+ * there's no fee or no amount (its job is deciding whether to render an
+ * explanatory line); this one is the arithmetic version, used by the aid math
+ * in `src/lib/aid.js` and by `estimateRefunds` below. Lives here rather than in
+ * aid.js so loans.js never has to import from a module that imports it back.
+ */
+export function loanCashLanded(loan) {
+  const gross = (loan?.disbursements || []).reduce((a, d) => a + (Number(d.amount) || 0), 0);
+  if (gross <= 0) return 0;
+  return gross * (1 - effectiveFeePct(loan));
+}
+
+/**
  * Interest that has built up so far, as of `asOf` (an ISO date) — SIMPLE
  * daily interest (`principal × rate/365 × days`) per disbursement, summed.
  *
@@ -461,15 +475,30 @@ export function projectDebtAtGraduation(loans, gradDate) {
     // statutory rate — they must NOT inherit "always an estimate" from that
     // storage detail the way a genuine private loan does.
     const key = loanTypeKey(filled);
-    const loanIsEstimate = key === 'private' || key === 'otherUserRate' || usedFallback || isRateEstimated(filled);
+    const noFormula = key === 'private' || key === 'otherUserRate';
+    // Data Marro genuinely had to infer or is still missing — a guessed
+    // disbursement date or a rate not in the table. This is the "real" estimate.
+    const inferred = usedFallback || isRateEstimated(filled);
+    const loanIsEstimate = noFormula || inferred;
     if (loanIsEstimate) isEstimate = true;
+    // `basis` separates WHY a total isn't exact, so the UI can stop calling a
+    // fully-filled private loan an "estimate" (which implies Marro guessed):
+    //   'exact'    — federal loan, government formula, confirmed rate + dates.
+    //   'entered'  — private/other loan with everything filled in: exact for the
+    //                numbers the student typed, we just can't verify the terms.
+    //   'estimate' — something was inferred or is still missing.
+    const basis = inferred ? 'estimate' : (noFormula ? 'entered' : 'exact');
     const principal = loanPrincipal(filled);
     const interest = accruedInterest(filled, gradDate);
-    return { loanId: loan.id, principal, interest, total: principal + interest, isEstimate: loanIsEstimate };
+    return { loanId: loan.id, principal, interest, total: principal + interest, isEstimate: loanIsEstimate, basis };
   });
 
   const total = byLoan.reduce((a, l) => a + l.total, 0);
-  return { total, byLoan, isEstimate };
+  // Did any loan have genuinely inferred/missing data (vs. only being a
+  // fully-filled private loan)? Lets the UI choose "includes an estimate"
+  // vs. the softer "based on the rates you entered."
+  const hasInferred = byLoan.some((l) => l.basis === 'estimate');
+  return { total, byLoan, isEstimate, hasInferred };
 }
 
 // ── Runway ────────────────────────────────────────────────────────────────────
@@ -479,14 +508,14 @@ export function projectDebtAtGraduation(loans, gradDate) {
 // collapses same-date duplicates (two devices checking in the same day) down
 // to whichever one comes LAST in the input array — the freshest write wins,
 // mirroring how the sync engine's own last-write-wins scalar fields behave.
-function normalizeReadings(readings, today) {
+export function normalizeReadings(readings, today) {
   const kept = (readings || []).filter((r) => r && r.date && r.date <= today);
   const byDate = new Map();
   for (const r of kept) byDate.set(r.date, r); // later array entries overwrite earlier ones sharing a date
   return Array.from(byDate.values()).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
-const readingTotal = (r) => (Number(r.spendable) || 0) + (Number(r.savings) || 0);
+export const readingTotal = (r) => (Number(r.spendable) || 0) + (Number(r.savings) || 0);
 
 /**
  * "How long will my money last?" — the Runway tile's engine.
@@ -521,6 +550,117 @@ const readingTotal = (r) => (Number(r.spendable) || 0) + (Number(r.savings) || 0
  *  - a gap of under 7 days between "runs out" and "next refund" is floored to
  *    "basically on track" rather than alarming the student over pocket change.
  */
+/**
+ * Walk a balance forward through the money still to arrive, and report BOTH
+ * things a student needs to know:
+ *
+ *   runOutDate — when the money is genuinely gone, i.e. after the last inflow.
+ *   shortfalls — every stretch where the balance hits zero while more money is
+ *                still coming. These are the dry spells: aid arrives in lumps,
+ *                so spending the annual average can leave someone at $0 in
+ *                November waiting on a January disbursement.
+ *
+ * This replaced a single division (`balance / dailyBurn`) that ignored inflows
+ * entirely, so the tile claimed a student ran out in November when January's
+ * disbursement was already scheduled — contradicting "Safe to spend", which
+ * did count it. Both numbers now come from the same walk.
+ *
+ * The balance floors at zero rather than going negative: you cannot spend money
+ * you do not have, so the stretch after a shortfall resumes from the inflow.
+ */
+export function projectBalance({ startDate, startBalance, dailyBurn, inflows, horizon }) {
+  const shortfalls = [];
+  let balance = Math.max(0, Number(startBalance) || 0);
+  let cursor = startDate;
+
+  const ahead = (inflows || [])
+    .filter((r) => r.date && r.date > startDate && (!horizon || r.date <= horizon) && (Number(r.amount) || 0) > 0)
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+
+  if (!(dailyBurn > 0)) return { runOutDate: null, shortfalls };
+
+  for (const inf of ahead) {
+    const days = daysBetween(cursor, inf.date);
+    const wouldSpend = days * dailyBurn;
+    if (balance < wouldSpend) {
+      // Runs dry before this money lands — record how early, and by how much.
+      const dryDate = addDays(cursor, Math.floor(balance / dailyBurn));
+      shortfalls.push({
+        date: dryDate,
+        nextInflowDate: inf.date,
+        daysShort: daysBetween(dryDate, inf.date),
+        shortBy: wouldSpend - balance,
+        isEstimate: !!inf.isEstimate,
+      });
+      balance = 0;
+    } else {
+      balance -= wouldSpend;
+    }
+    balance += Number(inf.amount) || 0;
+    cursor = inf.date;
+  }
+
+  return { runOutDate: addDays(cursor, Math.floor(balance / dailyBurn)), shortfalls };
+}
+
+/** Below this many days between check-ins, a comparison is noise, not a signal. */
+const DRIFT_MIN_DAYS = 7;
+/** Drift under this share of what was planned isn't worth telling anyone about. */
+const DRIFT_MIN_SHARE = 0.1;
+
+/**
+ * How the student is doing against the plan they set.
+ *
+ * The runway projects on the PLAN — the number they chose and can change (see
+ * computeRunway). That leaves an obvious question the plan can't answer: is it
+ * actually working? This answers it by comparing where the plan said they'd be
+ * to where they really are.
+ *
+ *   expected = previous balance + money that landed since − plan for those days
+ *   drift    = actual − expected      (negative means overspending)
+ *
+ * Inflows that landed BETWEEN the two check-ins have to be added, or a
+ * disbursement makes the student look like they magically underspent. Same
+ * straddle rule computeRunway uses for its own window.
+ *
+ * `meaningful` gates the whole thing: two check-ins three days apart with one
+ * big grocery run in between implies an absurd monthly pace, and a tiny drift
+ * is just life. Callers should show nothing when it's false rather than
+ * reporting a number they'd have to caveat.
+ */
+export function compareToPlan({ readings, plannedMonthlyBurn, inflows, today }) {
+  const none = { measurable: false, meaningful: false };
+  const sorted = normalizeReadings(readings, today);
+  if (sorted.length < 2) return none;
+
+  const prev = sorted[sorted.length - 2];
+  const latest = sorted[sorted.length - 1];
+  const daysElapsed = daysBetween(prev.date, latest.date);
+  if (daysElapsed < DRIFT_MIN_DAYS) return none;
+
+  const landedBetween = (inflows || [])
+    .filter((r) => r.date && r.date > prev.date && r.date <= latest.date)
+    .reduce((a, r) => a + (Number(r.amount) || 0), 0);
+
+  const plannedSpend = (Number(plannedMonthlyBurn) || 0) / DAYS_PER_MONTH * daysElapsed;
+  const expected = readingTotal(prev) + landedBetween - plannedSpend;
+  const actual = readingTotal(latest);
+  const drift = actual - expected;
+
+  // What they actually spent over the window, as a monthly rate. Floors at 0:
+  // a balance that grew is not "negative spending", it's covered by the
+  // growing state instead.
+  const actualSpend = readingTotal(prev) + landedBetween - actual;
+  const actualPerMonth = Math.max(0, (actualSpend / daysElapsed) * DAYS_PER_MONTH);
+
+  // Two separate questions, deliberately not conflated:
+  //   measurable — we have enough history to state a real pace at all.
+  //   meaningful — the gap from the plan is big enough to be worth saying.
+  // The pace is a fact either way; only the WARNING should wait on meaningful.
+  const meaningful = plannedSpend > 0 && Math.abs(drift) > plannedSpend * DRIFT_MIN_SHARE;
+  return { measurable: true, meaningful, sinceDate: prev.date, asOf: latest.date, daysElapsed, expected, actual, drift, actualPerMonth };
+}
+
 export function computeRunway({ readings, plannedMonthlyBurn, upcomingRefunds, gradDate, today }) {
   if (gradDate && gradDate <= today) return { state: 'graduated' };
 
@@ -536,57 +676,96 @@ export function computeRunway({ readings, plannedMonthlyBurn, upcomingRefunds, g
     return { state: 'overdrawn', spendable, savings, coveredBySavings: savings > 0, asOf: latest.date };
   }
 
-  // ── Burn rate: measured from real balance history when we can trust it, the student's plan otherwise ──
-  let burn;
+  // ── Burn rate: the student's PLAN, always ──────────────────────────────────
+  // This used to measure the rate from the gap between two check-ins. Founder
+  // call (2026-07-27): the headline should rest on the monthly plan instead,
+  // because that's the number the student actually sets and can change. A
+  // measured rate moved the date for reasons they didn't decide (one costly
+  // fortnight rewrote it), and it did nothing at all until two check-ins existed
+  // 14+ days apart, so the feature was dead for new users. Whether the plan is
+  // WORKING is a separate question, answered by compareToPlan below.
+  const burn = { amount: plannedMonthlyBurn ?? 0, source: 'plan', windowDays: null };
+
+  // Growth is still detected from the real balance, independently of the burn
+  // above. It has to be: `growing` used to be "measured burn is ~zero", and with
+  // the plan always supplying a positive burn that could never fire again —
+  // silently taking the "Extra loan money, you may be able to return some" tile
+  // with it, which is a locked decision (never green when borrowed).
+  const measured = compareToPlan({ readings, plannedMonthlyBurn, inflows: upcomingRefunds, today });
+  // How the student is actually tracking vs. their plan — "Compared to your plan".
+  // Computed HERE, before any early return, so it survives the `growing` states
+  // below: a rising balance is the clearest "you're ahead", and blanking the tile
+  // there (the old behaviour, it was only built after the growing returns) told a
+  // student doing great that we had nothing to say. Present only once there's real
+  // spaced-out history (measured.measurable — two check-ins ≥7 days apart).
+  const actualPace = measured.measurable ? {
+    perMonth: measured.actualPerMonth,
+    drift: measured.drift,
+    // Only warn when the gap from the plan is big enough to be worth saying;
+    // the pace itself is reported either way.
+    meaningful: measured.meaningful,
+    sinceDate: measured.sinceDate,
+    expected: measured.expected,
+    actual: measured.actual,
+    runOutDate: measured.actualPerMonth > GROWING_EPSILON
+      ? projectBalance({ startDate: latest.date, startBalance: spendable, dailyBurn: measured.actualPerMonth / DAYS_PER_MONTH, inflows: upcomingRefunds, horizon: gradDate }).runOutDate
+      : null,
+  } : null;
+
   if (sorted.length >= 2) {
     const prev = sorted[sorted.length - 2];
     const windowDays = daysBetween(prev.date, latest.date);
     if (windowDays >= 14) {
-      const refunds = upcomingRefunds || [];
-      // Straddle case: only refunds that landed strictly between the two
-      // readings count as "known inflow" to net back out — one dated before
-      // `prev` was already reflected in `prev`'s balance, and one dated after
-      // `latest` hasn't happened yet from this window's point of view.
-      const knownInflowsBetween = refunds
+      const landedBetween = (upcomingRefunds || [])
         .filter((r) => r.date > prev.date && r.date <= latest.date)
         .reduce((a, r) => a + (Number(r.amount) || 0), 0);
-      const delta = readingTotal(prev) - readingTotal(latest) + knownInflowsBetween;
-      burn = { amount: (delta / windowDays) * DAYS_PER_MONTH, source: 'measured', windowDays };
-    } else {
-      burn = { amount: plannedMonthlyBurn ?? 0, source: 'plan', windowDays };
+      const spentOverWindow = readingTotal(prev) - readingTotal(latest) + landedBetween;
+      if ((spentOverWindow / windowDays) * DAYS_PER_MONTH <= GROWING_EPSILON) {
+        return { state: 'growing', spendable, savings, total, burn, actualPace, asOf: latest.date };
+      }
     }
-  } else {
-    burn = { amount: plannedMonthlyBurn ?? 0, source: 'plan', windowDays: null };
   }
 
   if (burn.amount <= GROWING_EPSILON) {
-    return { state: 'growing', spendable, savings, total, burn, asOf: latest.date };
+    return { state: 'growing', spendable, savings, total, burn, actualPace, asOf: latest.date };
   }
 
   const dailyBurn = burn.amount / DAYS_PER_MONTH;
-  const runOutDate = addDays(latest.date, Math.floor(spendable / dailyBurn));
-  const cushionExtensionDate = addDays(latest.date, Math.floor(total / dailyBurn));
+  // `runOutDate` counts the money still to arrive (see projectBalance), so it's
+  // the date the student ACTUALLY runs out — not the date their current cash
+  // alone would have lasted. `shortfalls` carries the dry spells along the way.
+  const spendableProj = projectBalance({ startDate: latest.date, startBalance: spendable, dailyBurn, inflows: upcomingRefunds, horizon: gradDate });
+  const runOutDate = spendableProj.runOutDate;
+  const shortfalls = spendableProj.shortfalls;
+  const cushionExtensionDate = projectBalance({ startDate: latest.date, startBalance: total, dailyBurn, inflows: upcomingRefunds, horizon: gradDate }).runOutDate;
 
-  if (!gradDate || cushionExtensionDate >= gradDate) {
-    return { state: 'through_graduation', spendable, savings, total, burn, runOutDate, cushionExtensionDate, asOf: latest.date };
-  }
-
-  const nextRefund = (upcomingRefunds || []).find((r) => r.date > latest.date);
-  if (nextRefund && runOutDate < nextRefund.date) {
-    const gapDays = daysBetween(runOutDate, nextRefund.date);
-    if (gapDays < 7) {
-      return { state: 'counting_down', spendable, savings, total, burn, runOutDate, cushionExtensionDate, basicallyOnTrack: true, asOf: latest.date };
-    }
-    // Trim needed so `spendable` stretches exactly to the refund date instead
-    // of running dry `gapDays` early: recompute the daily rate that would
-    // make it last exactly that long, and the monthly difference from today's pace.
-    const daysUntilRefund = daysBetween(latest.date, nextRefund.date);
-    const neededMonthlyBurn = (spendable / daysUntilRefund) * DAYS_PER_MONTH;
+  // A dry spell outranks "you're fine through graduation": lasting the whole way
+  // is no comfort if there's a month with $0 in it on the way there. Checked
+  // BEFORE the through_graduation branch for exactly that reason.
+  const firstShort = shortfalls.find((s) => s.daysShort >= 7);
+  if (firstShort) {
+    // Trim needed so the money stretches to the inflow instead of running dry
+    // early: the daily rate that would last exactly that long, expressed as the
+    // monthly difference from today's pace.
+    const daysUntilRefund = daysBetween(latest.date, firstShort.nextInflowDate);
+    const neededMonthlyBurn = daysUntilRefund > 0 ? (spendable / daysUntilRefund) * DAYS_PER_MONTH : 0;
     const trimPerMonthToClose = Math.max(0, burn.amount - neededMonthlyBurn);
-    return { state: 'gap', spendable, savings, total, burn, runOutDate, cushionExtensionDate, gapDays, trimPerMonthToClose, nextRefund, asOf: latest.date };
+    return {
+      state: 'gap', spendable, savings, total, burn, runOutDate, cushionExtensionDate, shortfalls, actualPace,
+      gapDays: firstShort.daysShort, trimPerMonthToClose,
+      nextRefund: { date: firstShort.nextInflowDate, isEstimate: firstShort.isEstimate },
+      asOf: latest.date,
+    };
+  }
+  // A dry spell under a week reads as noise, not a crisis — same grace the
+  // previous implementation gave.
+  const basicallyOnTrack = shortfalls.length > 0;
+
+  if (!gradDate || (cushionExtensionDate && cushionExtensionDate >= gradDate)) {
+    return { state: 'through_graduation', spendable, savings, total, burn, runOutDate, cushionExtensionDate, shortfalls, actualPace, asOf: latest.date };
   }
 
-  return { state: 'counting_down', spendable, savings, total, burn, runOutDate, cushionExtensionDate, asOf: latest.date };
+  return { state: 'counting_down', spendable, savings, total, burn, runOutDate, cushionExtensionDate, shortfalls, actualPace, ...(basicallyOnTrack ? { basicallyOnTrack: true } : {}), asOf: latest.date };
 }
 
 // ── Refund estimates ──────────────────────────────────────────────────────────
@@ -604,22 +783,73 @@ export function computeRunway({ readings, plannedMonthlyBurn, upcomingRefunds, g
  * garbage start date contributes a refund with a null date (`isEstimate:
  * true`) rather than a confidently wrong one.
  */
-export function estimateRefunds(years) {
+export function estimateRefunds(years, loans = []) {
   const refunds = [];
   for (const y of years || []) {
-    const net = Math.max((Number(y.grant) || 0) - (Number(y.tuitionFees) || 0) - (Number(y.healthIns) || 0), 0);
-    if (net <= 0) continue;
-    const half = net / 2;
+    const grant = Number(y.grant) || 0;
     const term = y.label || `${y.startDate ? y.startDate.slice(0, 4) : 'unknown'}`;
-    if (!isPlausibleDate(y.startDate)) {
-      refunds.push({ term: `${term}-fall`, amount: half, date: null, windowStart: null, windowEnd: null, isEstimate: true });
-      refunds.push({ term: `${term}-spring`, amount: half, date: null, windowStart: null, windowEnd: null, isEstimate: true });
-      continue;
+    const startYear = isPlausibleDate(y.startDate) ? toDate(y.startDate).getFullYear() : null;
+
+    // Every gross inflow this year, with its own date: the grant arriving in
+    // the usual two term halves, plus each committed loan disbursement on the
+    // real date the student entered. Loans in current-balance mode are money
+    // that landed in a past year, so they're not incoming cash here.
+    const loanEvents = [];
+    if (startYear != null) {
+      for (const l of loans || []) {
+        if (l.status !== 'accepted' && l.status !== 'disbursed') continue;
+        if (l.asOfDate != null && l.asOfBalance != null) continue;
+        if (Number(l.academicYear) !== startYear) continue;
+        const feeMult = 1 - effectiveFeePct(l);
+        for (const d of l.disbursements || []) {
+          const amt = (Number(d.amount) || 0) * feeMult;
+          if (amt <= 0 || !isPlausibleDate(d.date)) continue;
+          loanEvents.push({
+            term: `${l.name || term}-loan`, gross: amt, date: d.date,
+            // A fallback date the student never confirmed is a guess, and
+            // anything derived from it must read as approximate.
+            isEstimate: !d.dateConfirmed,
+          });
+        }
+      }
     }
-    const fallDate = addDays(y.startDate, 10);
-    const springDate = addMonths(y.startDate, 5);
-    refunds.push({ term: `${term}-fall`, amount: half, date: fallDate, windowStart: addDays(fallDate, -7), windowEnd: addDays(fallDate, 7), isEstimate: false });
-    refunds.push({ term: `${term}-spring`, amount: half, date: springDate, windowStart: addDays(springDate, -7), windowEnd: addDays(springDate, 7), isEstimate: false });
+
+    const grantEvents = [];
+    if (grant > 0) {
+      if (!isPlausibleDate(y.startDate)) {
+        grantEvents.push({ term: `${term}-fall`, gross: grant / 2, date: null, isEstimate: true });
+        grantEvents.push({ term: `${term}-spring`, gross: grant / 2, date: null, isEstimate: true });
+      } else {
+        const fallDate = addDays(y.startDate, 10);
+        const springDate = addMonths(y.startDate, 5);
+        grantEvents.push({ term: `${term}-fall`, gross: grant / 2, date: fallDate, isEstimate: false });
+        grantEvents.push({ term: `${term}-spring`, gross: grant / 2, date: springDate, isEstimate: false });
+      }
+    }
+
+    const events = [...grantEvents, ...loanEvents];
+    const totalGross = events.reduce((a, e) => a + e.gross, 0);
+    if (totalGross <= 0) continue;
+
+    // Only what's LEFT after the school takes tuition/fees/insurance ever
+    // reaches the student's account. Scaling every inflow by the same ratio
+    // spreads those costs across the terms (roughly how it really works: each
+    // term's disbursement pays that term's bill, the remainder is refunded)
+    // and guarantees the refunds sum to exactly the money-to-you figure. NOT
+    // scaling would be a serious error — a $50k loan disbursement would be
+    // modelled as $50k of spendable inflow when only ~$17k reaches the student.
+    const net = Math.max(totalGross - (Number(y.tuitionFees) || 0) - (Number(y.healthIns) || 0), 0);
+    if (net <= 0) continue;
+    const scale = net / totalGross;
+
+    for (const e of events) {
+      refunds.push({
+        term: e.term, amount: e.gross * scale, date: e.date,
+        windowStart: e.date ? addDays(e.date, -7) : null,
+        windowEnd: e.date ? addDays(e.date, 7) : null,
+        isEstimate: e.isEstimate,
+      });
+    }
   }
   return refunds.sort((a, b) => (a.date || '9999') < (b.date || '9999') ? -1 : 1);
 }
@@ -630,9 +860,12 @@ export function estimateRefunds(years) {
  * For each disbursement, the deadline to return unused federal loan money
  * for a clean cancellation of its interest and fee (studentaid.gov Direct
  * Loan Borrowers' Rights — 120 days from disbursement). Only OPEN windows are
- * returned (deadline still ahead of `today`) — this is recomputed from live
- * `loans` on every render rather than cached by loan id, so an edited
- * disbursement date is never stale.
+ * returned: the money must have ALREADY been disbursed (`d.date <= today`) AND
+ * the deadline still ahead of `today`. The disbursed-check matters — you can't
+ * return money that hasn't landed yet, and without it a loan a student pre-enters
+ * for a future year shows a live "N days left to return money you didn't need"
+ * for cash that hasn't arrived. Recomputed from live `loans` on every render
+ * rather than cached by loan id, so an edited disbursement date is never stale.
  *
  * `dateConfirmed` mirrors the disbursement row: only a date the student
  * actually entered/confirmed should ever be shown as a hard "N days left" —
@@ -645,6 +878,7 @@ export function loanReturnWindows(loans, today) {
   for (const loan of loans || []) {
     for (const d of loan.disbursements || []) {
       if (!d.date) continue;
+      if (d.date > today) continue; // not disbursed yet — nothing to return
       const deadline = addDays(d.date, LOAN_RETURN_WINDOW_DAYS);
       const daysLeft = daysBetween(today, deadline);
       if (daysLeft > 0) out.push({ loanId: loan.id, disbursementId: d.id, deadline, daysLeft, dateConfirmed: !!d.dateConfirmed });

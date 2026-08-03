@@ -1,11 +1,13 @@
 import { useRef, useState } from 'react';
 import { C } from '../lib/theme.js';
-import { fmt, fmtS, moTotal, todayStr, sanitizeMoneyInput } from '../lib/format.js';
+import { fmt, fmtS, moTotal, todayStr, sanitizeMoneyInput, cleanNumEvent, pruneOutOfRangeMonths, yearDisplay } from '../lib/format.js';
 import { Card, SectionTitle, XBtn, Pill, ScrollX, InfoTip } from '../components/primitives.jsx';
 import { Icon } from '../components/icons.jsx';
 import { DateField } from '../components/pickers.jsx';
+import { SummerCard } from '../components/SummerCard.jsx';
 import { useApp } from '../context/AppContext.js';
-import { useEscClose } from '../lib/hooks.js';
+import { useEscClose, useGridColumnCount } from '../lib/hooks.js';
+import { yearAidBreakdown } from '../lib/aid.js';
 
 // Aid & Detail — per-year grant/cost cards + the multi-year overview table.
 // No private state besides the collapse/expand set for the year cards (item 4,
@@ -13,8 +15,8 @@ import { useEscClose } from '../lib/hooks.js';
 // remove-year modals stay App-level chrome (triggered here via setShowAddYear /
 // setConfirmYearRemove).
 export function AidTab(){
-  const { data, subsMo, dismissed, dismiss, setYrF, upd, ay,
-          annGrant, annTuition, annHlth, annDisburse,
+  const { data, subsMo, dismissed, dismiss, setYrF, upd, ay, setTab,
+          annGrant, annTuition, annHlth, annDisburse, annLoanCash, strayLoans,
           setConfirmYearRemove, setShowAddYear, totDisburse, totSpend } = useApp();
 
   // "How your grant works" note — was stuck showing every reload (dismissal
@@ -24,6 +26,8 @@ export function AidTab(){
   // disappears out from under a focused Dismiss button.
   const aidNoteRef = useRef(null);
   const panelRef = useRef(null);
+  const yearsGridRef = useRef(null);
+  const yearsGridCols = useGridColumnCount(yearsGridRef);
   const aidNoteOpen = !dismissed["aidnote"];
   const closeAidNote = () => {
     const active = document.activeElement;
@@ -51,6 +55,20 @@ export function AidTab(){
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
+  // "Add year" should span the whole bottom row only when it actually STARTS a
+  // fresh row. A plain `years.length % cols` count gets this wrong because an
+  // EXPANDED year card spans all columns (gridColumn 1 / -1) and forces its own
+  // row — so we walk the cards in order, resetting to column 0 after any
+  // full-width card, and check where the next slot lands. col === 0 → the tile
+  // begins an empty row (alone → full width); otherwise it fills the leftover
+  // column beside a card and just stretches to that card's height.
+  const cols = Math.max(1, yearsGridCols);
+  let addYearCol = 0;
+  for (const y of data.years) {
+    if (expandedYears.has(y.id)) addYearCol = 0;            // full-width card → next item starts a new row
+    else addYearCol = (addYearCol + 1) % cols;
+  }
+  const addYearAlone = addYearCol === 0;
 
   // Item 8 — friendly full date for overlap messages. ISO "YYYY-MM-DD" strings
   // sort/compare correctly as plain strings, so the overlap checks below just
@@ -77,8 +95,20 @@ export function AidTab(){
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:8,fontVariantNumeric:"tabular-nums"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:16,fontSize:12}}>
-              <span style={{color:C.textMid}}>Total aid</span>
+              <span style={{color:C.textMid}}>Grants &amp; scholarships</span>
               <span style={{color:C.text,fontWeight:600}}>{fmt(annGrant)}</span>
+            </div>
+            {/* Derived from the Loans tab, never typed here — one source of
+                truth, so a loan is entered once and shows up everywhere. */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:16,fontSize:12}}>
+              <span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>
+                Loans
+                <button type="button" className="txt-act" onClick={()=>setTab("loans")}
+                  style={{border:"none",background:"transparent",color:C.teal,fontSize:11,fontWeight:600,cursor:"pointer",padding:0}}>
+                  edit on Loans tab
+                </button>
+              </span>
+              <span style={{color:C.text,fontWeight:600}}>{fmt(annLoanCash)}</span>
             </div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:16,fontSize:12}}>
               <span style={{color:C.textMid}}>Tuition &amp; fees</span>
@@ -92,8 +122,8 @@ export function AidTab(){
             )}
             <div style={{height:1,background:C.border,margin:"4px 0"}}/>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:16}}>
-              <span style={{fontSize:12,fontWeight:600,color:C.text}}>You keep for living costs</span>
-              <span style={{fontSize:14,fontWeight:700,color:C.teal}}>{fmt(annDisburse)}</span>
+              <span style={{fontSize:12,fontWeight:600,color:C.text,display:"inline-flex",alignItems:"center",gap:4}}>Sent to you <InfoTip text="What reaches your bank account each year, after your school takes tuition, fees, and health insurance. This does not include money already in your checking account."/></span>
+              <span style={{fontSize:14,fontWeight:700,color:C.teal}}>{fmt(annDisburse)}<span style={{fontSize:11,fontWeight:400,color:C.gray}}> per year</span></span>
             </div>
           </div>
         </div>
@@ -111,12 +141,18 @@ export function AidTab(){
           collapsed card stays a summary row no matter how tall its neighbor gets.
           minmax(min(100%,300px),1fr) (per DESIGN_SYSTEM "Layout") also stops a hard 300px
           track from overflowing viewports narrower than 300px. */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,300px),1fr))",gap:16,alignItems:"start"}}>
+      <div ref={yearsGridRef} style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,300px),1fr))",gap:16,alignItems:"start"}}>
         {data.years.map((y,i)=>{
-          const g=Number(y.grant)||0,tf=Number(y.tuitionFees)||0,hi=Number(y.healthIns)||0;
-          const rawGap=g-tf-hi; // unfloored — negative means costs exceed aid
-          const disb=Math.max(g-tf-hi,0),oth=(Number(y.otherIncome)||0)*12;
-          const moD=(disb+oth)/12,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
+          const b=yearAidBreakdown(y,data.loans||[]);
+          const disp=yearDisplay(y,i); // custom name / "Year N" + quiet range
+          const rawGap=b.rawGap; // unfloored — negative means costs exceed aid
+          const disb=b.sentToYou,oth=b.otherIncomeAnnual;
+          const moD=b.moSpendable,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
+          // A year with no grants AND no loans entered isn't "short" — it just
+          // hasn't been filled in yet. Showing a tiny "-$6/mo short" (really a
+          // subscription with no income behind it) reads as a broken forecast,
+          // so future/blank years say "not set up yet" until aid or loans exist.
+          const notSetUp = b.totalAid <= 0;
           const expanded = expandedYears.has(y.id);
           // Item 8 — flag overlapping year ranges. Years are stored in order, so
           // the only neighbors that can overlap are i-1 (ends after this one
@@ -146,21 +182,35 @@ export function AidTab(){
                 style={{display:"flex",boxSizing:"border-box",width:"auto",minHeight:44,justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",rowGap:6,margin:"-18px -20px 0",padding:"18px 20px",paddingRight:data.years.length>1?54:20,background:"transparent",border:"none",cursor:"pointer",textAlign:"left",font:"inherit",color:"inherit"}}>
                 <span style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
                   <Icon name="chevron" size={12} style={{transform:expanded?"rotate(180deg)":"none",transition:"transform .15s",color:C.gray,flexShrink:0}}/>
-                  <span style={{fontWeight:700,fontSize:14,color:C.text,whiteSpace:"nowrap"}}>{y.label}</span>
+                  <span style={{display:"flex",alignItems:"baseline",gap:8,minWidth:0}}>
+                    <span style={{fontWeight:700,fontSize:14,color:C.text,whiteSpace:"nowrap"}}>{disp.primary}</span>
+                    {disp.secondary && <span style={{fontSize:11.5,color:C.gray,whiteSpace:"nowrap"}}>{disp.secondary}</span>}
+                  </span>
                 </span>
                 <span style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                  <span style={{fontSize:11.5,color:C.textMid,whiteSpace:"nowrap"}}>Total aid <strong style={{color:C.text}}>{fmt(g)}</strong></span>
+                  <span style={{fontSize:11.5,color:C.textMid,whiteSpace:"nowrap"}}>Aid <strong style={{color:C.text}}>{fmt(b.grants)}</strong></span>
+                  <span style={{fontSize:11.5,color:C.textMid,whiteSpace:"nowrap"}}>Loans <strong style={{color:C.text}}>{fmt(b.loanCash)}</strong></span>
                   <span style={{fontSize:11.5,color:C.textMid,whiteSpace:"nowrap"}}>Sent to you <strong style={{color:C.teal}}>{fmt(disb)}</strong></span>
-                  <Pill ok={moS>=0} warn={moS<0}>{fmtS(moS)}/mo{moS<0?" short":" left over"}</Pill>
+                  {notSetUp
+                    ? <Pill neutral>Not set up yet</Pill>
+                    : <Pill ok={moS>=0} warn={moS<0}>{fmtS(moS)}/mo{moS<0?" short":" available to spend"}</Pill>}
                 </span>
               </button>
 
               {expanded && (
                 <div id={`aid-year-detail-${y.id}`} style={{marginTop:14}}>
+                  {/* Optional custom name — blank falls back to "Year N" (money-rework
+                      §5, founder). The ordinal + range still show beside it in the header. */}
+                  <div style={{marginBottom:10}}>
+                    <input type="text" value={y.name||""} placeholder={`Name this year (optional) — e.g. Clerkships`} maxLength={40}
+                      aria-label={`Name for ${disp.ordinal}`}
+                      onChange={e=>{const d=JSON.parse(JSON.stringify(data));d.years[i].name=e.target.value;upd(d);}}
+                      style={{width:"auto",maxWidth:240,fontSize:12,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 9px",background:C.bg,color:C.text}}/>
+                  </div>
                   <div style={{display:"flex",gap:8,marginBottom:invertedRange||startOverlap||endOverlap?8:10,alignItems:"center",flexWrap:"wrap"}}>
-                    <DateField value={y.startDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].startDate=v;upd(d);}} ariaLabel="Year start date" style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
+                    <DateField value={y.startDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].startDate=v;pruneOutOfRangeMonths(d,d.years[i].id);upd(d);}} ariaLabel="Year start date" style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
                     <span style={{fontSize:11,color:C.gray}}>→</span>
-                    <DateField value={y.endDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].endDate=v;upd(d);}} ariaLabel="Year end date" style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
+                    <DateField value={y.endDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].endDate=v;pruneOutOfRangeMonths(d,d.years[i].id);upd(d);}} ariaLabel="Year end date" style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
                   </div>
                   {(invertedRange||startOverlap||endOverlap) && (
                     <div role="alert" style={{marginBottom:10,padding:"8px 12px",background:C.dangerLight,border:`1px solid ${C.dangerMid}`,borderRadius:8,fontSize:12,color:C.danger,lineHeight:1.5}}>
@@ -171,41 +221,81 @@ export function AidTab(){
                           : `These dates overlap ${shortLabel(nextYr)}, which starts ${friendlyDate(nextYr.startDate)}. Pick an end date before that.`}
                     </div>
                   )}
+                  {/* "Aid covers through" (aidThroughDate) — the date the year's aid is
+                      meant to last through. Defaults to the year's end date (shown when
+                      unset); editable when aid actually stops earlier (e.g. classes end
+                      ~May). Drives the school-months divisor and, when it leaves a real
+                      gap before the next year, the summer card (§4a/§4b). */}
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap",marginBottom:10,padding:"7px 0",borderBottom:`1px solid ${C.border}`}}>
+                    <span style={{fontSize:12,color:C.textMid,display:"flex",alignItems:"center",gap:4}}>
+                      Aid covers through
+                    </span>
+                    <div style={{display:"flex",alignItems:"center",gap:6}}>
+                      <DateField value={y.aidThroughDate||y.endDate||""} onChange={v=>{const d=JSON.parse(JSON.stringify(data));d.years[i].aidThroughDate=v||null;upd(d);}} ariaLabel={`Aid covers through — ${y.label||'Year '+(i+1)}`} style={{width:"auto",fontSize:12,padding:"5px 8px"}}/>
+                      {y.aidThroughDate && y.aidThroughDate!==y.endDate && <button type="button" className="btn-pop" aria-label="Reset aid-covers-through to the year's end date" onClick={()=>{const d=JSON.parse(JSON.stringify(data));d.years[i].aidThroughDate=null;upd(d);}} style={{fontSize:11,fontWeight:600,padding:"5px 9px",minHeight:32,borderRadius:8,border:`1px solid ${C.border}`,background:"transparent",color:C.textMid,cursor:"pointer"}}>Reset</button>}
+                    </div>
+                  </div>
                   {[
-                    {label:"Total aid (annual)",   field:"grant",       note:"Includes health insurance. May include loans you'll repay — loan tracking is coming soon."},
-                    {label:"Tuition & fees",            field:"tuitionFees", note:"paid directly to school"},
-                    {label:"Health insurance",          field:"healthIns",   note:"school-covered, deducted from grant"},
-                    {label:"Housing (monthly)",         field:null,          value:y.monthly.housing||0, note:"per month", isHousing:true},
+                    {label:"Grants & scholarships (annual)", field:"grant", note:"Money you don't pay back"},
+                    {label:"Tuition & fees",            field:"tuitionFees", note:""},
+                    {label:"Health insurance",          field:"healthIns",   note:""},
+                    {label:"Housing (monthly)",         field:null,          value:y.monthly.housing||0, note:"", isHousing:true},
                     {label:"Other income (monthly)",    field:"otherIncome", note:"tutoring, work, etc."},
                   ].map(({label,field,note,value,isHousing})=>(
                     <div key={label} style={{padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
                       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                         <span style={{fontSize:12,color:C.textMid}}>{label}</span>
                         {isHousing
-                          ? <input type="number" min="0" value={y.monthly.housing||0} aria-label={`${label} — ${y.label||'Year '+(i+1)}`} onChange={e=>{const d=JSON.parse(JSON.stringify(data));d.years[i].monthly.housing=Number(sanitizeMoneyInput(e.target.value))||0;upd(d);}}
+                          ? <input type="number" min="0" value={y.monthly.housing||0} aria-label={`${label} — ${y.label||'Year '+(i+1)}`} onChange={e=>{const v=cleanNumEvent(e);const d=JSON.parse(JSON.stringify(data));d.years[i].monthly.housing=Number(v)||0;upd(d);}}
                               style={{width:90,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 7px",background:C.bg,color:C.text}}/>
-                          : <input type="number" min="0" value={y[field]} aria-label={`${label} — ${y.label||'Year '+(i+1)}`} onChange={e=>setYrF(i,field,sanitizeMoneyInput(e.target.value))}
+                          : <input type="number" min="0" value={y[field]} aria-label={`${label} — ${y.label||'Year '+(i+1)}`} onChange={e=>setYrF(i,field,cleanNumEvent(e))}
                               style={{width:90,textAlign:"right",fontSize:12,border:`1px solid ${C.border}`,borderRadius:8,padding:"4px 7px",background:C.bg,color:C.text}}/>
                         }
                       </div>
                       <div style={{fontSize:10,color:C.gray,marginTop:1}}>{note}</div>
                     </div>
                   ))}
+                  {/* Read-only: loans are owned by the Loans tab. Rendered as
+                      plain text with no input affordance so it never reads as
+                      a second place to type the same number. */}
+                  <div style={{padding:"5px 0",borderBottom:`1px solid ${C.border}`}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                      <span style={{fontSize:12,color:C.textMid}}>Loans (annual)</span>
+                      <span style={{fontSize:12,fontWeight:600,color:C.text,paddingRight:8}}>{fmt(b.loanCash)}</span>
+                    </div>
+                    <div style={{fontSize:10,color:C.gray,marginTop:1}}>
+                      From your loans for this year, after the fee.{" "}
+                      <button type="button" className="txt-act" onClick={()=>setTab("loans")}
+                        style={{border:"none",background:"transparent",color:C.teal,fontSize:10,fontWeight:600,cursor:"pointer",padding:0}}>
+                        Edit on the Loans tab
+                      </button>
+                    </div>
+                  </div>
                   <div style={{marginTop:12,padding:"10px 12px",background:C.tealLight,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${C.tealMid}`,borderRadius:8,fontSize:12}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3,alignItems:"center"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Sent to you/yr <InfoTip text="Aid left over after tuition and fees — the part that hits your bank account for living costs."/></span><strong style={{color:C.teal}}>{fmt(disb)}</strong></div>
-                    <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid}}>Monthly spendable</span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3,alignItems:"center"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Sent to you/yr <InfoTip text="What reaches your bank account this year, after your school takes tuition, fees, and health insurance."/></span><strong style={{color:C.teal}}>{fmt(disb)}</strong></div>
+                    <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Planned per month</span><strong style={{color:C.teal}}>{fmt(moD)}/mo</strong></div>
+                    {(y.monthly.housing||0)>0 && (
+                      <div style={{display:"flex",justifyContent:"space-between",marginTop:5,paddingTop:5,borderTop:`1px solid ${C.tealMid}`}}><span style={{color:C.textMid,display:"flex",alignItems:"center",gap:4}}>Left after rent</span><strong style={{color:C.teal}}>{fmt(moD-(y.monthly.housing||0))}/mo</strong></div>
+                    )}
                   </div>
                   {rawGap<0 && (
                     <div role="alert" style={{marginTop:8,padding:"10px 12px",background:C.dangerLight,border:`1px solid ${C.dangerMid}`,borderRadius:8,fontSize:12,color:C.danger,fontWeight:600}}>
                       Your costs exceed your aid by {fmt(Math.abs(rawGap))} this year.
                     </div>
                   )}
+                  {/* Summer fund (§4b) — renders itself only when there's a real
+                      uncovered summer (summerWindow non-null); a no-op otherwise. */}
+                  <SummerCard year={y} yearIndex={i} nextYear={nextYr} data={data} upd={upd} subsMo={subsMo}/>
                 </div>
               )}
             </Card>
           );
         })}
-        <button type="button" aria-label="Add year" onClick={()=>setShowAddYear(true)} style={{width:"100%",font:"inherit",background:"transparent",border:`2px dashed ${C.border}`,borderRadius:12,minHeight:120,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,cursor:"pointer",color:C.gray,transition:"border-color 0.15s, color 0.15s"}}
+        {/* Alone on its row → full width + a comfortable 120px target. Beside a
+            year card → stretch to that card's height (alignSelf) with no fixed
+            minHeight, so it no longer looms larger than the collapsed card next
+            to it. The grid's alignItems:"start" is overridden per-item here. */}
+        <button type="button" aria-label="Add year" onClick={()=>setShowAddYear(true)} style={{gridColumn:addYearAlone?"1 / -1":undefined,alignSelf:addYearAlone?undefined:"stretch",width:"100%",font:"inherit",background:"transparent",border:`2px dashed ${C.border}`,borderRadius:12,minHeight:addYearAlone?120:88,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,cursor:"pointer",color:C.gray,transition:"border-color 0.15s, color 0.15s"}}
           onMouseEnter={e=>{e.currentTarget.style.borderColor=C.teal;e.currentTarget.style.color=C.teal;}}
           onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.gray;}}>
           <span style={{fontSize:24,fontWeight:300,lineHeight:1}}>+</span>
@@ -220,46 +310,88 @@ export function AidTab(){
         <ScrollX className="scrollx" style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead><tr>
-              {["Year","Total aid","School costs","Sent to you/yr","Spendable/mo","Budget/mo","Surplus/mo","Cumulative"].map(h=>
+              {["Year","Aid","Loans","School costs","Sent to you/yr","Planned/mo","Monthly plan","Available to spend"].map(h=>
                 <th key={h} style={{textAlign:"left",fontSize:10,color:C.gray,padding:"6px 8px",borderBottom:`1px solid ${C.border}`,fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
               )}
             </tr></thead>
             <tbody>
               {(()=>{
-                let cum=0;
-                return data.years.map(y=>{
-                  const g=Number(y.grant)||0,tf=Number(y.tuitionFees)||0,hi=Number(y.healthIns)||0;
-                  const rawGap=g-tf-hi; // unfloored — negative means costs exceed aid
-                  const disb=Math.max(g-tf-hi,0),oth=(Number(y.otherIncome)||0)*12;
-                  const moD=(disb+oth)/12,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
-                  cum+=moS*12;
+                return data.years.map((y,i)=>{
+                  const b=yearAidBreakdown(y,data.loans||[]);
+                  const tf=b.tuitionFees,hi=b.healthIns;
+                  const rawGap=b.rawGap; // unfloored — negative means costs exceed aid
+                  const disb=b.sentToYou,oth=b.otherIncomeAnnual;
+                  const moD=b.moSpendable,moSp=moTotal({...y.monthly,subs:subsMo}),moS=moD-moSp;
+                  // Blank years (no grants or loans yet) aren't a real shortfall:
+                  // no warning icon and no "-$6/mo". They read as a dash until
+                  // they're filled in.
+                  const notSetUp = b.totalAid <= 0;
                   return <tr key={y.id}>
-                    <td style={{padding:"8px",fontWeight:600,whiteSpace:"nowrap",fontSize:11,color:C.text}}>{y.label}</td>
-                    <td style={{padding:"8px",color:C.neg,fontWeight:600}}>
-                      {g>0?fmt(g):"TBD"}
-                      {rawGap<0 && <span title={`Costs exceed aid by ${fmt(Math.abs(rawGap))} this year`} style={{marginLeft:4,color:C.danger}} aria-label={`Warning: costs exceed aid by ${fmt(Math.abs(rawGap))} this year`}>⚠</span>}
+                    <td style={{padding:"8px",fontWeight:600,whiteSpace:"nowrap",fontSize:11,color:C.text}}>{yearDisplay(y,i).primary}</td>
+                    <td style={{padding:"8px",color:C.text,fontWeight:600}}>{notSetUp?"TBD":fmt(b.grants)}</td>
+                    <td style={{padding:"8px",color:C.text,fontWeight:600}}>
+                      {notSetUp?"TBD":fmt(b.loanCash)}
+                      {!notSetUp && rawGap<0 && <span title={`Costs exceed aid by ${fmt(Math.abs(rawGap))} this year`} style={{marginLeft:4,color:C.danger}} aria-label={`Warning: costs exceed aid by ${fmt(Math.abs(rawGap))} this year`}>⚠</span>}
                     </td>
                     <td style={{padding:"8px",color:C.gray}}>{fmt(tf+hi)}</td>
-                    <td style={{padding:"8px",color:C.teal,fontWeight:600}}>{fmt(disb)}</td>
-                    <td style={{padding:"8px",fontWeight:600,color:C.text}}>{fmt(moD)}</td>
+                    <td style={{padding:"8px",color:C.teal,fontWeight:600}}>{notSetUp?"—":fmt(disb)}</td>
+                    <td style={{padding:"8px",fontWeight:600,color:C.text}}>{notSetUp?"—":fmt(moD)}</td>
                     <td style={{padding:"8px",color:C.text}}>{fmt(moSp)}</td>
-                    <td style={{padding:"8px",fontWeight:600,color:moS>=0?C.teal:C.neg}}>{fmtS(moS)}</td>
-                    <td style={{padding:"8px",fontWeight:700,color:cum>=0?C.teal:C.neg}}>{fmtS(cum)}</td>
+                    <td style={{padding:"8px",fontWeight:600,color:notSetUp?C.gray:(moS>=0?C.teal:C.neg)}}>{notSetUp?"—":fmtS(moS)}</td>
                   </tr>;
                 });
               })()}
             </tbody>
           </table>
         </ScrollX>
-        <div style={{marginTop:10,padding:"8px 12px",background:totDisburse-totSpend>=0?C.tealLight:C.negLight,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${totDisburse-totSpend>=0?C.tealMid:C.negMid}`,borderRadius:8,fontSize:12,color:totDisburse-totSpend>=0?C.teal:C.neg,fontWeight:600}}>
-          {data.years.length}-year net: {fmtS(totDisburse-totSpend)}
-          {totDisburse-totSpend<0 && (
-            <div style={{marginTop:6,fontSize:11.5,fontWeight:400,color:C.textMid,lineHeight:1.5}}>
-              Most med students borrow to bridge this — that&apos;s what the loans are for. Your aid office can help you plan it.
+        {/* Years whose monthly budget is still at $0 across every category — either
+            never touched (BLANK_MONTHLY) or reset. Their "Monthly plan" figure isn't
+            a real spending estimate, so it silently inflates the net below unless
+            called out (founder feedback). */}
+        {(()=>{
+          const blankKeys=['housing','food','transport','personal','books','exams','savings','social'];
+          const unfilled=data.years.map((y,i)=>({y,i})).filter(({y})=>blankKeys.every(k=>!(Number(y.monthly?.[k])||0)));
+          return (
+            <div style={{marginTop:10,padding:"8px 12px",background:totDisburse-totSpend>=0?C.tealLight:C.negLight,backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:`1px solid ${totDisburse-totSpend>=0?C.tealMid:C.negMid}`,borderRadius:8,fontSize:12,color:totDisburse-totSpend>=0?C.teal:C.neg,fontWeight:600}}>
+              {data.years.length}-year net: {fmtS(totDisburse-totSpend)}
+              {/* The old copy here said "most med students borrow to bridge this —
+                  that's what the loans are for." That's wrong now: the loans the
+                  student entered are already counted above, so a shortfall means
+                  they'd need to borrow MORE than they've recorded. */}
+              {totDisburse-totSpend<0 && (
+                <div style={{marginTop:6,fontSize:11.5,fontWeight:400,color:C.textMid,lineHeight:1.5}}>
+                  Your plan spends more than your aid and loans cover. You&apos;d need to borrow more, or trim your budget — your aid office can help you plan it.
+                </div>
+              )}
+              {unfilled.length>0 && (
+                <div style={{marginTop:6,fontSize:11.5,fontWeight:400,color:C.textMid,lineHeight:1.5}}>
+                  Includes {unfilled.length===data.years.length?"":`${unfilled.length} `}year{unfilled.length>1?"s":""} with no monthly budget entered yet ({unfilled.map(({y,i})=>yearDisplay(y,i).primary).join(", ")}) — this total assumes $0 spending {unfilled.length>1?"for them":"for it"} until you fill one in.
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          );
+        })()}
       </Card>
+
+      {/* Committed loan money that belongs to no year on this tab — surfaced
+          rather than silently dropped from spending money. Usually a mistyped
+          school year, or a loan added before its year existed. */}
+      {strayLoans?.length>0 && (
+        <Card>
+          <div role="alert" style={{fontSize:12,color:C.text,lineHeight:1.6}}>
+            <strong style={{color:C.amber}}>Some loan money isn&apos;t counted yet.</strong>
+            <div style={{marginTop:4}}>
+              {strayLoans.map(l=>l.name||"Unnamed loan").join(", ")} {strayLoans.length===1?"is":"are"} set to a school year
+              that doesn&apos;t match any year below, so {strayLoans.length===1?"its":"their"} money isn&apos;t in your
+              spendable total. Fix the school year on the{" "}
+              <button type="button" className="txt-act" onClick={()=>setTab("loans")}
+                style={{border:"none",background:"transparent",color:C.teal,fontSize:12,fontWeight:600,cursor:"pointer",padding:0}}>
+                Loans tab
+              </button>, or add the missing year here.
+            </div>
+          </div>
+        </Card>
+      )}
 
     </div>
   );

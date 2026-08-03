@@ -351,7 +351,20 @@ export const Divider = () => <div style={{height:1,background:C.border,margin:"1
 // was removed — it truncated the runway warning with an ellipsis; the overflow
 // lives behind subIcon instead), so sibling tiles stay the same height with no
 // reserved-line trick needed.
-export const MetricTile = ({label, value, sub, color, onClick, role, ariaLive, subIcon}) => (
+// `progress` ({value, max, color}) draws a small meter under the sub line,
+// showing how much of what you can spend the plan uses, so the figure answers
+// "is that a lot?" without a second number competing with it.
+//
+// Two earlier attempts were worse, and both failed the same way: they didn't
+// read as a deliberate element. A ring in the corner floated apart from
+// everything and crowded the value. A hairline flush to the tile's bottom edge
+// had a track too faint to see, so a partly-filled bar looked like a rendering
+// artifact rather than a meter. This version sits inside the tile's padding
+// with a visible track and rounded ends, which is what makes it legible as a
+// scale — the same treatment the Cash flow card already uses.
+//
+// Purely decorative — `sub` carries the meaning, so it is never colour-only.
+export const MetricTile = ({label, value, sub, color, onClick, role, ariaLive, subIcon, progress}) => (
   <div onClick={onClick} role={role} aria-live={ariaLive} style={{
     background:"rgba(255,255,255,0.07)",
     backdropFilter:"blur(40px) saturate(180%)",
@@ -368,6 +381,12 @@ export const MetricTile = ({label, value, sub, color, onClick, role, ariaLive, s
     <div style={{fontSize:24,fontWeight:700,color:color||C.text,letterSpacing:"-0.02em",lineHeight:1.15,fontFamily:"'Newsreader',Georgia,serif",fontVariantNumeric:"tabular-nums lining-nums"}}>{value}</div>
     {sub && <div style={{fontSize:11,color:C.gray,marginTop:4,lineHeight:1.4,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
       <span>{sub}</span>{subIcon}</div>}
+    {progress && progress.max>0 && (
+      <div aria-hidden="true" style={{marginTop:8,height:4,borderRadius:99,background:"rgba(255,255,255,0.12)",overflow:"hidden"}}>
+        <div style={{width:`${Math.max(3,Math.min(100,(progress.value/progress.max)*100))}%`,height:"100%",borderRadius:99,
+          background:progress.color||C.teal,transition:"width .5s cubic-bezier(0.23,1,0.32,1)"}}/>
+      </div>
+    )}
   </div>
 );
 

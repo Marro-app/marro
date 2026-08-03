@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area, Legend, ReferenceLine } from 'recharts';
 import { C, CHART_COLORS, tipProps } from '../lib/theme.js';
-import { fmt, fmtS, MONTH_NAMES } from '../lib/format.js';
+import { fmt, fmtS, MONTH_NAMES, catColorIndex } from '../lib/format.js';
 import { useEscClose } from '../lib/hooks.js';
 import { Card, SectionTitle } from '../components/primitives.jsx';
 import { Icon } from '../components/icons.jsx';
@@ -47,7 +47,7 @@ export function ChartsTab(){
           const calMo=(mi+7)%12;
           const calYr=yrStartYear+(mi>=5?1:0);
           const actual=allEntriesFlat.filter(e=>{const dt=new Date(e.date+"T12:00:00");return dt.getMonth()===calMo&&dt.getFullYear()===calYr;}).reduce((a,e)=>a+Number(e.amount),0);
-          return {name:m, Budgeted:Math.round(budgeted), Actual:Math.round(actual)};
+          return {name:m, Planned:Math.round(budgeted), Actual:Math.round(actual)};
         });
         return (
           <div role="tabpanel" id="tab-panel" aria-labelledby="tab-charts" tabIndex={0} style={{display:"flex",flexDirection:"column",gap:16}}>
@@ -79,7 +79,7 @@ export function ChartsTab(){
               const priorColor  = priorYearsCarryover >= 0 ? C.teal : C.neg;
               return (
                 <Card>
-                  <SectionTitle sub="if you stay on budget">Planned surplus — {yr.label.split("—")[0].trim()}</SectionTitle>
+                  <SectionTitle sub="if you stay on plan">Planned leftover — {yr.label.split("—")[0].trim()}</SectionTitle>
                   <div style={{display:"flex",gap:14,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
                     {priorYearsCarryover!==0 && (
                       <div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.gray}}>
@@ -138,7 +138,7 @@ export function ChartsTab(){
             <Card>
               <SectionTitle>Budget vs actual</SectionTitle>
               <div style={{display:"flex",gap:20,marginBottom:10}}>
-                {[["Budgeted",C.teal],["Actual",C.neg]].map(([l,c])=>(
+                {[["Planned",C.teal],["Actual",C.neg]].map(([l,c])=>(
                   <div key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:C.gray}}>
                     <div style={{width:10,height:10,borderRadius:3,background:c}}/>{l}
                   </div>
@@ -152,7 +152,7 @@ export function ChartsTab(){
                   <XAxis dataKey="name" tick={{fontSize:11,fill:C.gray}} axisLine={false} tickLine={false}/>
                   <YAxis tick={{fontSize:11,fill:C.gray}} tickFormatter={v=>"$"+v} axisLine={false} tickLine={false} width={44}/>
                   <Tooltip separator=": " formatter={v=>fmt(v)} {...tipProps()} cursor={false}/>
-                  <Bar dataKey="Budgeted" fill={C.teal} radius={[6,6,0,0]} maxBarSize={26}>
+                  <Bar dataKey="Planned" fill={C.teal} radius={[6,6,0,0]} maxBarSize={26}>
                     {budgetVsActual.filter(d=>d.Actual>0).map((d,i)=><Cell key={i} fill={C.teal} opacity={0.85*barDim("bva",i)} style={{transition:"opacity 150ms ease"}}/>)}
                   </Bar>
                   <Bar dataKey="Actual" fill={C.neg} radius={[6,6,0,0]} maxBarSize={26}>
@@ -183,7 +183,7 @@ export function ChartsTab(){
                 pieBudget[c.id] = tot;
               });
               const pieTotal = Object.values(pieBudget).reduce((a,v)=>a+v, 0);
-              const pieSeries = cats.map((c,i)=>({name:c.label,value:Math.round(pieBudget[c.id]||0),color:CHART_COLORS[i%CHART_COLORS.length]})).filter(d=>d.value>0);
+              const pieSeries = cats.map((c,i)=>({name:c.label,value:Math.round(pieBudget[c.id]||0),color:CHART_COLORS[catColorIndex(c.id,cats)%CHART_COLORS.length]})).filter(d=>d.value>0);
               return (
                 <Card>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
@@ -257,7 +257,7 @@ export function ChartsTab(){
                             const sliceIdx = pieSeries.findIndex(s=>s.name===cat.label);
                             return <div key={cat.id} onMouseEnter={()=>setPieHover(sliceIdx>=0?sliceIdx:null)} onMouseLeave={()=>setPieHover(null)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}`,fontSize:12,background:pieHover===sliceIdx&&sliceIdx>=0?C.selBg:"transparent",borderRadius:6,transition:"background 150ms ease"}}>
                               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                                <div style={{width:10,height:10,borderRadius:3,background:CHART_COLORS[i%CHART_COLORS.length],flexShrink:0}}/>
+                                <div style={{width:10,height:10,borderRadius:3,background:CHART_COLORS[catColorIndex(cat.id,cats)%CHART_COLORS.length],flexShrink:0}}/>
                                 <span style={{color:C.text}}>{cat.label}</span>
                               </div>
                               <div style={{display:"flex",gap:10}}>
@@ -308,7 +308,7 @@ export function ChartsTab(){
                   <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:14}}>
                     {catTotals.map((c,i)=>{
                       const on=activeTrend.includes(c.id);
-                      const color=CHART_COLORS[cats.findIndex(x=>x.id===c.id)%CHART_COLORS.length];
+                      const color=CHART_COLORS[catColorIndex(c.id,cats)%CHART_COLORS.length];
                       return (
                         <button key={c.id} onClick={()=>{
                           const cur=trendCats||defaultTop4;
@@ -338,7 +338,7 @@ export function ChartsTab(){
                       <Tooltip separator=": " formatter={v=>fmt(v)} {...tipProps()}/>
                       <Legend wrapperStyle={{fontSize:11,paddingTop:8}}/>
                       {activeCats.map((c,i)=>(
-                        <Line key={c.id} type="monotone" dataKey={c.label} stroke={CHART_COLORS[cats.findIndex(x=>x.id===c.id)%CHART_COLORS.length]} strokeWidth={2} dot={false} activeDot={{r:4}}/>
+                        <Line key={c.id} type="monotone" dataKey={c.label} stroke={CHART_COLORS[catColorIndex(c.id,cats)%CHART_COLORS.length]} strokeWidth={2} dot={false} activeDot={{r:4}}/>
                       ))}
                     </LineChart>
                   </ResponsiveContainer>}
@@ -376,7 +376,7 @@ export function ChartsTab(){
               const cmpData=cats.map((c,i)=>{
                 const a=Math.round(getActualForCat(c.id,defaultA));
                 const b=Math.round(getActualForCat(c.id,defaultB));
-                return {name:c.label,A:a,B:b,delta:b-a,color:CHART_COLORS[i%CHART_COLORS.length]};
+                return {name:c.label,A:a,B:b,delta:b-a,color:CHART_COLORS[catColorIndex(c.id,cats)%CHART_COLORS.length]};
               }).filter(r=>r.A>0||r.B>0);
 
               return (
@@ -440,7 +440,7 @@ export function ChartsTab(){
 
             {/* Multi-year comparison */}
             <Card>
-              <SectionTitle sub="Average month in each academic year — what you can spend vs what you've planned">Spendable vs budget by year</SectionTitle>
+              <SectionTitle sub="Average month in each academic year — what's safe to spend vs your monthly plan">Spendable vs plan by year</SectionTitle>
               <div style={{display:"flex",gap:20,marginBottom:12}}>
                 {[["Spendable /mo",C.teal],["Budget /mo",C.neg]].map(([l,c])=>(
                   <div key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:C.gray}}>

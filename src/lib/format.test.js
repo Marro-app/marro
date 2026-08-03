@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
-  fmt, fmtS, fmtD, fmtA, fmtSA, moTotal, subMonthlyTotal,
+  fmt, fmtS, fmtD, fmtA, fmtSA, moTotal, subMonthlyTotal, catColorIndex, DEFAULT_CATS, yearMonthRange,
   generateYearConfigs, yr2, blankYearFields, BLANK_MONTHLY,
   getMonday, getSunday, fmtWeekLabel, daysUntil, getYearMonthStr, todayStr,
-  sanitizeMoneyInput, MAX_QUICK_ADD_AMOUNT,
+  sanitizeMoneyInput, MAX_QUICK_ADD_AMOUNT, pruneOutOfRangeMonths, pruneAllYears,
 } from './format.js';
 
 // ── Money input clamping ────────────────────────────────────────────────────
@@ -134,11 +134,34 @@ describe('generateYearConfigs', () => {
     const ys = generateYearConfigs(2024, 4);
     expect(ys).toHaveLength(4);
     expect(ys[0]).toMatchObject({
-      id: 0, label: 'Year 1 — 2024-25', startDate: '2024-08-01', endDate: '2025-08-15',
+      id: 0, label: 'Year 1 — 2024-25', startDate: '2024-08-01', endDate: '2025-07-31',
     });
     expect(ys[3]).toMatchObject({ id: 3, label: 'Year 4 — 2027-28', startDate: '2027-08-01' });
     // financial fields all default to 0 for every school (no special-casing)
     expect(ys[0]).toMatchObject(blankYearFields());
+  });
+  // Bug B2: consecutive generated years must never overlap or gap — each ends
+  // the day before the next begins, so the Aid tab's overlap validator
+  // (year.endDate < nextYear.startDate) is satisfied on default data.
+  it('B2: consecutive years are contiguous — end is the day before the next start, never overlapping', () => {
+    const ys = generateYearConfigs(2024, 4);
+    for (let i = 0; i < ys.length - 1; i++) {
+      expect(ys[i].endDate < ys[i + 1].startDate).toBe(true); // no overlap
+      // and no gap: the day after this year's end is the next year's start
+      const dayAfter = new Date(ys[i].endDate + 'T12:00:00');
+      dayAfter.setDate(dayAfter.getDate() + 1);
+      expect(dayAfter.toISOString().slice(0, 10)).toBe(ys[i + 1].startDate);
+    }
+  });
+  // "Final year ends at graduation" — the last generated year ends at its
+  // school-end (July 31, the academic-year boundary), with no trailing August
+  // sliver spilling past graduation into a year the student has already left.
+  it('the final year ends at its school-end with no trailing summer', () => {
+    const ys = generateYearConfigs(2024, 4);
+    expect(ys[ys.length - 1].endDate).toBe('2028-07-31');
+  });
+  it('every generated year defaults aidThroughDate to null (aid covers the whole year)', () => {
+    for (const y of generateYearConfigs(2024, 4)) expect(y.aidThroughDate).toBe(null);
   });
   it('clamps length to at least 1', () => {
     expect(generateYearConfigs(2024, 0)).toHaveLength(1);
@@ -150,7 +173,7 @@ describe('generateYearConfigs', () => {
   it('handles the century rollover in the label suffix', () => {
     const ys = generateYearConfigs(2099, 1);
     expect(ys[0].label).toBe('Year 1 — 2099-00');
-    expect(ys[0].endDate).toBe('2100-08-15');
+    expect(ys[0].endDate).toBe('2100-07-31');
   });
 });
 
@@ -231,5 +254,88 @@ describe('todayStr', () => {
     vi.setSystemTime(new Date('2026-07-01T09:30:00'));
     expect(todayStr()).toBe('2026-07-01');
     vi.useRealTimers();
+  });
+});
+
+describe('catColorIndex — colours follow the category, not its list position', () => {
+  const cats = [
+    { id: 'food' }, { id: 'transport' }, { id: 'personal' },
+    { id: 'cat_100', label: 'Coffee' }, { id: 'cat_200', label: 'Gym' },
+  ];
+  it('gives each default category its fixed DEFAULT_CATS slot', () => {
+    expect(catColorIndex('food', cats)).toBe(DEFAULT_CATS.findIndex(c => c.id === 'food'));
+    expect(catColorIndex('savings', cats)).toBe(DEFAULT_CATS.findIndex(c => c.id === 'savings'));
+  });
+  it('is INDEPENDENT of the order the categories appear in the list (the drag-recolour bug)', () => {
+    const reordered = [cats[2], cats[0], cats[4], cats[1], cats[3]];
+    for (const c of cats) {
+      expect(catColorIndex(c.id, reordered)).toBe(catColorIndex(c.id, cats));
+    }
+  });
+  it('assigns custom categories stable slots after the defaults, ordered by id', () => {
+    // cat_100 sorts before cat_200, so they take the first two post-default slots.
+    expect(catColorIndex('cat_100', cats)).toBe(DEFAULT_CATS.length + 0);
+    expect(catColorIndex('cat_200', cats)).toBe(DEFAULT_CATS.length + 1);
+  });
+  it('does not recolour existing customs when a new one is added', () => {
+    const withNew = [...cats, { id: 'cat_300', label: 'Pets' }];
+    expect(catColorIndex('cat_100', withNew)).toBe(catColorIndex('cat_100', cats));
+    expect(catColorIndex('cat_200', withNew)).toBe(catColorIndex('cat_200', cats));
+  });
+});
+
+describe('yearMonthRange — a school year is not always 12 months', () => {
+  it('maps a full Aug–Jul year to the whole grid', () => {
+    expect(yearMonthRange({ startDate: '2026-08-01', endDate: '2027-07-31' })).toEqual({ from: 0, to: 11 });
+  });
+  it("stops at the year's real end month (Aug 2026 – May 2027 = 10 months)", () => {
+    // Jun and Jul are outside this year, so the plan must not offer them.
+    expect(yearMonthRange({ startDate: '2026-08-24', endDate: '2027-05-21' })).toEqual({ from: 0, to: 9 });
+  });
+  it('handles a year that starts late', () => {
+    expect(yearMonthRange({ startDate: '2026-09-01', endDate: '2027-05-31' })).toEqual({ from: 1, to: 9 });
+  });
+  it('falls back to the full year on missing or unparseable dates', () => {
+    expect(yearMonthRange({ startDate: null, endDate: '2027-05-21' })).toEqual({ from: 0, to: 11 });
+    expect(yearMonthRange({ startDate: 'nope', endDate: 'nope' })).toEqual({ from: 0, to: 11 });
+    expect(yearMonthRange(undefined)).toEqual({ from: 0, to: 11 });
+  });
+  it('falls back rather than inverting when the dates are backwards', () => {
+    expect(yearMonthRange({ startDate: '2027-05-01', endDate: '2026-08-01' })).toEqual({ from: 0, to: 11 });
+  });
+});
+
+describe('pruneOutOfRangeMonths — drop overrides for months a year no longer contains', () => {
+  const makeData = () => ({
+    years: [{
+      id: 0, startDate: '2025-08-01', endDate: '2026-05-15', // Aug → May (no Jun/Jul)
+      monthly: { food: 300 },
+      monthlyOverrides: { Aug: { food: 400 }, May: { food: 350 }, Jun: { food: 999 }, Jul: { food: 888 } },
+    }],
+    monthDisabled: { '0-Aug': ['exams'], '0-Jul': ['books'], '1-Jul': ['social'] },
+  });
+  it('removes overrides for out-of-range months, keeps in-range', () => {
+    const d = makeData();
+    const changed = pruneOutOfRangeMonths(d, 0);
+    expect(changed).toBe(true);
+    expect(Object.keys(d.years[0].monthlyOverrides).sort()).toEqual(['Aug', 'May']);
+    expect(d.years[0].monthlyOverrides.Jun).toBeUndefined();
+    expect(d.years[0].monthlyOverrides.Jul).toBeUndefined();
+  });
+  it('prunes this year\'s monthDisabled but leaves other years alone', () => {
+    const d = makeData();
+    pruneOutOfRangeMonths(d, 0);
+    expect(d.monthDisabled['0-Aug']).toEqual(['exams']); // in range, kept
+    expect(d.monthDisabled['0-Jul']).toBeUndefined();     // out of range, dropped
+    expect(d.monthDisabled['1-Jul']).toEqual(['social']); // different year, untouched
+  });
+  it('is a no-op (changed=false) for a full 12-month year', () => {
+    const d = { years: [{ id: 0, startDate: '2025-08-01', endDate: '2026-07-31', monthly: {}, monthlyOverrides: { Jun: { food: 1 }, Jul: { food: 2 } } }], monthDisabled: {} };
+    expect(pruneOutOfRangeMonths(d, 0)).toBe(false);
+    expect(Object.keys(d.years[0].monthlyOverrides).sort()).toEqual(['Jul', 'Jun']);
+  });
+  it('pruneAllYears reports whether anything changed', () => {
+    expect(pruneAllYears(makeData())).toBe(true);
+    expect(pruneAllYears({ years: [{ id: 0, startDate: '2025-08-01', endDate: '2026-07-31', monthlyOverrides: {} }], monthDisabled: {} })).toBe(false);
   });
 });

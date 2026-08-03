@@ -17,7 +17,13 @@ const monthGroups = (startYear) => {
   if (!Number.isFinite(y) || y < 1900) return [{year:null, from:0, to:12}];
   return [{year:y, from:0, to:MONTH_YEAR_SPLIT}, {year:y+1, from:MONTH_YEAR_SPLIT, to:12}];
 };
-const MonthGrid = ({startYear, selectedMi, onPick}) => (
+// `range` ({from,to} inclusive, from yearMonthRange) limits which months the
+// school year actually covers. Marro's month list is a fixed Aug→Jul array, but
+// a year can be shorter — Aug 2026 – May 2027 is 10 months — and offering June
+// and July of a year the student isn't enrolled for lets them budget into
+// months that don't exist. Out-of-range months stay VISIBLE but disabled, so
+// the year's shape is legible rather than the grid silently changing size.
+const MonthGrid = ({startYear, selectedMi, onPick, range, leanMonths}) => (
   <>
     {monthGroups(startYear).map((g,gi)=>(
       <div key={gi} style={gi>0?{marginTop:8}:undefined}>
@@ -25,9 +31,21 @@ const MonthGrid = ({startYear, selectedMi, onPick}) => (
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:3}}>
           {MONTH_NAMES.slice(g.from,g.to).map((m,idx)=>{
             const mi=g.from+idx, sel=mi===selectedMi;
+            const off = range ? (mi < range.from || mi > range.to) : false;
+            // A month where the money is projected to run out before the next
+            // payment. Flagged HERE because this is where budgeting actually
+            // happens — finding out from the header tile is too late.
+            const lean = !off && !!leanMonths?.has(mi);
             return (
-              <button key={mi} type="button" onClick={()=>onPick(mi)} aria-pressed={sel} style={{padding:"5px 2px",borderRadius:8,border:"none",fontSize:11,fontWeight:sel?700:400,background:sel?C.selBg:"transparent",color:sel?C.text:C.gray,cursor:"pointer",transition:"background 0.1s"}}>
+              <button key={mi} type="button" onClick={()=>{ if(!off) onPick(mi); }} aria-pressed={sel}
+                disabled={off}
+                title={off ? "Outside this school year's dates" : (lean ? "Money is tight this month" : undefined)}
+                // The dot is never the only signal (WCAG 1.4.1) — the accessible
+                // name carries it too.
+                aria-label={lean ? `${m} — money is tight this month` : undefined}
+                style={{position:"relative",padding:"5px 2px",borderRadius:8,border:"none",fontSize:11,fontWeight:sel?700:400,background:sel?C.selBg:"transparent",color:off?C.borderDark:(sel?C.text:C.gray),cursor:off?"not-allowed":"pointer",opacity:off?0.45:1,transition:"background 0.1s"}}>
                 {m}
+                {lean && <span aria-hidden="true" style={{position:"absolute",top:3,right:5,width:4,height:4,borderRadius:99,background:C.amber}}/>}
               </button>
             );
           })}
@@ -37,7 +55,7 @@ const MonthGrid = ({startYear, selectedMi, onPick}) => (
   </>
 );
 
-export const MonthPicker = ({value, onChange, startYear}) => {
+export const MonthPicker = ({value, onChange, startYear, range, leanMonths}) => {
   const [open, setOpen] = useState(false);
   const btnRef = React.useRef(null);
   useLiftCard(open, btnRef);
@@ -50,7 +68,7 @@ export const MonthPicker = ({value, onChange, startYear}) => {
       {open && <>
         <div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:99}}/>
         <div style={popoverStyle(220, "right")}>
-          <MonthGrid startYear={startYear} selectedMi={value} onPick={mi=>{onChange(mi);setOpen(false);}}/>
+          <MonthGrid startYear={startYear} range={range} leanMonths={leanMonths} selectedMi={value} onPick={mi=>{onChange(mi);setOpen(false);}}/>
         </div>
       </>}
     </div>
@@ -98,11 +116,15 @@ export const PeriodPicker = ({value, onChange, yearsList}) => {
 // Custom date field — native calendar popups can't be themed, so the glass day grid replaces them
 export const DateField = ({value, onChange, style={}, ariaLabel="Date"}) => {
   const [open, setOpen] = useState(false);
+  // Year picker: tapping the month/year header flips the popover to a grid of
+  // years so you can jump straight to (say) 2029 instead of clicking Next 40×.
+  const [yearMode, setYearMode] = useState(false);
+  const [gridStart, setGridStart] = useState(null); // first year shown in the 12-year grid
   const btnRef = React.useRef(null);
   const today = new Date(); const pad = n => String(n).padStart(2,"0");
   const todayIso = `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
   const [view, setView] = useState(()=> (value||todayIso).slice(0,7));
-  useEffect(()=>{ if(open) setView((value||todayIso).slice(0,7)); },[open]);
+  useEffect(()=>{ if(open){ setView((value||todayIso).slice(0,7)); setYearMode(false); } },[open]);
   useLiftCard(open, btnRef);
   useEscClose(open, ()=>setOpen(false));
   // Modal panels (.mm) scroll-clip absolute popovers — anchor fixed to the button instead, flipping up when cramped.
@@ -118,6 +140,10 @@ export const DateField = ({value, onChange, style={}, ariaLabel="Date"}) => {
   const startOffset = (new Date(vy, vm-1, 1).getDay()+6)%7;   // Monday-start, matches app weeks
   const daysInMonth = new Date(vy, vm, 0).getDate();
   const nav = d => { const dt=new Date(vy, vm-1+d, 1); setView(`${dt.getFullYear()}-${pad(dt.getMonth()+1)}`); };
+  const enterYearMode = () => { setGridStart(vy - 6); setYearMode(true); };
+  const pickYear = y => { setView(`${y}-${pad(vm)}`); setYearMode(false); };
+  const gs = gridStart == null ? vy - 6 : gridStart;   // first year of the 12-year grid
+  const arrowBtn = {width:26,height:26,borderRadius:8,border:"none",background:"transparent",color:C.gray,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center"};
   const shown = value ? new Date(value+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "Pick a date";
   return (
     <div style={{position:"relative"}}>
@@ -128,10 +154,25 @@ export const DateField = ({value, onChange, style={}, ariaLabel="Date"}) => {
       {open && wrapPop(fixedPos, <>
         <div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:fixedPos?1001:99}}/>
         <div style={fixedPos?{...popoverStyle(248),position:"fixed",top:fixedPos.top,left:fixedPos.left,right:"auto",zIndex:1002}:popoverStyle(248)}>
+          {yearMode ? (<>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+              <button onClick={()=>setGridStart(gs-12)} aria-label="Earlier years" style={arrowBtn} className="xbtn"><Icon name="chevron" size={13} style={{transform:"rotate(90deg)"}}/></button>
+              <span style={{fontSize:12,fontWeight:600,color:C.text}}>{gs}–{gs+11}</span>
+              <button onClick={()=>setGridStart(gs+12)} aria-label="Later years" style={arrowBtn} className="xbtn"><Icon name="chevron" size={13} style={{transform:"rotate(-90deg)"}}/></button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
+              {Array.from({length:12}).map((_,i)=>{ const y=gs+i; const selY=value&&Number(value.slice(0,4))===y; return (
+                <button key={y} onClick={()=>pickYear(y)} style={{padding:"9px 0",borderRadius:8,border:"none",fontSize:12,fontWeight:selY?700:400,background:selY?C.selBg:"transparent",color:selY?C.text:(y===vy?C.marigold:C.gray),cursor:"pointer",transition:"background .1s"}}>{y}</button>
+              );})}
+            </div>
+          </>) : (<>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-            <button onClick={()=>nav(-1)} aria-label="Previous month" style={{width:26,height:26,borderRadius:8,border:"none",background:"transparent",color:C.gray,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center"}} className="xbtn"><Icon name="chevron" size={13} style={{transform:"rotate(90deg)"}}/></button>
-            <span style={{fontSize:12,fontWeight:600,color:C.text}}>{new Date(vy,vm-1,1).toLocaleDateString("en-US",{month:"long",year:"numeric"})}</span>
-            <button onClick={()=>nav(1)} aria-label="Next month" style={{width:26,height:26,borderRadius:8,border:"none",background:"transparent",color:C.gray,cursor:"pointer",display:"inline-flex",alignItems:"center",justifyContent:"center"}} className="xbtn"><Icon name="chevron" size={13} style={{transform:"rotate(-90deg)"}}/></button>
+            <button onClick={()=>nav(-1)} aria-label="Previous month" style={arrowBtn} className="xbtn"><Icon name="chevron" size={13} style={{transform:"rotate(90deg)"}}/></button>
+            <button type="button" onClick={enterYearMode} aria-label="Choose a year" title="Choose a year" style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:12,fontWeight:600,color:C.text,background:"none",border:"none",cursor:"pointer",padding:"3px 8px",borderRadius:6}}>
+              {new Date(vy,vm-1,1).toLocaleDateString("en-US",{month:"long",year:"numeric"})}
+              <Icon name="chevron" size={10} color={C.gray}/>
+            </button>
+            <button onClick={()=>nav(1)} aria-label="Next month" style={arrowBtn} className="xbtn"><Icon name="chevron" size={13} style={{transform:"rotate(-90deg)"}}/></button>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:2}}>
             {["M","T","W","T","F","S","S"].map((d,i)=><span key={i} style={{fontSize:9,fontWeight:600,color:C.gray,textAlign:"center",letterSpacing:"0.04em"}}>{d}</span>)}
@@ -151,6 +192,7 @@ export const DateField = ({value, onChange, style={}, ariaLabel="Date"}) => {
           <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${C.border}`,display:"flex",justifyContent:"flex-end"}}>
             <button className="txt-act" onClick={()=>{onChange(todayIso);setOpen(false);}} style={{background:"none",border:"none",color:C.marigold,cursor:"pointer",fontSize:11,fontWeight:600,padding:0}}>Today</button>
           </div>
+          </>)}
         </div>
       </>)}
     </div>
