@@ -196,6 +196,30 @@ if (import.meta.env.PROD && import.meta.env.VITE_SENTRY_DSN) {
   }
 }
 
+// Usage analytics — global delegated click listener (src/lib/analytics.js).
+// Deferred exactly like Sentry above: dynamically imported after window
+// 'load' + a short delay so it never sits on the critical path for the
+// highest-traffic, most performance-sensitive page (the logged-out landing).
+// Enabled in prod; in dev it stays off unless a developer opts in via
+// localStorage (so local development doesn't spam the events table).
+const analyticsEnabled = import.meta.env.PROD || (() => {
+  try { return localStorage.getItem('marro_analytics_debug') === '1'; } catch { return false; }
+})();
+if (analyticsEnabled) {
+  const initAnalyticsDeferred = () => {
+    setTimeout(() => {
+      import('./lib/analytics.js').then(({ installAnalytics }) => {
+        installAnalytics();
+      }).catch(() => { /* analytics must never break the app */ });
+    }, 2000);
+  };
+  if (document.readyState === 'complete') {
+    initAnalyticsDeferred();
+  } else {
+    window.addEventListener('load', initAnalyticsDeferred, { once: true });
+  }
+}
+
 try { performance.mark('boot:render-call'); } catch { /* diagnostic only */ }
 
 // Boot gate: decide ONCE, synchronously, before rendering. Recovery-redirect

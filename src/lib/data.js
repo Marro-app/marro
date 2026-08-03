@@ -490,6 +490,48 @@ export const adminUsageMetrics = async () => {
   } catch { return null; }
 };
 
+// ── Usage dashboard (Admin tab, supabase/analytics.sql RPCs) ─────────────────
+// Same shape/gating as adminUsageMetrics above: each RPC is a SECURITY
+// DEFINER function that checks is_admin() itself and returns an empty
+// result for a non-admin/signed-out caller (never an error) — see
+// supabase/analytics.sql section 3. `null` here means "the RPC doesn't
+// exist yet" (analytics.sql not run) or a network/auth failure; an empty
+// array means "it exists but there's no data yet" — the UI distinguishes
+// the two (not-yet-run vs. no-traffic-yet).
+
+// Click totals per (tab, el, tag) over the trailing `days` window, summed
+// server-side. → array of {tab, el, tag, click_count} or null.
+export const adminClickByElement = async (days = 30) => {
+  try {
+    const sb = await getSupabase();
+    const {data, error} = await sb.rpc('admin_click_by_element', {p_days: days});
+    if (error) return null;
+    return data || [];
+  } catch { return null; }
+};
+
+// Daily event_count per event_name over the trailing `days` window, for the
+// activity-trend chart. → array of {day, event_name, event_count} or null.
+export const adminDailyEventCounts = async (days = 30) => {
+  try {
+    const sb = await getSupabase();
+    const {data, error} = await sb.rpc('admin_daily_event_counts', {p_days: days});
+    if (error) return null;
+    return data || [];
+  } catch { return null; }
+};
+
+// Last-30-days total_count + distinct_users per event_name — the stat-tile
+// source (e.g. active users from ui_click's distinct_users). → array or null.
+export const adminEventsLast30Days = async () => {
+  try {
+    const sb = await getSupabase();
+    const {data, error} = await sb.rpc('admin_events_last_30_days');
+    if (error) return null;
+    return data || [];
+  } catch { return null; }
+};
+
 // ── In-app notifications (supabase/notifications.sql) ────────────────────────
 // The "something changed" banner: when an admin action affects a user (invite
 // limit raised, ambassador granted, code revoked, someone they invited

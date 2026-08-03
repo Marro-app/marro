@@ -3,6 +3,7 @@ import { C, applyTheme, THEMES } from './lib/theme.js';
 import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed, isAdmin, logEvent, exportUserData, exportUserDataExcel, deleteAccount, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY } from './lib/data.js';
 import { recordConsentIfPending } from './lib/consent.js';
 import { appStorage } from './lib/mockStorage.js';
+import { setAnalyticsContext } from './lib/analytics.js';
 import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
@@ -418,7 +419,9 @@ export function App() {
   useEffect(()=>{ if(data){ applyTheme(data.darkMode); setThemeTick(t=>t+1); } },[data && data.darkMode]);
 
   // Usage logging: fire once per actual tab change (not on every render).
-  useEffect(()=>{ logEvent('tab_view', {tab}); },[tab]);
+  // setAnalyticsContext piggybacks the same effect so ui_click events
+  // (src/lib/analytics.js) carry the current tab too.
+  useEffect(()=>{ logEvent('tab_view', {tab}); setAnalyticsContext({tab}); },[tab]);
 
   // Auto-select the correct academic year and month once data is loaded
   useEffect(()=>{

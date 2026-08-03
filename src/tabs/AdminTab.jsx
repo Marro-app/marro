@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { C } from '../lib/theme.js';
-import { Card, SectionTitle, EmptyState, Divider, Modal, ChoiceGroup, ProgressBar, usePagination, Paginator } from '../components/primitives.jsx';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { C, CHART_COLORS, tipProps } from '../lib/theme.js';
+import { Card, SectionTitle, EmptyState, Divider, Modal, ChoiceGroup, ProgressBar, usePagination, Paginator, Banner } from '../components/primitives.jsx';
 import { radioProps } from '../lib/ui-helpers.js';
-import { adminCall, adminUsageMetrics } from '../lib/data.js';
+import { adminCall, adminUsageMetrics, adminClickByElement, adminDailyEventCounts, adminEventsLast30Days } from '../lib/data.js';
 
 // Admin console — invite codes, waitlist, ambassador roster, members, and the
 // admin list itself. Visibility is gated by App.jsx (is_admin() client check);
@@ -147,6 +148,7 @@ export default function AdminTab({callerEmail}){
         ? <Card><EmptyState>Loading admin console…</EmptyState></Card>
         : <>
             <InsightsSection/>
+            <UsageSection/>
             <AmbassadorsSection ambassadors={overview.ambassadors} codes={overview.codes} callerEmail={callerEmail} onChanged={load}/>
             <MembersSection members={overview.members} callerEmail={callerEmail} onChanged={load}/>
             <InviteCodesSection codes={overview.codes} onChanged={load}/>
@@ -236,6 +238,255 @@ function StatTile({label, value, sub}) {
         {available ? value : "Coming soon"}
       </dd>
       {sub && <div style={{fontSize:11, color:C.gray, lineHeight:1.4}}>{sub}</div>}
+    </div>
+  );
+}
+
+// ── 0b. Usage dashboard ──────────────────────────────────────────────────────
+// Founder-readable "what's actually getting clicked" view, built entirely on
+// top of the automatic `ui_click` capture (src/lib/analytics.js) — no
+// per-feature instrumentation was added to make this work. Data source is
+// the three admin-gated RPCs in supabase/analytics.sql (admin_click_by_
+// element, admin_daily_event_counts, admin_events_last_30_days), each a
+// SECURITY DEFINER function that checks is_admin() itself and returns an
+// empty result for a non-admin — same trust pattern as admin_usage_metrics()
+// in InsightsSection above, NOT the api/admin.js service-role backend (this
+// is a pure aggregate read, no mutation, no PII — the lighter-weight RPC
+// path already established for events.sql-derived data fits better than
+// adding a new api/ endpoint for it).
+//
+// "Not ready" (analytics.sql section 3 hasn't been run yet, so the RPCs
+// don't exist) and "ran but no traffic yet" render the SAME scaffold — a
+// founder should see the real dashboard layout immediately, not an
+// all-or-nothing empty panel (feedback after the first preview: seeing only
+// a giant "no data" message made it impossible to tell if the dashboard was
+// even built). Stat tiles show "N/A", the trend chart keeps its frame with
+// an inline note, and the rankings fall back to one placeholder row per
+// known app surface — real data replaces every one of these in place once
+// it exists, so the layout never has to "pop in" later.
+function fmtDay(d) {
+  try { return new Date(d + "T12:00:00").toLocaleDateString(undefined, {month:"short", day:"numeric"}); }
+  catch { return d; }
+}
+
+// The app's tab ids (src/App.jsx tab bar) plus "landing" — the context
+// src/lib/analytics.js defaults to for the signed-out marketing page, where
+// App.jsx (and its real tab bar) never mounts. Kept as a plain literal
+// rather than importing from App.jsx to avoid pulling the whole app shell
+// into this lazy-loaded admin chunk for a handful of id strings.
+const KNOWN_TABS = ["budget", "aid", "subscriptions", "savings", "charts", "weekly", "customize", "admin", "landing"];
+const TAB_LABELS = {
+  budget: "Budget", aid: "Aid & Detail", subscriptions: "Subscriptions", savings: "Savings",
+  charts: "Charts", weekly: "Weekly", customize: "Categories", admin: "Admin", landing: "Landing (signed out)",
+};
+
+function UsageSection() {
+  const [loading, setLoading] = useState(true);
+  const [notReady, setNotReady] = useState(false);
+  const [clicks, setClicks] = useState([]);   // [{tab, el, tag, click_count}]
+  const [trend, setTrend] = useState([]);     // [{day, event_name, event_count}]
+  const [last30, setLast30] = useState([]);   // [{event_name, total_count, distinct_users}]
+  const [tabFilter, setTabFilter] = useState("all");
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const [c, t, l] = await Promise.all([
+        adminClickByElement(30), adminDailyEventCounts(30), adminEventsLast30Days(),
+      ]);
+      if (!alive) return;
+      if (c === null && t === null && l === null) {
+        setNotReady(true);
+      } else {
+        setClicks(c || []);
+        setTrend(t || []);
+        setLast30(l || []);
+      }
+      setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // Tab filter options: every known app surface, plus any tab string that
+  // shows up in real data but isn't in the hardcoded list (shouldn't happen
+  // in practice, but a stray/renamed tab id should still be filterable
+  // rather than silently dropped from the dropdown).
+  const tabs = useMemo(() => {
+    const extra = [...new Set(clicks.map(c => c.tab || "unknown"))].filter(t => !KNOWN_TABS.includes(t)).sort();
+    return ["all", ...KNOWN_TABS, ...extra];
+  }, [clicks]);
+
+  const filteredClicks = useMemo(
+    () => tabFilter === "all" ? clicks : clicks.filter(c => (c.tab || "unknown") === tabFilter),
+    [clicks, tabFilter]
+  );
+  const mostClicked = useMemo(
+    () => [...filteredClicks].sort((a,b) => b.click_count - a.click_count).slice(0, 10),
+    [filteredClicks]
+  );
+  const leastClicked = useMemo(
+    () => [...filteredClicks].sort((a,b) => a.click_count - b.click_count).slice(0, 10),
+    [filteredClicks]
+  );
+  // Rows to show in the ranking lists when there's no real per-element data
+  // (yet) for the current filter — one placeholder per tracked surface
+  // rather than an empty panel, so the layout matches what it'll look like
+  // once real clicks land.
+  const placeholderTabs = tabFilter === "all" ? KNOWN_TABS : [tabFilter];
+
+  // Pivot the {day, event_name, event_count} rows into one row per day with
+  // one column per event_name, same shape ChartsTab's category trend chart
+  // uses. Only the top 6 event_names (by 30-day total) get plotted — more
+  // than that turns the legend into noise a founder can't read at a glance;
+  // everything else is still visible via the ranking lists above.
+  const topEventNames = useMemo(() => {
+    const totals = {};
+    (last30.length ? last30 : trend).forEach(r => {
+      const key = r.event_name;
+      const amt = r.total_count != null ? r.total_count : r.event_count;
+      totals[key] = (totals[key] || 0) + (amt || 0);
+    });
+    return Object.entries(totals).sort((a,b) => b[1]-a[1]).slice(0, 6).map(([name]) => name);
+  }, [last30, trend]);
+
+  const trendData = useMemo(() => {
+    const byDay = {};
+    trend.forEach(r => {
+      if (!topEventNames.includes(r.event_name)) return;
+      if (!byDay[r.day]) byDay[r.day] = {day: r.day};
+      byDay[r.day][r.event_name] = r.event_count;
+    });
+    return Object.keys(byDay).sort().map(d => byDay[d]);
+  }, [trend, topEventNames]);
+
+  const clickStat = last30.find(r => r.event_name === "ui_click");
+  const fmtStat = (n) => n != null ? n.toLocaleString() : "N/A";
+  // True only when EVERY query came back empty — the signal that either
+  // analytics.sql's RPCs don't exist yet or nothing has been clicked at
+  // all. Drives the small caption banner, never the whole panel anymore.
+  const noData = notReady || (clicks.length === 0 && trend.length === 0 && last30.length === 0);
+
+  return (
+    <Card>
+      <SectionTitle sub="What people actually click, built from automatic click-tracking — no per-feature setup needed.">Usage</SectionTitle>
+      {loading
+        ? <EmptyState>Loading usage data…</EmptyState>
+        : (
+          <>
+            {noData && (
+              <Banner type="info">
+                No live data yet — run <code>supabase/analytics.sql</code> in Supabase Studio (idempotent, safe to re-run), then check back once people start clicking around. The layout below is what it&apos;ll look like once data comes in.
+              </Banner>
+            )}
+
+            <dl style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(100%,180px),1fr))", gap:12, margin:"0 0 18px"}}>
+              <StatTile label="Active clickers (30d)" value={fmtStat(clickStat ? clickStat.distinct_users : null)}
+                sub="People who clicked something in the last 30 days."/>
+              <StatTile label="Total clicks (30d)" value={fmtStat(clickStat ? clickStat.total_count : null)}
+                sub="All tracked button/link clicks, last 30 days."/>
+            </dl>
+
+            <div style={{marginBottom:20}}>
+              <div style={{fontSize:12, fontWeight:600, color:C.text, marginBottom:8}}>Daily activity, last 30 days</div>
+              {trendData.length > 0
+                ? (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <LineChart data={trendData} margin={{top:4, right:4, bottom:0, left:0}}>
+                      <XAxis dataKey="day" tickFormatter={fmtDay} tick={{fontSize:10, fill:C.gray}} axisLine={false} tickLine={false}/>
+                      <YAxis tick={{fontSize:11, fill:C.gray}} axisLine={false} tickLine={false} width={32} allowDecimals={false}/>
+                      <Tooltip labelFormatter={fmtDay} separator=": " {...tipProps()}/>
+                      <Legend wrapperStyle={{fontSize:11, paddingTop:8}}/>
+                      {topEventNames.map((name, i) => (
+                        <Line key={name} type="monotone" dataKey={name} name={name} stroke={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={2} dot={false} activeDot={{r:4}}/>
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                )
+                : (
+                  <div style={{height:200, display:"flex", alignItems:"center", justifyContent:"center", textAlign:"center", padding:"16px", fontSize:12, color:C.textMid, border:`1px dashed ${C.borderDark}`, borderRadius:12, background:C.surface}}>
+                    No activity yet — this chart fills in once clicks start coming in.
+                  </div>
+                )
+              }
+            </div>
+
+            <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap", marginBottom:10}}>
+              <div style={{fontSize:12, fontWeight:600, color:C.text}}>Elements — most &amp; least clicked (30d)</div>
+              <div style={{display:"flex", alignItems:"center", gap:6}}>
+                <label htmlFor="usage-tab-filter" style={{fontSize:11, color:C.gray, fontWeight:500}}>Tab</label>
+                <select id="usage-tab-filter" value={tabFilter} onChange={e=>setTabFilter(e.target.value)}
+                  style={{fontSize:12, border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 8px", background:C.bg, color:C.text, minHeight:32, cursor:"pointer"}}>
+                  {tabs.map(t => <option key={t} value={t}>{t === "all" ? "All tabs" : (TAB_LABELS[t] || t)}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {filteredClicks.length > 0
+              ? (
+                <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(100%,320px),1fr))", gap:16}}>
+                  <ClickRankList title="Most clicked" rows={mostClicked} color={C.teal}/>
+                  <ClickRankList title="Least clicked" rows={leastClicked} color={C.amber}
+                    note="Only elements that got at least one click show up here — this isn't every button in the app."/>
+                </div>
+              )
+              : (
+                <>
+                  <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(min(100%,320px),1fr))", gap:16}}>
+                    <PlaceholderClickList title="Most clicked" tabsList={placeholderTabs}/>
+                    <PlaceholderClickList title="Least clicked" tabsList={placeholderTabs}/>
+                  </div>
+                  <div style={{fontSize:10.5, color:C.gray, marginTop:10, lineHeight:1.5}}>
+                    Individual buttons and links show up here automatically the first time anyone clicks them — no setup needed per feature.
+                  </div>
+                </>
+              )
+            }
+          </>
+        )
+      }
+    </Card>
+  );
+}
+
+// Placeholder ranking rows shown before real per-element data exists — one
+// row per known app surface (tab) rather than an empty list, so the
+// dashboard's shape doesn't change once real data starts appearing.
+function PlaceholderClickList({title, tabsList}) {
+  return (
+    <div>
+      <div style={{fontSize:11.5, fontWeight:600, color:C.textMid, marginBottom:8}}>{title}</div>
+      <ul style={{listStyle:"none", margin:0, padding:0, display:"flex", flexDirection:"column", gap:0}}>
+        {tabsList.map(t => (
+          <li key={t} style={{display:"flex", justifyContent:"space-between", gap:8, fontSize:12, padding:"7px 0", borderBottom:`1px solid ${C.border}`}}>
+            <span style={{color:C.text}}>{TAB_LABELS[t] || t}</span>
+            <span style={{color:C.gray, fontStyle:"italic", whiteSpace:"nowrap"}}>N/A — nothing clicked yet</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ClickRankList({title, rows, color, note}) {
+  const max = rows.reduce((m,r) => Math.max(m, r.click_count), 0) || 1;
+  return (
+    <div>
+      <div style={{fontSize:11.5, fontWeight:600, color:C.textMid, marginBottom:8}}>{title}</div>
+      <ul style={{listStyle:"none", margin:0, padding:0, display:"flex", flexDirection:"column", gap:8}}>
+        {rows.map((r,i) => (
+          <li key={r.tab+"|"+r.el+"|"+r.tag+"|"+i}>
+            <div style={{display:"flex", justifyContent:"space-between", gap:8, fontSize:12, marginBottom:3}}>
+              <span style={{color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>
+                <span style={{fontFamily:"monospace", fontWeight:600}}>{r.el}</span>
+                <span style={{color:C.gray}}> · {r.tab} · {r.tag}</span>
+              </span>
+              <span style={{color:C.textMid, fontWeight:600, flexShrink:0}}>{r.click_count.toLocaleString()}</span>
+            </div>
+            <ProgressBar value={r.click_count} max={max} color={color}/>
+          </li>
+        ))}
+      </ul>
+      {note && <div style={{fontSize:10.5, color:C.gray, marginTop:8, lineHeight:1.5}}>{note}</div>}
     </div>
   );
 }
