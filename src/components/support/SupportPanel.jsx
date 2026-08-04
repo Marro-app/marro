@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useId } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useId, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { C } from '../../lib/theme.js';
 import { XBtn } from '../primitives.jsx';
@@ -10,32 +10,100 @@ import {
 
 // ── Category-themed background (plan §6) ─────────────────────────────────────
 // Decorative, aria-hidden motif that changes with the conversation type:
-//   bug  → faint drifting specks     idea → soft floating glows
+//   bug  → little beetles crawling around on randomized headings
+//   idea → soft bokeh "lights" drifting + twinkling in the background
 //   question/other → clean surface (no motif)
-// All motion is transform/opacity only and FREEZES under prefers-reduced-motion
-// (see the media query in the <style> below). Opacities are low enough that the
-// glass surface + text above never drop below 4.5:1 in either theme — the motif
-// sits behind an opaque-ish panel body, purely ambient.
+// All motion is transform/opacity only (GPU) and FREEZES under
+// prefers-reduced-motion (see the media query in the <style> below) — the crawl
+// stops with the bugs scattered in place, the lights hold a static glow.
+// Everything sits BEHIND the glass panel body at low opacity, so text contrast
+// never drops below 4.5:1 in either theme. Layout is randomized per open.
+const rand = (a, b) => a + Math.random() * (b - a);
+
+// Top-down beetle drawn facing +x (its travel direction), on a 20×20 grid.
+function Beetle({ size, color, seam }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true" style={{ display: 'block', color }}>
+      <g stroke="currentColor" strokeWidth="0.9" strokeLinecap="round" opacity="0.9">
+        {/* six legs (three per side) + antennae */}
+        <path d="M8 7.4 L5.4 5.2 M6.6 10 L3.5 10 M8 12.6 L5.4 14.8" />
+        <path d="M11.4 7.4 L14 5.2 M12.6 10 L15.7 10 M11.4 12.6 L14 14.8" />
+        <path d="M15 9.1 L17.6 7.4 M15 10.9 L17.6 12.6" />
+      </g>
+      <ellipse cx="9.6" cy="10" rx="5.3" ry="3.6" fill="currentColor" />
+      <circle cx="15" cy="10" r="1.7" fill="currentColor" />
+      {/* carapace seam — panel-bg coloured so it reads as a split shell */}
+      <path d="M9.7 6.7 L9.7 13.3" stroke={seam} strokeWidth="0.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function BugField() {
+  const bugs = useMemo(() => {
+    const tints = [C.danger, C.textMid, C.blue];
+    return Array.from({ length: 7 }, (_, i) => ({
+      id: i,
+      top: rand(6, 84), left: rand(6, 84),
+      heading: rand(0, 360),
+      dist: rand(80, 200),
+      dur: rand(15, 28),
+      delay: -rand(0, 24),
+      wig: rand(0.45, 0.9),
+      size: rand(13, 21),
+      tint: tints[i % tints.length],
+    }));
+  }, []);
+  return (
+    <div className="sup-bg" aria-hidden="true" style={{ '--sup-seam': C.bg }}>
+      {bugs.map((b) => (
+        <span key={b.id} className="sup-bug" style={{ top: `${b.top}%`, left: `${b.left}%`, transform: `rotate(${b.heading}deg)` }}>
+          <span className="sup-bug-crawl" style={{ animationDuration: `${b.dur}s`, animationDelay: `${b.delay}s`, '--dist': `${b.dist}px` }}>
+            <span className="sup-bug-wig" style={{ animationDuration: `${b.wig}s` }}>
+              <Beetle size={b.size} color={b.tint} seam={C.bg} />
+            </span>
+          </span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function LightField() {
+  const lights = useMemo(() => {
+    const tints = [C.marigold, C.amber, C.cream, C.blue];
+    return Array.from({ length: 10 }, (_, i) => ({
+      id: i,
+      top: rand(-6, 100), left: rand(-6, 100),
+      size: rand(18, 100),
+      op: rand(0.25, 0.6),
+      tw: rand(4.5, 9),
+      dr: rand(9, 16),
+      delay: -rand(0, 8),
+      dx: rand(-16, 16), dy: rand(-16, 16),
+      tint: tints[i % tints.length],
+    }));
+  }, []);
+  return (
+    <div className="sup-bg" aria-hidden="true">
+      {lights.map((l) => (
+        <span
+          key={l.id}
+          className="sup-light"
+          style={{
+            top: `${l.top}%`, left: `${l.left}%`, width: l.size, height: l.size,
+            background: `radial-gradient(circle, ${l.tint} 0%, transparent 70%)`,
+            animationDuration: `${l.tw}s, ${l.dr}s`, animationDelay: `${l.delay}s, ${l.delay}s`,
+            '--op': l.op, '--dx': `${l.dx}px`, '--dy': `${l.dy}px`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 function CategoryBackdrop({ motif }) {
-  if (motif === 'bug') {
-    return (
-      <div className="sup-bg" aria-hidden="true">
-        <span className="sup-speck" style={{ top: '18%', left: '22%' }} />
-        <span className="sup-speck" style={{ top: '46%', left: '68%', animationDelay: '-3s' }} />
-        <span className="sup-speck" style={{ top: '72%', left: '38%', animationDelay: '-6s' }} />
-        <span className="sup-speck" style={{ top: '30%', left: '82%', animationDelay: '-9s' }} />
-        <span className="sup-speck" style={{ top: '84%', left: '76%', animationDelay: '-4.5s' }} />
-      </div>
-    );
-  }
-  if (motif === 'idea') {
-    return (
-      <div className="sup-bg" aria-hidden="true">
-        <span className="sup-glow" style={{ top: '-8%', left: '-6%' }} />
-        <span className="sup-glow" style={{ bottom: '-10%', right: '-8%', animationDelay: '-7s' }} />
-      </div>
-    );
-  }
+  if (motif === 'bug') return <BugField />;
+  if (motif === 'idea') return <LightField />;
   return null;
 }
 
@@ -80,9 +148,13 @@ export default function SupportPanel({ onClose }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
 
-  const motif = view === 'new' ? categoryForType(category).type
-    : (convo ? convo.type : 'question');
-  const motifKind = categoryForType(motif).motif;
+  // The active category drives both the header label and the background motif.
+  // In "new" view it's the picked KEY (question/bug/idea); in a thread it's
+  // resolved from the stored conversation TYPE (question/bug/feedback/…).
+  const activeCat = view === 'new'
+    ? (SUPPORT_CATEGORIES.find((c) => c.key === category) || SUPPORT_CATEGORIES[0])
+    : categoryForType(convo ? convo.type : 'question');
+  const motifKind = activeCat.motif;
 
   // Load the user's most recent thread on open. No thread → start in "new" view.
   useEffect(() => {
@@ -145,7 +217,7 @@ export default function SupportPanel({ onClose }) {
     setSending(true); setError(null);
     try {
       if (view === 'new') {
-        const type = categoryForType(category).type;
+        const type = (SUPPORT_CATEGORIES.find((c) => c.key === category) || SUPPORT_CATEGORIES[0]).type;
         const id = await startConversation({ type, body });
         const [convos, msgs] = await Promise.all([fetchConversations(), fetchMessages(id)]);
         setConvo(convos.find((c) => c.id === id) || null);
@@ -169,7 +241,6 @@ export default function SupportPanel({ onClose }) {
 
   const startNewTopic = () => { setView('new'); setConvo(null); setMessages([]); setDraft(''); setError(null); };
 
-  const cat = categoryForType(convo ? convo.type : category);
 
   return createPortal((
     <div
@@ -178,17 +249,24 @@ export default function SupportPanel({ onClose }) {
     >
       <style>{`
         @keyframes supSheetIn { from { opacity: 0; transform: translateY(16px) scale(0.98); } to { opacity: 1; transform: none; } }
-        @keyframes supSpeck { 0% { transform: translateY(0); opacity: 0; } 20%,80% { opacity: 0.5; } 100% { transform: translateY(-40px); opacity: 0; } }
-        @keyframes supGlow { 0%,100% { transform: translate(0,0); } 50% { transform: translate(14px,-12px); } }
+        /* bugs: outer orients to a random heading; crawl translates forward in that
+           frame (fading in/out to hide the loop reset); wig is the leg-scuttle. */
+        @keyframes supCrawl { 0% { transform: translateX(0); opacity: 0; } 12%,88% { opacity: 0.42; } 100% { transform: translateX(var(--dist)); opacity: 0; } }
+        @keyframes supWig { from { transform: rotate(-5deg) translateY(-0.4px); } to { transform: rotate(5deg) translateY(0.4px); } }
+        /* lights: twinkle (opacity) + a slow drift. */
+        @keyframes supTwinkle { from { opacity: calc(var(--op) * 0.35); } to { opacity: var(--op); } }
+        @keyframes supDrift { from { transform: translate(0,0); } to { transform: translate(var(--dx), var(--dy)); } }
         .sup-sheet { animation: supSheetIn 260ms cubic-bezier(0.23,1,0.32,1) both; }
         .sup-bg { position: absolute; inset: 0; overflow: hidden; pointer-events: none; border-radius: inherit; }
-        .sup-speck { position: absolute; width: 4px; height: 4px; border-radius: 99px; background: ${C.textMid}; opacity: 0.3; animation: supSpeck 12s linear infinite; }
-        .sup-glow { position: absolute; width: 200px; height: 200px; border-radius: 99px; background: radial-gradient(circle, ${C.amberMid} 0%, transparent 70%); opacity: 0.5; filter: blur(8px); animation: supGlow 16s ease-in-out infinite; }
+        .sup-bug { position: absolute; }
+        .sup-bug-crawl { display: block; animation-name: supCrawl; animation-timing-function: linear; animation-iteration-count: infinite; opacity: 0.42; }
+        .sup-bug-wig { display: block; transform-origin: center; animation-name: supWig; animation-timing-function: ease-in-out; animation-iteration-count: infinite; animation-direction: alternate; }
+        .sup-light { position: absolute; border-radius: 50%; filter: blur(6px); opacity: var(--op); animation-name: supTwinkle, supDrift; animation-timing-function: ease-in-out; animation-iteration-count: infinite; animation-direction: alternate; }
         @media (prefers-reduced-motion: reduce) {
           .sup-sheet { animation: none; }
-          .sup-speck, .sup-glow { animation: none; }
-          .sup-speck { opacity: 0.18; }
-          .sup-glow { opacity: 0.28; }
+          .sup-bug-crawl { animation: none; opacity: 0.3; }
+          .sup-bug-wig { animation: none; }
+          .sup-light { animation: none; opacity: calc(var(--op) * 0.6); }
         }
       `}</style>
       <div
@@ -208,7 +286,7 @@ export default function SupportPanel({ onClose }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>Support &amp; feedback</div>
             <div style={{ fontSize: 11.5, color: C.textMid, marginTop: 1 }}>
-              {view === 'new' ? 'We usually reply within a day' : `${cat.emoji} ${cat.label}`}
+              {view === 'new' ? 'We usually reply within a day' : `${activeCat.emoji} ${activeCat.label}`}
             </div>
           </div>
           {view === 'thread' && convo && (

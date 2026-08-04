@@ -12,6 +12,11 @@ New floating support launcher + slide-up glass chat panel (`src/components/suppo
 - **Controls**: category picker is a real `role="radiogroup"` with `aria-checked`; composer field is labelled (visually-hidden `<label>`), errors use `role="alert"`, Enter-to-send / Shift+Enter-newline (confirmed handler fires + `preventDefault`); send + close are ≥44px, keyboard-reachable, with the app-wide `:focus-visible` ring (seen live on the close ✕ in light theme). Launcher is 52px, `aria-label` carries unread count.
 - **Verified clean**: bubbles/header/composer use audited `C.*` tokens (flip correctly both themes); send button `C.bg`-on-`C.teal` matches the existing Export button. Reduced-motion also freezes the panel entrance.
 
+Two pre-existing bugs surfaced during review + fixed the same branch:
+
+- **Invisible labels in light mode** (`BalanceCheckin.jsx`, "How much do you have for living costs right now?"): `labelStyle` was a module-level object literal that snapshotted dark-theme's cream `C.text` at import — so in light mode the "Checking / cash amount" + "Set aside in savings" labels rendered cream-on-cream (invisible). Converted to a function read live per render (like the sibling `inputStyle`) → now `#26251E` on light (~13:1). Same frozen-token trap noted for any module-scope style object; the fix is the general one.
+- **White scrollbar in dark mode** (`index.html`, `.scrollx` — e.g. the Aid tab's "4-year overview" horizontal scroll): `.scrollx` only set `scrollbar-width: thin`, no thumb color, so it fell back to the browser's default light/white bar inside the dark card. Folded `.scrollx` into the existing themed-scrollbar rule family (`--scroll-thumb` gray + `::-webkit-scrollbar-thumb`, added `height:6px` for the horizontal case). Verified: thumb is now muted gray in dark, not white.
+
 ## 2026-07-20 — Design/a11y sweep + landing polish (branch `mo/design-a11y-landing-polish`)
 
 Full audit (landing + app, both themes, `?mock=1`). Headline finding: the product is already largely compliant — automated scans over-reported (glass panels defeat contrast tools; `::after` hit-slop defeats size tools), so every flag was hand-verified. Two genuine hit-target gaps found + fixed; rest was false positives.
