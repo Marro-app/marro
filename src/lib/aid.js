@@ -1,5 +1,5 @@
-import { loanCashLanded, estimateRefunds, normalizeReadings, effectiveFeePct } from './loans.js';
-import { DAYS_PER_MONTH } from './constants.js';
+import { loanCashLanded, estimateRefunds, normalizeReadings, readingAgeDays, effectiveFeePct } from './loans.js';
+import { DAYS_PER_MONTH, BALANCE_STALE_FALLBACK_DAYS } from './constants.js';
 
 export { loanCashLanded };
 
@@ -293,12 +293,24 @@ export function yearAidBreakdown(year, loans, yearStartYear) {
 // simply no longer in the balance. That is what makes a mid-year signup — and
 // months the student never tracked — work correctly for free.
 
-/** Whole months from `today` to the year's end, floored at 1 (a 0 would divide by zero in the final month). */
+/**
+ * Fractional months from `today` to the year's end — the divisor for the monthly
+ * "Safe to spend" figure.
+ *
+ * This counts the ACTUAL time left (days ÷ average month length), not whole
+ * calendar months. The old version subtracted month numbers, which silently
+ * dropped the month you're currently in: on Aug 3 with the year ending May 21 it
+ * returned 9, dividing the money as if August were already spent even when
+ * nothing had been — inflating the per-month number, and (because it moved in
+ * whole-month steps) making it sit frozen all month then jump on the 1st.
+ * Counting fractional days fixes both: it neither over- nor under-states the
+ * current partial month, and it eases down smoothly day by day.
+ *
+ * Floored at 1 (a 0 would divide by zero in the final month) and capped at 12.
+ */
 function monthsRemaining(today, endDate) {
-  const t = new Date(today + 'T12:00:00');
-  const e = new Date(endDate + 'T12:00:00');
-  const months = (e.getFullYear() - t.getFullYear()) * 12 + (e.getMonth() - t.getMonth());
-  return Math.max(1, Math.min(12, months));
+  const days = Math.round((new Date(endDate + 'T12:00:00') - new Date(today + 'T12:00:00')) / (24 * 60 * 60 * 1000));
+  return Math.max(1, Math.min(12, days / DAYS_PER_MONTH));
 }
 
 /**
@@ -352,6 +364,17 @@ export function availableMoney({ year, loans, readings, today }) {
   const latest = sorted[sorted.length - 1] || null;
   // A reading from before this year began describes a PRIOR year's money.
   if (!latest || latest.date < y.startDate) return projection;
+
+  // A check-in older than the fallback window can no longer be trusted: with no
+  // bank link, weeks of untracked spending and landed aid may sit between it and
+  // reality. Rather than keep repeating a balance that's been overtaken, fall
+  // back to the plan estimate (the exact `projection` a brand-new user sees),
+  // tagging `staleDays` so the UI can tell the student why the number reverted.
+  // Mirrors the stale→'unanchored' fallback in computeRunway (src/lib/loans.js).
+  const staleDays = readingAgeDays(readings, today);
+  if (staleDays != null && staleDays > BALANCE_STALE_FALLBACK_DAYS) {
+    return { ...projection, staleDays, staleAsOf: latest.date };
+  }
 
   // "Safe to spend" is CHECKING money only — the cash you actually spend from.
   // Savings is deliberately NOT counted (founder call): the check-in calls it

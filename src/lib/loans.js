@@ -22,7 +22,7 @@
 //     spending pace, compared against her spending plan and her expected
 //     financial-aid refund dates.
 
-import { DAYS_PER_MONTH, LOAN_RETURN_WINDOW_DAYS, disbFallbackDate } from './constants.js';
+import { DAYS_PER_MONTH, LOAN_RETURN_WINDOW_DAYS, BALANCE_STALE_FALLBACK_DAYS, disbFallbackDate } from './constants.js';
 
 // ── Federal rate tables ──────────────────────────────────────────────────────
 // Direct Unsubsidized (grad/professional) rates, set every July 1 for loans
@@ -517,6 +517,18 @@ export function normalizeReadings(readings, today) {
 
 export const readingTotal = (r) => (Number(r.spendable) || 0) + (Number(r.savings) || 0);
 
+// Age, in whole days, of the most recent (non-future) balance check-in — the
+// single "how old is our number" signal shared by the money math (availableMoney),
+// the runway (computeRunway), and the UI (the age label + nudge/fallback banners),
+// so they can never disagree about whether a balance is stale. Returns null when
+// there are no readings at all (a brand-new user — nothing to age). Reuses
+// `normalizeReadings` (drops future-dated/duplicate readings) and `daysBetween`.
+export function readingAgeDays(readings, today) {
+  const sorted = normalizeReadings(readings, today);
+  if (sorted.length === 0) return null;
+  return daysBetween(sorted[sorted.length - 1].date, today);
+}
+
 /**
  * "How long will my money last?" — the Runway tile's engine.
  *
@@ -666,6 +678,18 @@ export function computeRunway({ readings, plannedMonthlyBurn, upcomingRefunds, g
 
   const sorted = normalizeReadings(readings, today);
   if (sorted.length === 0) return { state: 'unanchored', plannedMonthlyBurn: plannedMonthlyBurn ?? null };
+
+  // A check-in older than the fallback window can no longer be trusted: with no
+  // bank link, weeks of untracked spending and landed aid may sit between it and
+  // reality, so computing 'overdrawn'/'gap' from it would raise (or silence) a
+  // warning off a number that's since been overtaken. Treat it exactly like
+  // having no reading — same 'unanchored' state a brand-new user gets — and carry
+  // `staleDays` so the UI can explain why it reverted. This mirrors the
+  // stale→projection fallback in availableMoney (src/lib/aid.js).
+  const latestAge = daysBetween(sorted[sorted.length - 1].date, today);
+  if (latestAge > BALANCE_STALE_FALLBACK_DAYS) {
+    return { state: 'unanchored', plannedMonthlyBurn: plannedMonthlyBurn ?? null, staleDays: latestAge };
+  }
 
   const latest = sorted[sorted.length - 1];
   const spendable = Number(latest.spendable) || 0;

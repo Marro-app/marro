@@ -67,9 +67,25 @@ totalAccumulatedBalance, barData, AidTab per-year + overview   // all year-plan
 //       onHand        latest balance check-in (spendable + savings)
 //       stillToArrive inflows dated after that check-in, before year end
 //       perMonth      (onHand + stillToArrive) / monthsLeft
+//       monthsLeft    FRACTIONAL months from today to year end (days ÷ 30.44),
+//                     floored at 1 / capped at 12 — counts the partial current
+//                     month instead of dropping it (the old whole-month subtraction
+//                     over-stated the rate and jumped in steps on the 1st)
 //       basis         'balance' | 'projection'
+//       staleDays     set (with staleAsOf) ONLY when the latest check-in is older
+//                     than BALANCE_STALE_FALLBACK_DAYS: the balance is no longer
+//                     trusted and this reverts to the 'projection' plan estimate
 safeToSpend, safeToSpendMo                                     // Budget cash-flow row
 ```
+
+**Stale check-in handling (constants.js).** With no bank link, every balance-anchored
+number is only as fresh as the last check-in. `readingAgeDays(readings, today)`
+(lib/loans.js) is the shared age signal. At **`BALANCE_STALE_NUDGE_DAYS` (14)** the
+UI shows a gentle "check in again" banner while still trusting the balance; at
+**`BALANCE_STALE_FALLBACK_DAYS` (21)** both `availableMoney` (→ `projection`, with
+`staleDays`) and `computeRunway` (→ `unanchored`, with `staleDays`) stop trusting the
+reading, and App.jsx shows a banner explaining the revert. Both thresholds live in
+constants.js so the money math, the runway, and the UI copy can't disagree.
 
 **The double-count trap.** `moSpendable` is summed once per month to build the
 running balance and year-end net. Feeding those a remaining-months figure counts
