@@ -20,17 +20,22 @@ import {
 // never drops below 4.5:1 in either theme. Layout is randomized per open.
 const rand = (a, b) => a + Math.random() * (b - a);
 
-// "In the middle of a convo" — when the panel should open straight into the
-// thread instead of the category picker: either an admin reply is waiting, or the
-// latest thread is still unresolved and was active within the last day. Anything
-// older/settled opens to the picker (the thread stays one tap away via "resume").
+// The panel opens straight into a thread only when a reply is WAITING (unread) —
+// for any type, so a reply is never missed. Otherwise it opens to the category
+// picker. Separately, a recent, still-open *Question* is offered as a "resume"
+// link (for up to a week): bugs/ideas are one-and-done submissions so they never
+// get a resume link, and questions that are resolved or have gone quiet for a
+// week drop off rather than lingering there forever.
 const ACTIVE_STATUSES = new Set(['new', 'open', 'waiting_user']);
-const RESUME_WINDOW_MS = 24 * 60 * 60 * 1000;
-function isMidConversation(convo) {
-  if (!convo) return false;
-  if (convo.unread_user > 0) return true;
-  return ACTIVE_STATUSES.has(convo.status)
-    && (Date.now() - new Date(convo.last_message_at).getTime()) < RESUME_WINDOW_MS;
+const RESUMABLE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+function hasUnreadReply(convo) {
+  return !!convo && convo.unread_user > 0;
+}
+function isResumableQuestion(convo) {
+  return !!convo
+    && convo.type === 'question'
+    && ACTIVE_STATUSES.has(convo.status)
+    && (Date.now() - new Date(convo.last_message_at).getTime()) < RESUMABLE_WINDOW_MS;
 }
 
 // Top-down beetle drawn facing +x (its travel direction), on a 20×20 grid.
@@ -203,7 +208,7 @@ export default function SupportPanel({ onClose }) {
   const motifKind = activeCat.motif;
 
   // On open, load the latest thread (so "resume" is instant) but only land IN it
-  // when the user is mid-conversation — otherwise open to the category picker.
+  // when a reply is waiting — otherwise open to the category picker.
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -216,9 +221,9 @@ export default function SupportPanel({ onClose }) {
           if (!alive) return;
           setConvo(latest);
           setMessages(msgs);
-          const mid = isMidConversation(latest);
-          setView(mid ? 'thread' : 'new');
-          if (mid && latest.unread_user > 0) markRead(latest.id).catch(() => {});
+          const unread = hasUnreadReply(latest);
+          setView(unread ? 'thread' : 'new');
+          if (unread) markRead(latest.id).catch(() => {});
         } else {
           setView('new');
         }
@@ -460,7 +465,7 @@ export default function SupportPanel({ onClose }) {
                   Ask us anything below — we&apos;ll reply right here.
                 </div>
               )}
-              {convo && (
+              {isResumableQuestion(convo) && (
                 <button
                   type="button"
                   onClick={resumeThread}
