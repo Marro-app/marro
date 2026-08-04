@@ -47,26 +47,31 @@ function isoMinsAgo(mins) {
 export function buildMockSupport() {
   const convoId = 'c0ffee00-0000-4000-8000-000000000001';
   return {
+    // A settled, already-read thread from a couple days ago: reply seen
+    // (unread_user: 0) and last active outside the 24h "mid-conversation" window,
+    // so the panel opens to the category picker by default and offers a "resume"
+    // link back to this thread. (A waiting reply — unread_user > 0 — would instead
+    // auto-open the thread and light the launcher badge.)
     conversations: [{
       id: convoId, user_id: MOCK_USER_ID, status: 'open', type: 'question',
       priority: 'normal', subject: 'How do I add a loan?', tags: null, tech_context: null,
       assigned_admin: 'mo@joinmarro.com', linked_issue_url: null, csat: null, csat_comment: null,
-      unread_admin: 0, unread_user: 1, reopen_count: 0,
-      created_at: isoMinsAgo(180), last_message_at: isoMinsAgo(42),
-      claimed_at: isoMinsAgo(120), first_response_at: isoMinsAgo(42),
+      unread_admin: 0, unread_user: 0, reopen_count: 0,
+      created_at: isoMinsAgo(3000), last_message_at: isoMinsAgo(2880),
+      claimed_at: isoMinsAgo(2940), first_response_at: isoMinsAgo(2880),
       resolved_at: null, resolved_by: null, archived_at: null, snooze_until: null,
     }],
     messages: [
       {
         id: 'a0000000-0000-4000-8000-000000000001', conversation_id: convoId,
         sender: 'user', sender_email: null, body: 'How do I add a loan to my account?',
-        attachments: null, is_internal_note: false, created_at: isoMinsAgo(180), read_at: null,
+        attachments: null, is_internal_note: false, created_at: isoMinsAgo(3000), read_at: null,
       },
       {
         id: 'a0000000-0000-4000-8000-000000000002', conversation_id: convoId,
         sender: 'admin', sender_email: 'mo@joinmarro.com',
         body: 'Head to the Loans tab and tap “Add loan” — I can walk you through it if you get stuck!',
-        attachments: null, is_internal_note: false, created_at: isoMinsAgo(42), read_at: null,
+        attachments: null, is_internal_note: false, created_at: isoMinsAgo(2880), read_at: isoMinsAgo(2870),
       },
     ],
   };

@@ -20,6 +20,19 @@ import {
 // never drops below 4.5:1 in either theme. Layout is randomized per open.
 const rand = (a, b) => a + Math.random() * (b - a);
 
+// "In the middle of a convo" — when the panel should open straight into the
+// thread instead of the category picker: either an admin reply is waiting, or the
+// latest thread is still unresolved and was active within the last day. Anything
+// older/settled opens to the picker (the thread stays one tap away via "resume").
+const ACTIVE_STATUSES = new Set(['new', 'open', 'waiting_user']);
+const RESUME_WINDOW_MS = 24 * 60 * 60 * 1000;
+function isMidConversation(convo) {
+  if (!convo) return false;
+  if (convo.unread_user > 0) return true;
+  return ACTIVE_STATUSES.has(convo.status)
+    && (Date.now() - new Date(convo.last_message_at).getTime()) < RESUME_WINDOW_MS;
+}
+
 // Top-down beetle drawn facing +x (its travel direction), on a 20×20 grid.
 function Beetle({ size, color, seam }) {
   return (
@@ -156,7 +169,8 @@ export default function SupportPanel({ onClose }) {
     : categoryForType(convo ? convo.type : 'question');
   const motifKind = activeCat.motif;
 
-  // Load the user's most recent thread on open. No thread → start in "new" view.
+  // On open, load the latest thread (so "resume" is instant) but only land IN it
+  // when the user is mid-conversation — otherwise open to the category picker.
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -169,8 +183,9 @@ export default function SupportPanel({ onClose }) {
           if (!alive) return;
           setConvo(latest);
           setMessages(msgs);
-          setView('thread');
-          if (latest.unread_user > 0) markRead(latest.id).catch(() => {});
+          const mid = isMidConversation(latest);
+          setView(mid ? 'thread' : 'new');
+          if (mid && latest.unread_user > 0) markRead(latest.id).catch(() => {});
         } else {
           setView('new');
         }
@@ -239,7 +254,15 @@ export default function SupportPanel({ onClose }) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
-  const startNewTopic = () => { setView('new'); setConvo(null); setMessages([]); setDraft(''); setError(null); };
+  const startNewTopic = () => { setView('new'); setDraft(''); setError(null); };
+
+  // Jump back into the loaded thread from the picker (marks any waiting reply read).
+  const resumeThread = useCallback(() => {
+    if (!convo) return;
+    setView('thread');
+    setError(null);
+    if (convo.unread_user > 0) markRead(convo.id).catch(() => {});
+  }, [convo]);
 
 
   return createPortal((
@@ -330,6 +353,24 @@ export default function SupportPanel({ onClose }) {
                   );
                 })}
               </div>
+              {convo && (
+                <button
+                  type="button"
+                  onClick={resumeThread}
+                  aria-label={`Back to your conversation${convo.unread_user > 0 ? `, ${convo.unread_user} unread ${convo.unread_user === 1 ? 'reply' : 'replies'}` : ''}`}
+                  style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', padding: '11px 12px', borderRadius: 12, cursor: 'pointer', background: C.surface, border: `1px solid ${C.border}`, color: C.text, minHeight: 44 }}
+                >
+                  <span aria-hidden="true" style={{ fontSize: 17, lineHeight: 1 }}>{categoryForType(convo.type).emoji}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600 }}>Back to your conversation</span>
+                    <span style={{ display: 'block', fontSize: 11, color: C.textMid, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{convo.subject || categoryForType(convo.type).label}</span>
+                  </span>
+                  {convo.unread_user > 0 && (
+                    <span aria-hidden="true" style={{ flexShrink: 0, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: C.danger, color: C.bg, fontSize: 10.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{convo.unread_user > 9 ? '9+' : convo.unread_user}</span>
+                  )}
+                  <Icon name="chevron" size={12} color={C.textMid} style={{ transform: 'rotate(-90deg)', flexShrink: 0 }} />
+                </button>
+              )}
             </>
           ) : (
             messages.map((m) => <Bubble key={m.id} msg={m} />)
