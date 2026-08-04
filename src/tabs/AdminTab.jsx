@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { C, CHART_COLORS, tipProps } from '../lib/theme.js';
 import { Card, SectionTitle, EmptyState, Divider, Modal, ChoiceGroup, ProgressBar, usePagination, Paginator, Banner } from '../components/primitives.jsx';
-import { radioProps } from '../lib/ui-helpers.js';
+import { radioProps, tabProps } from '../lib/ui-helpers.js';
 import { adminCall, adminUsageMetrics, adminClickByElement, adminDailyEventCounts, adminEventsLast30Days } from '../lib/data.js';
 
 // Admin console — invite codes, waitlist, ambassador roster, members, and the
@@ -141,22 +141,82 @@ export default function AdminTab({callerEmail}){
 
   useEffect(()=>{ load(); }, [load]);
 
+  // Sub-tabs within the admin console. "Users & Invites" is the default because
+  // it's fully populated by the one list_overview() fetch above (instant, no
+  // extra round-trip), whereas Insights/Usage each fire their own admin RPCs on
+  // mount — so we only pay for those when a founder actually opens that tab.
+  // Support is the new home for the in-app support inbox (docs/SUPPORT_CHAT_*).
+  const [subTab, setSubTab] = useState("users");
+  const SUBTABS = [
+    { id:"users",   label:"Users & Invites" },
+    { id:"usage",   label:"Insights & Usage" },
+    { id:"support", label:"Support" },
+  ];
+
   return (
     <div role="tabpanel" id="tab-panel" aria-labelledby="tab-admin" tabIndex={0} style={{display:"flex", flexDirection:"column", gap:16}}>
       {loadError && <Card><InlineMsg text={loadError} tone="error"/></Card>}
       {loading
         ? <Card><EmptyState>Loading admin console…</EmptyState></Card>
         : <>
-            <InsightsSection/>
-            <UsageSection/>
-            <AmbassadorsSection ambassadors={overview.ambassadors} codes={overview.codes} callerEmail={callerEmail} onChanged={load}/>
-            <MembersSection members={overview.members} callerEmail={callerEmail} onChanged={load}/>
-            <InviteCodesSection codes={overview.codes} onChanged={load}/>
-            <WaitlistSection waitlist={overview.waitlist} onChanged={load}/>
-            <AdminsSection admins={overview.admins} onChanged={load}/>
+            <ChoiceGroup role="tablist" ariaLabel="Admin sections"
+              style={{display:"flex", gap:2, padding:3, background:C.surface, border:`1px solid ${C.border}`, borderRadius:12}}>
+              {SUBTABS.map(t => (
+                <AdminSubTab key={t.id} id={t.id} label={t.label} active={subTab===t.id} onSelect={()=>setSubTab(t.id)}/>
+              ))}
+            </ChoiceGroup>
+            <div role="tabpanel" id="adm-subpanel" aria-labelledby={`adm-subtab-${subTab}`} tabIndex={0}
+              style={{display:"flex", flexDirection:"column", gap:16}}>
+              {subTab==="users" && <>
+                <AmbassadorsSection ambassadors={overview.ambassadors} codes={overview.codes} callerEmail={callerEmail} onChanged={load}/>
+                <MembersSection members={overview.members} callerEmail={callerEmail} onChanged={load}/>
+                <InviteCodesSection codes={overview.codes} onChanged={load}/>
+                <WaitlistSection waitlist={overview.waitlist} onChanged={load}/>
+                <AdminsSection admins={overview.admins} onChanged={load}/>
+              </>}
+              {subTab==="usage" && <>
+                <InsightsSection/>
+                <UsageSection/>
+              </>}
+              {subTab==="support" && <AdminSupportSection/>}
+            </div>
           </>
       }
     </div>
+  );
+}
+
+// One sub-tab button. Mirrors the app-level TabBtn look but wires its own
+// aria ids to the admin sub-panel (nested tablist). ChoiceGroup handles the
+// arrow-key roving focus + selection (APG) for every [role="tab"] inside it.
+function AdminSubTab({id, label, active, onSelect}) {
+  return (
+    <button type="button" onClick={onSelect} {...tabProps(active, `adm-subtab-${id}`, "adm-subpanel")}
+      className={active?undefined:"shimmer-text"} style={{
+        flex:1, minHeight:36, padding:"8px 14px", border:"none", borderRadius:9,
+        background: active ? C.tabActiveBg : "transparent",
+        cursor:"pointer", fontSize:13, fontWeight: active?600:400,
+        color: active ? C.ink : C.tabMuted, whiteSpace:"nowrap",
+        transition:"all 220ms cubic-bezier(0.23,1,0.32,1)",
+        boxShadow: active ? "0 1px 8px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.35)" : "none",
+      }}>{label}</button>
+  );
+}
+
+// ── Support (placeholder) ─────────────────────────────────────────────────────
+// Home for the in-app support inbox. Built incrementally — this placeholder
+// ships in Slice 0 (admin-panel tabs) so the tab exists; the real inbox,
+// triage, and reply tools land from Slice 3 onward. See docs/SUPPORT_CHAT_BUILD.md.
+function AdminSupportSection() {
+  return (
+    <Card>
+      <SectionTitle sub="Live chat, feedback, and bug reports from users will land here.">Support</SectionTitle>
+      <Banner type="info">
+        The support inbox is being built in small slices (see <code>docs/SUPPORT_CHAT_BUILD.md</code>).
+        This tab is its home — conversations, triage filters, and reply tools will appear here starting
+        with Slice&nbsp;3.
+      </Banner>
+    </Card>
   );
 }
 
