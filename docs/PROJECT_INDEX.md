@@ -47,6 +47,8 @@ Don't scan the file; `grep -n` the key for the section you need. Keys are stable
 - `STRATEGY.md` — company/business/AI vision, monetization, people & equity, legal, infra hygiene, two-founder collaboration model
 - `AI_COST_MODEL.md` — plain-language AI cost model: per-feature/user/scale cost, Haiku/Sonnet/Opus routing, cost-control levers, launch safeguards, staged pricing (read before Phase 4 AI work)
 - `FUTURE_WORK.md` — prioritized backlog
+- `SUPPORT_CHAT_PLAN.md` — plan for the in-app support/feedback chat (custom on Supabase; Realtime, configurable Discord/etc. admin alerts, bug-context capture) — read before any support-chat work
+- `SUPPORT_CHAT_BUILD.md` — the per-slice build spec (0–14) for the support chat: DB/API/files/tests/done-when for each shippable slice
 
 ## Analytics
 - **`ui_click` — automatic, zero-per-feature-instrumentation usage tracking (`src/lib/analytics.js`).** One global, delegated, capture-phase click listener (installed once from `src/main.jsx`, deferred after window `load` like Sentry) walks up from every click to the nearest interactive element (`button`, `a`, `[role="button"]`, submit/button `input`s, `summary`, `label`, or anything with `data-analytics`) and logs it — no code needed on new buttons/features for them to show up. Identifier priority: `data-analytics` attribute → `aria-label` → `name`/`id` → visible text, sanitized (digits/currency stripped, slugified, capped ~40 chars — see `docs/DATA_ETHICS.md`). Batched client-side and flushed as one multi-row insert every ~15s and on tab-hide/pagehide, not one row per click.
