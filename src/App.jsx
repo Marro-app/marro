@@ -8,9 +8,9 @@ import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
 import { fmt, fmtS, fmtD, fmtDay, fmtDayYear, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr, yearMonthRange, pruneAllYears } from './lib/format.js';
-import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState } from './lib/loans.js';
+import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState, readingAgeDays } from './lib/loans.js';
 import { yearAidBreakdown, unmatchedLoans, availableMoney, coveredMonthIndices } from './lib/aid.js';
-import { WEEKS_PER_MONTH, USMLE_STEP_FEE_ESTIMATE } from './lib/constants.js';
+import { WEEKS_PER_MONTH, USMLE_STEP_FEE_ESTIMATE, BALANCE_STALE_NUDGE_DAYS, BALANCE_STALE_FALLBACK_DAYS } from './lib/constants.js';
 import { BRANDS, BRAND_DOMAINS, getBrandDomain, getBrand } from './lib/brands.js';
 import { US_MED_SCHOOLS, degreeForSchool, DO_DUAL, dualOptionsForSchool } from './lib/schools.js';
 import { AV_PALETTE, avColor, AVATARS, AV_GROUPS } from './lib/avatars.js';
@@ -642,6 +642,14 @@ export function App() {
   // would silently double-count and inflate the year-end net.
   const safeToSpend   = availableMoney({ year: yr, loans: data.loans||[], readings: data.balanceReadings||[], today: todayStr() });
   const safeToSpendMo = safeToSpend.perMonth;
+  // How old the latest balance check-in is — drives the "checked in X days ago"
+  // label plus the two staleness banners (nudge at 14d, fallback notice at 21d).
+  // null when there's no check-in at all (a brand-new user — nothing to nudge).
+  // Single source shared with the money math + runway (readingAgeDays, lib/loans.js)
+  // so the copy can never disagree with which number is actually being shown.
+  const checkinAge   = readingAgeDays(data.balanceReadings||[], todayStr());
+  const checkinStale = checkinAge != null && checkinAge > BALANCE_STALE_FALLBACK_DAYS; // fell back to the plan estimate
+  const checkinAging = checkinAge != null && checkinAge >= BALANCE_STALE_NUDGE_DAYS && !checkinStale; // getting old, still trusted
   // What the monthly plan is measured against. When a dry spell is coming, the
   // honest yardstick is the tighter "until your next money" figure, not the year
   // average that would run you out before then.
@@ -1513,6 +1521,28 @@ export function App() {
         </Banner>
       ))}
 
+      {/* ── Stale check-in: fallback notice (21+ days) ──────────────────────────
+           availableMoney has ALREADY reverted "Safe to spend" to the plan estimate
+           (safeToSpend.staleDays is set only on that stale-fallback path), so this
+           tells the student WHY the number changed rather than letting it move
+           silently. Session-dismissible like the other event banners — reappears
+           next load while the check-in is still stale. Takes priority over the
+           softer "aging" nudge below (they can't both fire: one needs basis
+           'balance', the other basis 'projection'). ── */}
+      {safeToSpend.staleDays!=null && !dismissed["checkin_fallback"] && (
+        <Banner type="warn" onClose={()=>dismiss("checkin_fallback")}>
+          Your last balance check-in was {safeToSpend.staleDays} days ago, so we’re showing your <strong>plan estimate</strong> instead of your last balance.{" "}
+          <button type="button" className="btn-fill" onClick={()=>setTab("budget")} style={{background:C.amber,color:"#fff",border:"none",borderRadius:8,padding:"2px 10px",cursor:"pointer",fontSize:11,fontWeight:600,marginLeft:6}}>Check in your balance</button>
+        </Banner>
+      )}
+      {/* ── Stale check-in: gentle nudge (14–20 days) — number is still balance-based here. ── */}
+      {safeToSpend.basis==="balance" && checkinAging && !dismissed["checkin_nudge"] && (
+        <Banner type="info" onClose={()=>dismiss("checkin_nudge")}>
+          It’s been {checkinAge} days since your last balance check-in. A quick update keeps your “Safe to spend” accurate.{" "}
+          <button type="button" className="btn-fill" onClick={()=>setTab("budget")} style={{background:C.amber,color:"#fff",border:"none",borderRadius:8,padding:"2px 10px",cursor:"pointer",fontSize:11,fontWeight:600,marginLeft:6}}>Check in</button>
+        </Banner>
+      )}
+
       {/* ── Year selector — one segmented glass pill; active year's range shown once ── */}
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16,flexWrap:"wrap"}}>
         <ChoiceGroup role="radiogroup" ariaLabel="Academic year" className="tabbar" style={{
@@ -1558,9 +1588,12 @@ export function App() {
         // everything else come out of it — founder call). Expanded: a checking/savings
         // split bar, the labelled figures, then the before-rent + check-in / school-year note.
         const s_balance = safeToSpend.basis==="balance";
+        // Once a balance-anchored check-in starts getting old (≥14d), surface its
+        // age right on the collapsed glance — so staleness is visible before the
+        // number ever reverts, not a surprise when it does.
         const s_glance = (<>
           <Icon name="wallet" size={13} color={C.teal}/>
-          <span>before rent{s_balance ? "" : " · planned"}</span>
+          <span>before rent{s_balance ? (checkinAging ? ` · checked in ${checkinAge}d ago` : "") : " · planned"}</span>
         </>);
         const s_panel = s_balance ? (()=>{
           const chk=safeToSpend.onHand, sav=safeToSpend.savings, arr=safeToSpend.stillToArrive;
@@ -1576,7 +1609,7 @@ export function App() {
             {arr>0 && <TileRow label="Aid still to arrive" val={fmt(arr)} dot={C.tealMid}/>}
             {sav>0 && <TileRow label="In savings, kept aside" val={fmt(sav)} dot={C.gray}/>}
             <div style={{marginTop:9,paddingTop:9,borderTop:`1px solid ${C.border}`,color:C.gray}}>
-              This is your whole month’s money — rent and everything else come out of it. From your {fmtDay(safeToSpend.asOf)} check-in, spread across the rest of the {syLabel} school year. Savings isn’t counted here.
+              This is your whole month’s money — rent and everything else come out of it. From your {fmtDay(safeToSpend.asOf)} check-in{checkinAge!=null?` (${checkinAge===0?"today":checkinAge===1?"yesterday":`${checkinAge} days ago`})`:""}, spread across the rest of the {syLabel} school year. Savings isn’t counted here.
             </div>
           </>);
         })() : (<>

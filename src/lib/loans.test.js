@@ -242,6 +242,23 @@ describe('computeRunway', () => {
     expect(computeRunway({ readings: [], plannedMonthlyBurn: 2000, upcomingRefunds: [], gradDate, today: '2026-10-01' })).toEqual({ state: 'unanchored', plannedMonthlyBurn: 2000 });
   });
 
+  it('state: unanchored — a check-in older than the fallback window is no longer trusted', () => {
+    // A $0 reading would normally be 'overdrawn'; 22 days (> 21) later it must
+    // instead revert to unanchored rather than keep flashing overdrawn off a
+    // balance weeks of untracked spending/aid may have overtaken.
+    const stale = [{ id: 'r1', date: '2026-10-01', spendable: 0, savings: 0 }];
+    const r = computeRunway({ readings: stale, plannedMonthlyBurn: 2000, upcomingRefunds: [], gradDate, today: '2026-10-23' });
+    expect(r.state).toBe('unanchored');
+    expect(r.staleDays).toBe(22); // carried so the UI can explain the revert
+  });
+
+  it('still trusts a check-in exactly at the fallback threshold', () => {
+    const readings = [{ id: 'r1', date: '2026-10-01', spendable: 4000, savings: 0 }];
+    const r = computeRunway({ readings, plannedMonthlyBurn: 2000, upcomingRefunds: [], gradDate, today: '2026-10-22' }); // 21 days
+    expect(r.state).not.toBe('unanchored');
+    expect(r.asOf).toBe('2026-10-01');
+  });
+
   it('state: overdrawn — spendable at or below 0, notes when savings covers it', () => {
     const readings = [{ id: 'r1', date: '2026-10-01', spendable: -50, savings: 3000 }];
     const r = computeRunway({ readings, plannedMonthlyBurn: 2000, upcomingRefunds: [], gradDate, today: '2026-10-05' });
@@ -350,7 +367,9 @@ describe('computeRunway', () => {
       { id: 'r1', date: '2026-09-01', spendable: 5000, savings: 0 },
       { id: 'r2', date: '2099-01-01', spendable: 1, savings: 0 }, // clock-skew / typo — must not become "latest"
     ];
-    const r = computeRunway({ readings, plannedMonthlyBurn: 1500, upcomingRefunds: [], gradDate, today: '2026-10-05' });
+    // today kept within the staleness window of r1 so this stays a test about
+    // future-date rejection, not the stale→unanchored fallback.
+    const r = computeRunway({ readings, plannedMonthlyBurn: 1500, upcomingRefunds: [], gradDate, today: '2026-09-15' });
     expect(r.asOf).toBe('2026-09-01');
     expect(r.spendable).toBe(5000);
   });

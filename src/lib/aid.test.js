@@ -5,6 +5,7 @@ import {
   summerFundNeed, summerResources, summerShortfall, routeLoanCashBySummer,
   summerWageTotal, coveredMonthIndices,
 } from './aid.js';
+import { DAYS_PER_MONTH, BALANCE_STALE_FALLBACK_DAYS } from './constants.js';
 
 // A minimal, valid loan for the 2025–26 year — override fields per test.
 // Mirrors the factory style in loans.test.js.
@@ -540,6 +541,34 @@ describe('availableMoney — projection fallback (the degenerate case)', () => {
   });
 });
 
+describe('availableMoney — stale check-in falls back to the plan estimate', () => {
+  const year = makeYear({ grant: 42000, tuitionFees: 34000, healthIns: 4200, otherIncome: 300 });
+
+  it('keeps trusting a reading right up to the fallback threshold', () => {
+    const asOf = '2025-12-01';
+    const today = '2025-12-21'; // exactly BALANCE_STALE_FALLBACK_DAYS (21) later → still balance
+    const readings = [{ id: 'r', date: asOf, spendable: 5000, savings: 0 }];
+    const a = availableMoney({ year, loans: [], readings, today });
+    expect(a.basis).toBe('balance');
+    expect(a.onHand).toBe(5000);
+    expect(a.staleDays).toBeUndefined();
+  });
+
+  it('reverts to the projection once the reading is older than the threshold', () => {
+    const asOf = '2025-12-01';
+    const today = '2025-12-23'; // 22 days > 21 → stale
+    const readings = [{ id: 'r', date: asOf, spendable: 5000, savings: 0 }];
+    const a = availableMoney({ year, loans: [], readings, today });
+    expect(a.basis).toBe('projection');
+    expect(a.onHand).toBe(0); // the stale balance is no longer trusted
+    // Carries why it reverted, so the UI can tell the student.
+    expect(a.staleDays).toBeGreaterThan(BALANCE_STALE_FALLBACK_DAYS);
+    expect(a.staleAsOf).toBe(asOf);
+    // Same plan number a brand-new user sees.
+    expect(a.perMonth).toBeCloseTo(yearAidBreakdown(year, []).moSpendable, 6);
+  });
+});
+
 describe('availableMoney — balance-anchored (the corrected mid-year number)', () => {
   // The founder walkthrough scenario, hand-checked:
   //   grants 5000 + loans 50000 - tuition 34000 - health 4200 = 16800 reaches her
@@ -563,10 +592,10 @@ describe('availableMoney — balance-anchored (the corrected mid-year number)', 
     expect(a.available).toBeCloseTo(3000 + 8400, 6);
   });
 
-  it('divides by the months REMAINING, not a flat 12', () => {
+  it('divides by the months REMAINING (fractional days), not a flat 12', () => {
     const a = availableMoney({ year, loans, readings, today: '2025-12-01' });
-    expect(a.monthsLeft).toBe(8);                    // Dec → Aug 15
-    expect(a.perMonth).toBeCloseTo(11400 / 8, 6);    // (3000 checking + 8400 to arrive) / 8
+    expect(a.monthsLeft).toBeCloseTo(257 / DAYS_PER_MONTH, 5); // Dec 1 → Aug 15 = 257 days, not a rounded 8
+    expect(a.perMonth).toBeCloseTo(11400 / a.monthsLeft, 6);   // (3000 checking + 8400 to arrive) / months left
   });
 
   it('does NOT double-count the money that already landed', () => {
@@ -579,14 +608,14 @@ describe('availableMoney — balance-anchored (the corrected mid-year number)', 
   it('self-corrects downward when the student has overspent', () => {
     const broke = [{ id: 'r1', date: '2025-12-01', spendable: 1200, savings: 0 }];
     const a = availableMoney({ year, loans, readings: broke, today: '2025-12-01' });
-    expect(a.perMonth).toBeCloseTo((1200 + 8400) / 8, 6); // $1,200/mo, tighter
-    expect(a.perMonth).toBeLessThan(11900 / 8);
+    expect(a.perMonth).toBeCloseTo((1200 + 8400) / a.monthsLeft, 6); // tighter: less cash over the same months left
+    expect(a.perMonth).toBeLessThan(11400 / a.monthsLeft);           // below the healthy-balance case
   });
 
   it('counts other income only for the months still ahead', () => {
     const withIncome = { ...year, otherIncome: 100 };
     const a = availableMoney({ year: withIncome, loans, readings, today: '2025-12-01' });
-    expect(a.available).toBeCloseTo(3000 + 8400 + 100 * 8, 6);
+    expect(a.available).toBeCloseTo(3000 + 8400 + 100 * a.monthsLeft, 6); // otherIncome * fractional months left
   });
 });
 
@@ -626,8 +655,8 @@ describe('availableMoney — "until your next money" (the dry-spell preventer)',
   it('is based on cash ON HAND and the months until the next payment, not the year', () => {
     const a = availableMoney({ year, loans, readings, today: '2025-12-01' });
     expect(a.untilNextMoney.date).toBe('2026-01-10');
-    expect(a.untilNextMoney.monthsToNext).toBe(1);
-    expect(a.untilNextMoney.perMonth).toBeCloseTo(3000, 6); // $3,000 checking on hand over 1 month
+    expect(a.untilNextMoney.monthsToNext).toBeCloseTo(40 / DAYS_PER_MONTH, 5); // Dec 1 → Jan 10 = 40 days
+    expect(a.untilNextMoney.perMonth).toBeCloseTo(3000 / a.untilNextMoney.monthsToNext, 6); // $3,000 on hand over that span
   });
 
   it('is TIGHTER than the year average when the next lump is far off', () => {
@@ -641,8 +670,8 @@ describe('availableMoney — "until your next money" (the dry-spell preventer)',
       ],
     })];
     const a = availableMoney({ year, loans: lateLoans, readings, today: '2025-12-01' });
-    expect(a.untilNextMoney.monthsToNext).toBe(5);          // Dec -> May
-    expect(a.untilNextMoney.perMonth).toBeCloseTo(600, 6);  // $3,000 checking stretched over 5 months
+    expect(a.untilNextMoney.monthsToNext).toBeCloseTo(151 / DAYS_PER_MONTH, 5); // Dec 1 → May 1 = 151 days
+    expect(a.untilNextMoney.perMonth).toBeCloseTo(3000 / a.untilNextMoney.monthsToNext, 6); // $3,000 stretched over that span
     expect(a.untilNextMoney.perMonth).toBeLessThan(a.perMonth);
   });
 

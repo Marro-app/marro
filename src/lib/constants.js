@@ -16,6 +16,26 @@ export const DAYS_PER_MONTH = 30.44;
 // src/tabs/WeeklyTab.jsx.
 export const WEEKS_PER_MONTH = 4.333;
 
+// ── Balance check-in staleness thresholds ────────────────────────────────────
+// Marro has no bank connection, so every balance-anchored number ("Safe to
+// spend", the runway warnings, the Loans semester need) is only as fresh as the
+// student's last check-in. These two thresholds define when a check-in has aged
+// enough to act on. Shared by src/lib/aid.js (availableMoney), src/lib/loans.js
+// (computeRunway), and src/App.jsx (the age label + nudge/fallback banners), so
+// the money math and the UI can never disagree about whether a balance is stale.
+// ⚠ MAINTENANCE: NUDGE must stay < FALLBACK (the nudge is the gentle "please
+// check in" stage; the fallback is the harder "we've stopped trusting it" stage).
+//
+// NUDGE: days since the last check-in after which we prompt a re-check-in while
+// still trusting the balance. 14 mirrors the runway engine's existing "two
+// readings ≥14 days apart before a measured rate is trusted" precedent
+// (src/lib/loans.js) — the app's established sense of "enough time has passed".
+export const BALANCE_STALE_NUDGE_DAYS = 14;
+// FALLBACK: days since the last check-in after which we STOP trusting the
+// balance entirely and revert to the plan estimate (same output a brand-new
+// user with no check-in already sees), telling the student we've done so.
+export const BALANCE_STALE_FALLBACK_DAYS = 21;
+
 // ── Loan-specific facts ──────────────────────────────────────────────────────
 // Direct Loan Borrowers' Rights: federal loan money can be returned within
 // this many days of disbursement for a clean cancellation of the interest
