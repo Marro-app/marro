@@ -40,6 +40,8 @@ export const BrandIcon = ({name, size=36}) => {
 // functions so theme-dependent fills resolve at render time.
 const ICONS = {
   close:    () => <path d="M6 6l8 8M14 6l-8 8"/>,
+  chat:     () => <path d="M4.6 4.6h10.8a1.6 1.6 0 0 1 1.6 1.6v5.6a1.6 1.6 0 0 1-1.6 1.6H9l-3.4 2.8v-2.8H4.6A1.6 1.6 0 0 1 3 11.8V6.2A1.6 1.6 0 0 1 4.6 4.6Z"/>,
+  send:     () => <path d="M16.6 4.2L3.4 9a.5.5 0 0 0 0 .95l4.9 1.75 1.75 4.9a.5.5 0 0 0 .95 0L16.6 4.2ZM8.5 11.5l6-6"/>,
   plus:     () => <path d="M10 4.5v11M4.5 10h11"/>,
   check:    () => <path d="M5 10.5l3.2 3.2L15 6.8"/>,
   chevron:  () => <path d="M5.5 8l4.5 4.5L14.5 8"/>,

@@ -35,6 +35,43 @@ export const MOCK_SESSION = {
 
 export const MOCK_PROFILE = { school: 'Weill Cornell Medicine' };
 
+// ── Seed support thread (Slice 2) ───────────────────────────────────────────
+// One existing conversation with a user question + an admin reply, so the
+// launcher badge (unread_user: 1) and the transcript both render with zero
+// backend on `?mock=1`. Rebuilt fresh each call (like buildMockState) so
+// re-seeds never share mutable rows. Shapes mirror support_conversations /
+// support_messages in supabase/support_chat.sql exactly (no invented fields).
+function isoMinsAgo(mins) {
+  return new Date(Date.now() - mins * 60000).toISOString();
+}
+export function buildMockSupport() {
+  const convoId = 'c0ffee00-0000-4000-8000-000000000001';
+  return {
+    conversations: [{
+      id: convoId, user_id: MOCK_USER_ID, status: 'open', type: 'question',
+      priority: 'normal', subject: 'How do I add a loan?', tags: null, tech_context: null,
+      assigned_admin: 'mo@joinmarro.com', linked_issue_url: null, csat: null, csat_comment: null,
+      unread_admin: 0, unread_user: 1, reopen_count: 0,
+      created_at: isoMinsAgo(180), last_message_at: isoMinsAgo(42),
+      claimed_at: isoMinsAgo(120), first_response_at: isoMinsAgo(42),
+      resolved_at: null, resolved_by: null, archived_at: null, snooze_until: null,
+    }],
+    messages: [
+      {
+        id: 'a0000000-0000-4000-8000-000000000001', conversation_id: convoId,
+        sender: 'user', sender_email: null, body: 'How do I add a loan to my account?',
+        attachments: null, is_internal_note: false, created_at: isoMinsAgo(180), read_at: null,
+      },
+      {
+        id: 'a0000000-0000-4000-8000-000000000002', conversation_id: convoId,
+        sender: 'admin', sender_email: 'mo@joinmarro.com',
+        body: 'Head to the Loans tab and tap “Add loan” — I can walk you through it if you get stuck!',
+        attachments: null, is_internal_note: false, created_at: isoMinsAgo(42), read_at: null,
+      },
+    ],
+  };
+}
+
 function isoDaysAgo(n) {
   const d = new Date();
   d.setDate(d.getDate() - n);

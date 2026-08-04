@@ -2,6 +2,16 @@
 
 Newest first. One line per finding: severity · what · fix.
 
+## 2026-08-04 — Support chat: launcher + user panel (Slice 2, branch `feat/support-slice-2-panel`)
+
+New floating support launcher + slide-up glass chat panel (`src/components/support/`). Verified via `?mock=1` in both themes, desktop; keyboard + focus checks live.
+
+- **Fixed pre-ship: unread badge contrast** (`SupportLauncher.jsx`): the count badge started as white on `C.danger` (soft clay) ≈ 2.2:1 — fails 4.5:1. Switched the numeral to `C.bg` (near-bg-on-fill), matching the app's primary-button convention → ~8:1 (dark) / ~6:1 (light). The count is also mirrored in the button's `aria-label` (badge is `aria-hidden`), so color is never the only signal.
+- **Focus management** (`SupportPanel.jsx`): `role="dialog"` + `aria-modal`, Tab focus-trap and Escape-to-close mirror the `Modal` primitive; focus returns to the launcher on close (verified live: Esc → `document.activeElement` is the launcher button). Launcher re-asserts focus on close as a backstop.
+- **Category-themed motif** (plan §6): decorative `aria-hidden` layer (bug → drifting specks, idea → soft glows); all animation is transform/opacity and **freezes under `prefers-reduced-motion`** (static, lower opacity). Motif sits behind the glass body — text contrast unaffected. Verified motif swaps by category (5 `.sup-speck` nodes render for Bug).
+- **Controls**: category picker is a real `role="radiogroup"` with `aria-checked`; composer field is labelled (visually-hidden `<label>`), errors use `role="alert"`, Enter-to-send / Shift+Enter-newline (confirmed handler fires + `preventDefault`); send + close are ≥44px, keyboard-reachable, with the app-wide `:focus-visible` ring (seen live on the close ✕ in light theme). Launcher is 52px, `aria-label` carries unread count.
+- **Verified clean**: bubbles/header/composer use audited `C.*` tokens (flip correctly both themes); send button `C.bg`-on-`C.teal` matches the existing Export button. Reduced-motion also freezes the panel entrance.
+
 ## 2026-07-20 — Design/a11y sweep + landing polish (branch `mo/design-a11y-landing-polish`)
 
 Full audit (landing + app, both themes, `?mock=1`). Headline finding: the product is already largely compliant — automated scans over-reported (glass panels defeat contrast tools; `::after` hit-slop defeats size tools), so every flag was hand-verified. Two genuine hit-target gaps found + fixed; rest was false positives.

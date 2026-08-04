@@ -3,6 +3,14 @@
 > Companion to `SUPPORT_CHAT_PLAN.md` (the *what/why*). This is the *how* — each slice specced to be
 > built, tested, and merged on its own. Section numbers in refs (§n) point at the plan doc.
 >
+> **PROGRESS (2026-08-04):** ✅ Slice 0 (admin tabs, PR #60) · ✅ Slice 1 (DB foundation, PR #61) —
+> both merged to `main` and the DB is live · ✅ Slice 2 (user chat panel) — built on
+> `feat/support-slice-2-panel`: `src/lib/support.js` + `src/components/support/{SupportLauncher,SupportPanel}.jsx`,
+> mounted in `App.jsx`; `?mock=1` harness seeds a sample thread (`buildMockSupport` + stub RPCs);
+> verified in both themes, prod-safety grep clean, 358 tests green. **▶ NEXT: Slice 3** (admin inbox +
+> reply + auto-claim — first end-to-end loop). Prod SQL is run via the Supabase Management API +
+> `SUPABASE_ACCESS_TOKEN` env var (see the `supabase-sql-access` memory).
+>
 > **Per-slice template:** Goal · Depends on · Backend/DB · API · Frontend · Tests · **Done when** · Risk.
 > **Workflow (every slice):** branch → push → Vercel preview → optional `/code-review` → self-merge
 > (CONTRIBUTING). Never push to `main`.
