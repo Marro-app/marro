@@ -15,6 +15,18 @@
             "command": "gh pr list --repo Marro-app/marro 2>/dev/null || true",
             "if": "Bash(git commit*)",
             "statusMessage": "Checking for open pull requests..."
+          },
+          {
+            "type": "command",
+            "command": "printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"Merge detected — run /security-review on this branch first (audits the diff for injection, exposed secrets, and auth/RLS gaps) before merging.\"}}'",
+            "if": "Bash(git merge*)",
+            "statusMessage": "Security-review reminder..."
+          },
+          {
+            "type": "command",
+            "command": "printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"ask\",\"permissionDecisionReason\":\"Merge detected — run /security-review on this branch first (audits the diff for injection, exposed secrets, and auth/RLS gaps) before merging.\"}}'",
+            "if": "Bash(gh pr merge*)",
+            "statusMessage": "Security-review reminder..."
           }
         ]
       }
