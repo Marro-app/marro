@@ -49,7 +49,7 @@ alter table public.events enable row level security;
 
 drop policy if exists "insert own events" on public.events;
 create policy "insert own events" on public.events
-  for insert with check (auth.uid() = user_id);
+  for insert with check ((select auth.uid()) = user_id);
 
 -- No SELECT/UPDATE/DELETE policy for authenticated/anon — see the header
 -- comment. This table is insert-only from the client by design; regular

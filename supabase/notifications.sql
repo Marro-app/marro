@@ -78,7 +78,7 @@ alter table public.invite_email_log   enable row level security;
 -- or forge notifications).
 drop policy if exists "select own notifications" on public.user_notifications;
 create policy "select own notifications" on public.user_notifications
-  for select using (email = lower(auth.jwt() ->> 'email'));
+  for select using (email = lower((select auth.jwt()) ->> 'email'));
 
 -- invite_email_log: NO client policies. Deny-all to anon/authenticated;
 -- reachable only via the service-role backend.
