@@ -120,6 +120,33 @@ function CategoryBackdrop({ motif }) {
   return null;
 }
 
+// Bug + Idea are structured submissions, not conversations: instead of a chat
+// composer they render a short form whose fields are composed into the first
+// message body. Question stays a chat. `compose` produces plain text (bubbles
+// don't render markdown) that the admin reads verbatim in the thread.
+const SUPPORT_FORMS = {
+  bug: {
+    submitLabel: 'Submit bug report',
+    sentLabel: 'bug report',
+    fields: [
+      { key: 'what', label: 'What went wrong?', placeholder: 'Describe the problem…', required: true, rows: 3 },
+      { key: 'steps', label: 'What were you doing when it happened?', placeholder: 'Optional — the steps that led to it', required: false, rows: 2 },
+    ],
+    compose: (v) => `What went wrong:\n${v.what.trim()}`
+      + (v.steps && v.steps.trim() ? `\n\nWhat I was doing:\n${v.steps.trim()}` : ''),
+  },
+  idea: {
+    submitLabel: 'Submit idea',
+    sentLabel: 'idea',
+    fields: [
+      { key: 'idea', label: "What's your idea?", placeholder: 'Describe your idea…', required: true, rows: 3 },
+      { key: 'why', label: 'What would it help you do?', placeholder: 'Optional — the problem it would solve', required: false, rows: 2 },
+    ],
+    compose: (v) => `Idea:\n${v.idea.trim()}`
+      + (v.why && v.why.trim() ? `\n\nWhy it would help:\n${v.why.trim()}` : ''),
+  },
+};
+
 function Bubble({ msg }) {
   const mine = msg.sender === 'user';
   if (msg.sender === 'system') {
@@ -155,11 +182,17 @@ export default function SupportPanel({ onClose }) {
   const [loading, setLoading] = useState(true);
   const [convo, setConvo] = useState(null);       // the active conversation row (or null → "new")
   const [messages, setMessages] = useState([]);
-  const [view, setView] = useState('thread');     // 'thread' | 'new'
+  const [view, setView] = useState('thread');     // 'thread' | 'new' | 'sent'
   const [category, setCategory] = useState('question');
   const [draft, setDraft] = useState('');
+  const [form, setForm] = useState({});            // bug/idea form field values
+  const [sentKind, setSentKind] = useState(null);  // 'bug report' | 'idea' — for the confirmation
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
+
+  // In "new" view, whether the picked category is a form (bug/idea) or the chat
+  // (question). Drives which composer the footer/body shows.
+  const activeForm = view === 'new' ? SUPPORT_FORMS[category] : null;
 
   // The active category drives both the header label and the background motif.
   // In "new" view it's the picked KEY (question/bug/idea); in a thread it's
@@ -250,11 +283,38 @@ export default function SupportPanel({ onClose }) {
     }
   }, [draft, sending, view, category, convo]);
 
+  // Submit the bug/idea form → creates a conversation from the composed fields,
+  // then shows a confirmation (not the chat). A later admin reply surfaces the
+  // thread via the mid-conversation / resume path.
+  const submitForm = useCallback(async () => {
+    if (sending || !activeForm) return;
+    const missing = activeForm.fields.some((f) => f.required && !(form[f.key] || '').trim());
+    if (missing) { setError('Please fill in the required field.'); return; }
+    setSending(true); setError(null);
+    try {
+      const cat = SUPPORT_CATEGORIES.find((c) => c.key === category) || SUPPORT_CATEGORIES[0];
+      const body = activeForm.compose(form);
+      const id = await startConversation({ type: cat.type, body });
+      const convos = await fetchConversations();
+      setConvo(convos.find((c) => c.id === id) || null);
+      setMessages([]);
+      setForm({});
+      setSentKind(activeForm.sentLabel);
+      setView('sent');
+    } catch {
+      setError("Couldn't submit that. Please try again.");
+    } finally {
+      setSending(false);
+    }
+  }, [sending, activeForm, form, category]);
+
+  const pickCategory = (key) => { setCategory(key); setForm({}); setError(null); };
+
   const onKeyDownField = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
-  const startNewTopic = () => { setView('new'); setDraft(''); setError(null); };
+  const startNewTopic = () => { setView('new'); setCategory('question'); setForm({}); setDraft(''); setError(null); };
 
   // Jump back into the loaded thread from the picker (marks any waiting reply read).
   const resumeThread = useCallback(() => {
@@ -329,10 +389,23 @@ export default function SupportPanel({ onClose }) {
         <div ref={listRef} className="themed-scroll" style={{ position: 'relative', flex: 1, overflowY: 'auto', padding: '14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
           {loading ? (
             <div role="status" aria-live="polite" style={{ margin: 'auto', color: C.textMid, fontSize: 13 }}>Loading…</div>
+          ) : view === 'sent' ? (
+            <div style={{ margin: 'auto', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, padding: '8px 4px' }}>
+              <span aria-hidden="true" style={{ width: 46, height: 46, borderRadius: 23, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: C.tealLight, border: `1px solid ${C.tealMid}` }}>
+                <Icon name="check" size={24} color={C.teal} strokeWidth={1.9} />
+              </span>
+              <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>Thanks — we got your {sentKind}.</div>
+              <div style={{ fontSize: 12.5, color: C.textMid, lineHeight: 1.5, maxWidth: 270 }}>
+                We read every one. If we need more detail we&apos;ll reply here — you&apos;ll see it next time you open support.
+              </div>
+              <button type="button" onClick={onClose} className="btn-fill" style={{ marginTop: 4, padding: '10px 22px', borderRadius: 10, border: 'none', background: C.teal, color: C.bg, fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 44 }}>
+                Done
+              </button>
+            </div>
           ) : view === 'new' ? (
             <>
               <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.5 }}>
-                What can we help with? Pick one, then tell us what&apos;s on your mind.
+                What can we help with?
               </div>
               <div role="radiogroup" aria-label="What's this about?" style={{ display: 'flex', gap: 8 }}>
                 {SUPPORT_CATEGORIES.map((c) => {
@@ -343,7 +416,7 @@ export default function SupportPanel({ onClose }) {
                       type="button"
                       role="radio"
                       aria-checked={on}
-                      onClick={() => setCategory(c.key)}
+                      onClick={() => pickCategory(c.key)}
                       style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '12px 6px', borderRadius: 12, cursor: 'pointer', minHeight: 44, background: on ? C.selBg : 'transparent', border: `1px solid ${on ? C.sel : C.border}`, color: C.text, transition: 'background .15s, border-color .15s' }}
                     >
                       <span aria-hidden="true" style={{ fontSize: 20, lineHeight: 1 }}>{c.emoji}</span>
@@ -353,6 +426,40 @@ export default function SupportPanel({ onClose }) {
                   );
                 })}
               </div>
+              {activeForm ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 2 }}>
+                  {activeForm.fields.map((f) => (
+                    <div key={f.key}>
+                      <label htmlFor={`${fieldId}-${f.key}`} style={{ display: 'block', fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 5 }}>
+                        {f.label}{!f.required && <span style={{ color: C.textMid, fontWeight: 500 }}> (optional)</span>}
+                      </label>
+                      <textarea
+                        id={`${fieldId}-${f.key}`}
+                        value={form[f.key] || ''}
+                        onChange={(e) => setForm((s) => ({ ...s, [f.key]: e.target.value }))}
+                        placeholder={f.placeholder}
+                        rows={f.rows}
+                        required={f.required}
+                        style={{ width: '100%', resize: 'vertical', minHeight: f.rows * 24, padding: '9px 11px', fontSize: 13.5, lineHeight: 1.5, fontFamily: 'inherit', borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: C.text, boxSizing: 'border-box', outline: 'none' }}
+                      />
+                    </div>
+                  ))}
+                  {error && <div id={errId} role="alert" style={{ fontSize: 12, color: C.danger }}>{error}</div>}
+                  <button
+                    type="button"
+                    onClick={submitForm}
+                    disabled={sending || activeForm.fields.some((f) => f.required && !(form[f.key] || '').trim())}
+                    className="btn-fill"
+                    style={{ padding: '12px', borderRadius: 10, border: 'none', background: C.teal, color: C.bg, fontSize: 13.5, fontWeight: 700, cursor: 'pointer', minHeight: 44, opacity: (sending || activeForm.fields.some((f) => f.required && !(form[f.key] || '').trim())) ? 0.5 : 1, transition: 'opacity .15s' }}
+                  >
+                    {sending ? 'Submitting…' : activeForm.submitLabel}
+                  </button>
+                </div>
+              ) : (
+                <div style={{ fontSize: 12.5, color: C.textMid, lineHeight: 1.5 }}>
+                  Ask us anything below — we&apos;ll reply right here.
+                </div>
+              )}
               {convo && (
                 <button
                   type="button"
@@ -377,38 +484,41 @@ export default function SupportPanel({ onClose }) {
           )}
         </div>
 
-        {/* Composer */}
-        <div style={{ position: 'relative', borderTop: `1px solid ${C.border}`, padding: '10px 12px 12px' }}>
-          {error && (
-            <div id={errId} role="alert" style={{ fontSize: 12, color: C.danger, marginBottom: 8 }}>{error}</div>
-          )}
-          <label htmlFor={fieldId} className="sr-only" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>
-            Your message
-          </label>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
-            <textarea
-              id={fieldId}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={onKeyDownField}
-              placeholder={view === 'new' ? 'Type your message…' : 'Reply…'}
-              rows={1}
-              aria-invalid={error ? true : undefined}
-              aria-describedby={error ? errId : undefined}
-              style={{ flex: 1, resize: 'none', maxHeight: 120, minHeight: 40, padding: '10px 12px', fontSize: 13.5, lineHeight: 1.5, fontFamily: 'inherit', borderRadius: 12, border: `1px solid ${C.border}`, background: C.surface, color: C.text, boxSizing: 'border-box', outline: 'none' }}
-            />
-            <button
-              type="button"
-              onClick={send}
-              disabled={!draft.trim() || sending}
-              aria-label="Send message"
-              className="btn-fill"
-              style={{ flexShrink: 0, width: 44, height: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 12, border: 'none', background: C.teal, color: C.bg, cursor: draft.trim() && !sending ? 'pointer' : 'default', opacity: draft.trim() && !sending ? 1 : 0.5, transition: 'opacity .15s' }}
-            >
-              <Icon name="send" size={18} color={C.bg} />
-            </button>
+        {/* Composer — chat only (thread replies + starting a Question). Bug/Idea
+            use the in-body form and 'sent' shows a confirmation, so no composer. */}
+        {!loading && (view === 'thread' || (view === 'new' && !activeForm)) && (
+          <div style={{ position: 'relative', borderTop: `1px solid ${C.border}`, padding: '10px 12px 12px' }}>
+            {error && (
+              <div id={errId} role="alert" style={{ fontSize: 12, color: C.danger, marginBottom: 8 }}>{error}</div>
+            )}
+            <label htmlFor={fieldId} className="sr-only" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>
+              Your message
+            </label>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+              <textarea
+                id={fieldId}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={onKeyDownField}
+                placeholder={view === 'new' ? 'Type your question…' : 'Reply…'}
+                rows={1}
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? errId : undefined}
+                style={{ flex: 1, resize: 'none', maxHeight: 120, minHeight: 40, padding: '10px 12px', fontSize: 13.5, lineHeight: 1.5, fontFamily: 'inherit', borderRadius: 12, border: `1px solid ${C.border}`, background: C.surface, color: C.text, boxSizing: 'border-box', outline: 'none' }}
+              />
+              <button
+                type="button"
+                onClick={send}
+                disabled={!draft.trim() || sending}
+                aria-label="Send message"
+                className="btn-fill"
+                style={{ flexShrink: 0, width: 44, height: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 12, border: 'none', background: C.teal, color: C.bg, cursor: draft.trim() && !sending ? 'pointer' : 'default', opacity: draft.trim() && !sending ? 1 : 0.5, transition: 'opacity .15s' }}
+              >
+                <Icon name="send" size={18} color={C.bg} />
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   ), document.body);
