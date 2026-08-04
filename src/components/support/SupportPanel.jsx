@@ -177,8 +177,8 @@ export default function SupportPanel({ onClose }) {
   const [conversations, setConversations] = useState([]); // all the user's threads
   const [convo, setConvo] = useState(null);       // the open thread (thread/sent/ended views)
   const [messages, setMessages] = useState([]);
-  const [view, setView] = useState('thread');     // 'new' | 'thread' | 'sent' | 'ended'
-  const [category, setCategory] = useState('question');
+  const [view, setView] = useState('hub');        // 'hub' | 'ask' | 'form' | 'thread' | 'sent' | 'ended'
+  const [formKey, setFormKey] = useState('bug');  // which form on the 'form' screen ('bug' | 'idea')
   const [draft, setDraft] = useState('');
   const [form, setForm] = useState({});            // bug/idea form field values
   const [sentKind, setSentKind] = useState(null);  // 'bug report' | 'idea' — for the confirmation
@@ -187,25 +187,24 @@ export default function SupportPanel({ onClose }) {
   const [error, setError] = useState(null);
 
   // The one open Question (if any) and the most-recently-ended chat still inside
-  // the reopen window — drive the picker's "Continue"/"Reopen" affordances.
+  // the reopen window — drive the hub's "Continue"/"Reopen" affordances.
   const activeQuestion = findActiveQuestion(conversations);
   const reopenable = findReopenableChat(conversations);
 
-  // In "new" view, whether the picked category is a form (bug/idea) or the chat
-  // (question). Drives which composer the footer/body shows.
-  const activeForm = view === 'new' ? SUPPORT_FORMS[category] : null;
+  // The bug/idea form shown on the 'form' screen.
+  const activeForm = view === 'form' ? SUPPORT_FORMS[formKey] : null;
 
-  // The active category drives both the header label and the background motif.
-  // In "new" view it's the picked KEY (question/bug/idea); in a thread it's
-  // resolved from the stored conversation TYPE (question/bug/feedback/…).
-  const activeCat = view === 'new'
-    ? (SUPPORT_CATEGORIES.find((c) => c.key === category) || SUPPORT_CATEGORIES[0])
+  // Category drives the header label + background motif, and depends on the
+  // screen: the form screen follows the picked kind; a thread follows its
+  // conversation. The hub + ask (question) screens are neutral (no motif).
+  const screenCat = view === 'form'
+    ? (SUPPORT_CATEGORIES.find((c) => c.key === formKey) || SUPPORT_CATEGORIES[0])
     : categoryForType(convo ? convo.type : 'question');
-  const motifKind = activeCat.motif;
+  const motifKind = (view === 'hub' || view === 'ask') ? 'none' : screenCat.motif;
 
   // On open: land in a thread only when a reply is WAITING; otherwise open the
-  // picker (home). An active chat with no new reply is one tap away via the
-  // "Continue your chat" card — we don't dump you straight into it every time.
+  // hub (home). An active chat with no new reply is one tap away via the hub's
+  // "Continue your chat" row — we don't dump you straight into it every time.
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -225,10 +224,10 @@ export default function SupportPanel({ onClose }) {
             setConversations((cs) => cs.map((c) => (c.id === target.id ? { ...c, unread_user: 0 } : c)));
           }
         } else {
-          setView('new');
+          setView('hub');
         }
       } catch {
-        if (alive) setView('new'); // fail soft — let them still start a thread
+        if (alive) setView('hub'); // fail soft — let them still start something
       } finally {
         if (alive) setLoading(false);
       }
@@ -277,14 +276,14 @@ export default function SupportPanel({ onClose }) {
     }
   }, []);
 
-  // Send a chat message: starts the single Question (from the picker) or replies
-  // in the open thread. Bugs/ideas never go through here (they use submitForm).
+  // Send a chat message: starts the single Question (from the 'ask' screen) or
+  // replies in the open thread. Bugs/ideas never go through here (submitForm).
   const send = useCallback(async () => {
     const body = draft.trim();
     if (!body || sending) return;
     setSending(true); setError(null);
     try {
-      if (view === 'new') {
+      if (view === 'ask') {
         const id = await startConversation({ type: 'question', body });
         const convos = await fetchConversations();
         setConversations(convos);
@@ -315,7 +314,7 @@ export default function SupportPanel({ onClose }) {
     if (missing) { setError('Please fill in the required field.'); return; }
     setSending(true); setError(null);
     try {
-      const cat = SUPPORT_CATEGORIES.find((c) => c.key === category) || SUPPORT_CATEGORIES[0];
+      const cat = SUPPORT_CATEGORIES.find((c) => c.key === formKey) || SUPPORT_CATEGORIES[0];
       const body = activeForm.compose(form);
       const id = await startConversation({ type: cat.type, body });
       const convos = await fetchConversations();
@@ -330,7 +329,7 @@ export default function SupportPanel({ onClose }) {
     } finally {
       setSending(false);
     }
-  }, [sending, activeForm, form, category]);
+  }, [sending, activeForm, form, formKey]);
 
   // End (archive) the open chat — reached via the header + an inline confirm.
   const endChat = useCallback(async () => {
@@ -364,8 +363,29 @@ export default function SupportPanel({ onClose }) {
     }
   }, [sending, openThread]);
 
-  const pickCategory = (key) => { setCategory(key); setForm({}); setError(null); };
-  const goPicker = () => { setView('new'); setCategory('question'); setForm({}); setDraft(''); setConfirmingEnd(false); setError(null); };
+  // Hub navigation. The hub shows all three options; each opens its own screen.
+  const goHub = () => { setView('hub'); setForm({}); setDraft(''); setConfirmingEnd(false); setError(null); };
+  const goAsk = () => { setDraft(''); setError(null); setView('ask'); };
+  const goForm = (key) => { setFormKey(key); setForm({}); setError(null); setView('form'); };
+  // "Ask a question": start fresh if no chat is open; otherwise ask whether to
+  // continue the open one or close it and start a new one.
+  const onQuestion = () => { setError(null); setView(activeQuestion ? 'askChoice' : 'ask'); };
+
+  // Close (archive) the open chat, then start a fresh question.
+  const closeAndStartNew = useCallback(async () => {
+    if (!activeQuestion || sending) return;
+    setSending(true); setError(null);
+    try {
+      await archiveConversation(activeQuestion.id);
+      setConversations(await fetchConversations());
+      setDraft('');
+      setView('ask');
+    } catch {
+      setError("Couldn't close the chat. Please try again.");
+    } finally {
+      setSending(false);
+    }
+  }, [activeQuestion, sending]);
 
   const onKeyDownField = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
@@ -413,10 +433,10 @@ export default function SupportPanel({ onClose }) {
 
         {/* Header */}
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8, padding: '14px 14px 12px', borderBottom: `1px solid ${C.border}` }}>
-          {view === 'thread' && (
+          {(view === 'ask' || view === 'askChoice' || view === 'form' || view === 'thread') && (
             <button
               type="button"
-              onClick={goPicker}
+              onClick={goHub}
               aria-label="Back to menu"
               style={{ flexShrink: 0, width: 32, height: 32, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8, border: 'none', background: 'transparent', color: C.text, cursor: 'pointer' }}
             >
@@ -426,7 +446,10 @@ export default function SupportPanel({ onClose }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>Support &amp; feedback</div>
             <div style={{ fontSize: 11.5, color: C.textMid, marginTop: 1 }}>
-              {view === 'new' ? 'We usually reply within a day' : `${activeCat.emoji} ${activeCat.label}`}
+              {view === 'hub' ? 'We usually reply within a day'
+                : (view === 'ask' || view === 'askChoice') ? 'Ask a question'
+                : view === 'form' ? `${screenCat.emoji} ${formKey === 'bug' ? 'Report a bug' : 'Share an idea'}`
+                : `${screenCat.emoji} ${screenCat.label}`}
             </div>
           </div>
           {view === 'thread' && isActiveQuestion(convo) && !confirmingEnd && (
@@ -455,7 +478,7 @@ export default function SupportPanel({ onClose }) {
               <div style={{ fontSize: 12.5, color: C.textMid, lineHeight: 1.5, maxWidth: 270 }}>
                 We read every one. If we need more detail we&apos;ll reply here — you&apos;ll see it next time you open support.
               </div>
-              <button type="button" onClick={onClose} className="btn-fill" style={{ marginTop: 4, padding: '10px 22px', borderRadius: 10, border: 'none', background: C.teal, color: C.bg, fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 44 }}>
+              <button type="button" onClick={goHub} className="btn-fill" style={{ marginTop: 4, padding: '10px 22px', borderRadius: 10, border: 'none', background: C.teal, color: C.bg, fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 44 }}>
                 Done
               </button>
             </div>
@@ -470,79 +493,57 @@ export default function SupportPanel({ onClose }) {
               </div>
               {/* CSAT slot: when the satisfaction slice lands, the 👍/👎 "How did we do?"
                   prompt goes here (writes csat/csat_comment on this conversation). */}
-              <button type="button" onClick={goPicker} className="btn-fill" style={{ marginTop: 4, padding: '10px 22px', borderRadius: 10, border: 'none', background: C.teal, color: C.bg, fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 44 }}>
+              <button type="button" onClick={goHub} className="btn-fill" style={{ marginTop: 4, padding: '10px 22px', borderRadius: 10, border: 'none', background: C.teal, color: C.bg, fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 44 }}>
                 Done
               </button>
             </div>
-          ) : view === 'new' ? (
+          ) : view === 'hub' ? (
             <>
-              <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.5 }}>
-                What can we help with?
-              </div>
-              <div role="radiogroup" aria-label="What's this about?" style={{ display: 'flex', gap: 8 }}>
-                {SUPPORT_CATEGORIES.map((c) => {
-                  const on = category === c.key;
-                  // Question continues the one active chat if there is one.
-                  const continuing = c.key === 'question' && activeQuestion;
-                  const unread = continuing ? (activeQuestion.unread_user || 0) : 0;
-                  return (
-                    <button
-                      key={c.key}
-                      type="button"
-                      role="radio"
-                      aria-checked={on}
-                      aria-label={continuing ? `Continue your chat${unread > 0 ? `, ${unread} unread` : ''}` : undefined}
-                      onClick={() => (continuing ? openThread(activeQuestion) : pickCategory(c.key))}
-                      style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '12px 6px', borderRadius: 12, cursor: 'pointer', minHeight: 44, background: on ? C.selBg : 'transparent', border: `1px solid ${on ? C.sel : C.border}`, color: C.text, transition: 'background .15s, border-color .15s' }}
-                    >
-                      <span aria-hidden="true" style={{ fontSize: 20, lineHeight: 1 }}>{c.emoji}</span>
-                      <span style={{ fontSize: 12.5, fontWeight: on ? 700 : 600 }}>{c.label}</span>
-                      <span style={{ fontSize: 10.5, color: C.textMid }}>{continuing ? 'Continue your chat' : c.blurb}</span>
-                      {unread > 0 && (
-                        <span aria-hidden="true" style={{ position: 'absolute', top: 6, right: 6, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: C.danger, color: C.bg, fontSize: 10, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{unread > 9 ? '9+' : unread}</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-              {activeForm ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 2 }}>
-                  {activeForm.fields.map((f) => (
-                    <div key={f.key}>
-                      <label htmlFor={`${fieldId}-${f.key}`} style={{ display: 'block', fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 5 }}>
-                        {f.label}{!f.required && <span style={{ color: C.textMid, fontWeight: 500 }}> (optional)</span>}
-                      </label>
-                      <textarea
-                        id={`${fieldId}-${f.key}`}
-                        value={form[f.key] || ''}
-                        onChange={(e) => setForm((s) => ({ ...s, [f.key]: e.target.value }))}
-                        placeholder={f.placeholder}
-                        rows={f.rows}
-                        required={f.required}
-                        style={{ width: '100%', resize: 'vertical', minHeight: f.rows * 24, padding: '9px 11px', fontSize: 13.5, lineHeight: 1.5, fontFamily: 'inherit', borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: C.text, boxSizing: 'border-box', outline: 'none' }}
-                      />
-                    </div>
-                  ))}
-                  {error && <div id={errId} role="alert" style={{ fontSize: 12, color: C.danger }}>{error}</div>}
-                  <button
-                    type="button"
-                    onClick={submitForm}
-                    disabled={sending || activeForm.fields.some((f) => f.required && !(form[f.key] || '').trim())}
-                    className="btn-fill"
-                    style={{ padding: '12px', borderRadius: 10, border: 'none', background: C.teal, color: C.bg, fontSize: 13.5, fontWeight: 700, cursor: 'pointer', minHeight: 44, opacity: (sending || activeForm.fields.some((f) => f.required && !(form[f.key] || '').trim())) ? 0.5 : 1, transition: 'opacity .15s' }}
-                  >
-                    {sending ? 'Submitting…' : activeForm.submitLabel}
-                  </button>
-                </div>
-              ) : activeQuestion ? (
-                <div style={{ fontSize: 12.5, color: C.textMid, lineHeight: 1.5 }}>
-                  You have an open chat — tap <strong>Question</strong> above to continue it. You can still send a bug or idea anytime.
-                </div>
-              ) : (
-                <div style={{ fontSize: 12.5, color: C.textMid, lineHeight: 1.5 }}>
-                  Ask us anything below — we&apos;ll reply right here.
-                </div>
+              {/* An open chat gets its own prominent "Continue" card above the menu. */}
+              {activeQuestion && (
+                <button
+                  type="button"
+                  onClick={() => openThread(activeQuestion)}
+                  aria-label={`Continue your chat${activeQuestion.unread_user > 0 ? `, ${activeQuestion.unread_user} unread` : ''}`}
+                  style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', padding: '13px 12px', borderRadius: 12, cursor: 'pointer', minHeight: 58, background: C.selBg, border: `1px solid ${C.sel}`, color: C.text }}
+                >
+                  <span aria-hidden="true" style={{ fontSize: 22, lineHeight: 1, width: 26, textAlign: 'center', flexShrink: 0 }}>💬</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 14, fontWeight: 700 }}>Continue your chat</span>
+                    <span style={{ display: 'block', fontSize: 11.5, color: C.textMid, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeQuestion.subject || 'Pick up where you left off'}</span>
+                  </span>
+                  {activeQuestion.unread_user > 0 && (
+                    <span aria-hidden="true" style={{ flexShrink: 0, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: C.danger, color: C.bg, fontSize: 10.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{activeQuestion.unread_user > 9 ? '9+' : activeQuestion.unread_user}</span>
+                  )}
+                  <Icon name="chevron" size={14} color={C.textMid} style={{ transform: 'rotate(-90deg)', flexShrink: 0 }} />
+                </button>
               )}
+              <div style={{ fontSize: 13, color: C.textMid, lineHeight: 1.5, marginBottom: 2, marginTop: activeQuestion ? 4 : 0 }}>
+                How can we help?
+              </div>
+              {[
+                { key: 'question', emoji: '❓', onClick: onQuestion, title: 'Ask a question', sub: 'Chat with us', badge: 0 },
+                { key: 'bug', emoji: '🐛', onClick: () => goForm('bug'), title: 'Report a bug', sub: 'Something broke', badge: 0 },
+                { key: 'idea', emoji: '💡', onClick: () => goForm('idea'), title: 'Share an idea', sub: 'Suggest an improvement', badge: 0 },
+              ].map((row) => (
+                <button
+                  key={row.key}
+                  type="button"
+                  onClick={row.onClick}
+                  aria-label={row.badge > 0 ? `${row.title}, ${row.badge} unread` : undefined}
+                  style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', padding: '13px 12px', borderRadius: 12, cursor: 'pointer', minHeight: 58, background: C.surface, border: `1px solid ${C.border}`, color: C.text, transition: 'background .15s' }}
+                >
+                  <span aria-hidden="true" style={{ fontSize: 22, lineHeight: 1, width: 26, textAlign: 'center', flexShrink: 0 }}>{row.emoji}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 14, fontWeight: 600 }}>{row.title}</span>
+                    <span style={{ display: 'block', fontSize: 11.5, color: C.textMid, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.sub}</span>
+                  </span>
+                  {row.badge > 0 && (
+                    <span aria-hidden="true" style={{ flexShrink: 0, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: C.danger, color: C.bg, fontSize: 10.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{row.badge > 9 ? '9+' : row.badge}</span>
+                  )}
+                  <Icon name="chevron" size={14} color={C.textMid} style={{ transform: 'rotate(-90deg)', flexShrink: 0 }} />
+                </button>
+              ))}
               {/* Reopen a recently-ended chat (archived within the last 7 days).
                   Hidden while an active chat exists — you can't run two at once. */}
               {!activeQuestion && reopenable && (
@@ -551,17 +552,75 @@ export default function SupportPanel({ onClose }) {
                   onClick={() => reopenChat(reopenable)}
                   disabled={sending}
                   aria-label={`Reopen your recent chat: ${reopenable.subject || 'support chat'}`}
-                  style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', padding: '11px 12px', borderRadius: 12, cursor: sending ? 'default' : 'pointer', background: C.surface, border: `1px solid ${C.border}`, color: C.text, minHeight: 44 }}
+                  style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', padding: '13px 12px', borderRadius: 12, cursor: sending ? 'default' : 'pointer', background: 'transparent', border: `1px dashed ${C.border}`, color: C.text, minHeight: 52 }}
                 >
-                  <span aria-hidden="true" style={{ fontSize: 17, lineHeight: 1 }}>↩︎</span>
+                  <span aria-hidden="true" style={{ fontSize: 18, lineHeight: 1, width: 26, textAlign: 'center', flexShrink: 0 }}>↩︎</span>
                   <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600 }}>Reopen your recent chat</span>
+                    <span style={{ display: 'block', fontSize: 13, fontWeight: 600 }}>Reopen your recent chat</span>
                     <span style={{ display: 'block', fontSize: 11, color: C.textMid, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{reopenable.subject || 'Support chat'}</span>
                   </span>
-                  <Icon name="chevron" size={12} color={C.textMid} style={{ transform: 'rotate(-90deg)', flexShrink: 0 }} />
+                  <Icon name="chevron" size={13} color={C.textMid} style={{ transform: 'rotate(-90deg)', flexShrink: 0 }} />
                 </button>
               )}
             </>
+          ) : view === 'askChoice' ? (
+            <div style={{ margin: 'auto', display: 'flex', flexDirection: 'column', gap: 12, padding: '8px 4px', maxWidth: 300 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.text, textAlign: 'center' }}>You have an open chat</div>
+              <div style={{ fontSize: 12.5, color: C.textMid, lineHeight: 1.5, textAlign: 'center' }}>
+                You can only have one chat going at a time. Continue your open chat, or close it and start a new one.
+              </div>
+              {error && <div id={errId} role="alert" style={{ fontSize: 12, color: C.danger, textAlign: 'center' }}>{error}</div>}
+              <button
+                type="button"
+                onClick={() => activeQuestion && openThread(activeQuestion)}
+                className="btn-fill"
+                style={{ marginTop: 2, padding: '11px', borderRadius: 10, border: 'none', background: C.teal, color: C.bg, fontSize: 13.5, fontWeight: 700, cursor: 'pointer', minHeight: 44 }}
+              >
+                Continue that chat
+              </button>
+              <button
+                type="button"
+                onClick={closeAndStartNew}
+                disabled={sending}
+                className="btn-pop"
+                style={{ padding: '11px', borderRadius: 10, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, fontSize: 13.5, fontWeight: 600, cursor: 'pointer', minHeight: 44, opacity: sending ? 0.6 : 1 }}
+              >
+                {sending ? 'Closing…' : 'Close it & start a new one'}
+              </button>
+            </div>
+          ) : view === 'form' && activeForm ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {activeForm.fields.map((f) => (
+                <div key={f.key}>
+                  <label htmlFor={`${fieldId}-${f.key}`} style={{ display: 'block', fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 5 }}>
+                    {f.label}{!f.required && <span style={{ color: C.textMid, fontWeight: 500 }}> (optional)</span>}
+                  </label>
+                  <textarea
+                    id={`${fieldId}-${f.key}`}
+                    value={form[f.key] || ''}
+                    onChange={(e) => setForm((s) => ({ ...s, [f.key]: e.target.value }))}
+                    placeholder={f.placeholder}
+                    rows={f.rows}
+                    required={f.required}
+                    style={{ width: '100%', resize: 'vertical', minHeight: f.rows * 24, padding: '9px 11px', fontSize: 13.5, lineHeight: 1.5, fontFamily: 'inherit', borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: C.text, boxSizing: 'border-box', outline: 'none' }}
+                  />
+                </div>
+              ))}
+              {error && <div id={errId} role="alert" style={{ fontSize: 12, color: C.danger }}>{error}</div>}
+              <button
+                type="button"
+                onClick={submitForm}
+                disabled={sending || activeForm.fields.some((f) => f.required && !(form[f.key] || '').trim())}
+                className="btn-fill"
+                style={{ padding: '12px', borderRadius: 10, border: 'none', background: C.teal, color: C.bg, fontSize: 13.5, fontWeight: 700, cursor: 'pointer', minHeight: 44, opacity: (sending || activeForm.fields.some((f) => f.required && !(form[f.key] || '').trim())) ? 0.5 : 1, transition: 'opacity .15s' }}
+              >
+                {sending ? 'Submitting…' : activeForm.submitLabel}
+              </button>
+            </div>
+          ) : view === 'ask' ? (
+            <div style={{ fontSize: 12.5, color: C.textMid, lineHeight: 1.5 }}>
+              Ask us anything below — we usually reply within a day, right here.
+            </div>
           ) : (
             messages.map((m) => <Bubble key={m.id} msg={m} />)
           )}
@@ -597,9 +656,9 @@ export default function SupportPanel({ onClose }) {
           </div>
         )}
 
-        {/* Composer — chat only: thread replies, or starting the one Question when
-            none is active. Bug/Idea use the in-body form; confirmations show no composer. */}
-        {!loading && !confirmingEnd && (view === 'thread' || (view === 'new' && !activeForm && !activeQuestion)) && (
+        {/* Composer — chat only: thread replies, or the 'ask' screen (starting the
+            one Question). Bug/Idea use the form; hub + confirmations show no composer. */}
+        {!loading && !confirmingEnd && (view === 'thread' || view === 'ask') && (
           <div style={{ position: 'relative', borderTop: `1px solid ${C.border}`, padding: '10px 12px 12px' }}>
             {error && (
               <div id={errId} role="alert" style={{ fontSize: 12, color: C.danger, marginBottom: 8 }}>{error}</div>
@@ -613,7 +672,7 @@ export default function SupportPanel({ onClose }) {
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={onKeyDownField}
-                placeholder={view === 'new' ? 'Type your question…' : 'Reply…'}
+                placeholder={view === 'ask' ? 'Type your question…' : 'Reply…'}
                 rows={1}
                 aria-invalid={error ? true : undefined}
                 aria-describedby={error ? errId : undefined}
