@@ -172,24 +172,24 @@ alter table public.invite_attempts enable row level security;
 -- backend, which is what lets the DB enforce quota, single-use, and revocation.
 drop policy if exists "select own codes" on public.invite_codes;
 create policy "select own codes" on public.invite_codes
-  for select using (auth.uid() = owner_id);
+  for select using ((select auth.uid()) = owner_id);
 
 -- waitlist: a user may add and read ONLY their own row. No update/delete (admins
 -- manage removals via the service-role backend).
 drop policy if exists "insert own waitlist" on public.waitlist;
 create policy "insert own waitlist" on public.waitlist
-  for insert with check (auth.uid() = user_id);
+  for insert with check ((select auth.uid()) = user_id);
 
 drop policy if exists "select own waitlist" on public.waitlist;
 create policy "select own waitlist" on public.waitlist
-  for select using (auth.uid() = user_id);
+  for select using ((select auth.uid()) = user_id);
 
 -- user_roles: a user may READ their own role row (so the referral UI can show
 -- "ambassador" / their quota). Deliberately NO insert/update/delete policy —
 -- quota is not self-editable.
 drop policy if exists "select own role" on public.user_roles;
 create policy "select own role" on public.user_roles
-  for select using (email = lower(auth.jwt() ->> 'email'));
+  for select using (email = lower((select auth.jwt()) ->> 'email'));
 
 -- admins + invite_attempts: NO client policies. Deny-all to anon/authenticated;
 -- reachable only via SECURITY DEFINER functions and the service-role key.
