@@ -76,8 +76,47 @@ export async function markRead(conversationId) {
   if (error) throw error;
 }
 
+// End (archive) the caller's own support chat. Archived ≠ deleted: it stays
+// re-openable for REOPEN_WINDOW_MS, then the client stops surfacing it.
+export async function archiveConversation(conversationId) {
+  const sb = await getSupabase();
+  const { error } = await sb.rpc('support_archive_conversation', { p_conversation_id: conversationId });
+  if (error) throw error;
+}
+
+// Reopen a resolved/archived chat (flips it back to open).
+export async function reopenConversation(conversationId) {
+  const sb = await getSupabase();
+  const { error } = await sb.rpc('support_reopen_conversation', { p_conversation_id: conversationId });
+  if (error) throw error;
+}
+
 // Total unread admin replies across all of the user's threads — drives the
 // launcher badge.
 export function totalUnread(conversations) {
   return (conversations || []).reduce((n, c) => n + (c.unread_user || 0), 0);
+}
+
+// ── Single-active-chat model (product rule) ─────────────────────────────────
+// A user may have only one open *Question* at a time; bugs/ideas are unlimited
+// one-off submissions. An ended chat is archived and stays re-openable for a
+// week, then drops off the user's view.
+export const ACTIVE_STATUSES = ['new', 'open', 'waiting_user'];
+export const REOPEN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+// The caller's one open Question chat, if any (null otherwise).
+export function findActiveQuestion(conversations) {
+  return (conversations || []).find(
+    (c) => c.type === 'question' && ACTIVE_STATUSES.includes(c.status),
+  ) || null;
+}
+
+// The most recent Question the user ended within the reopen window — surfaced as
+// "Reopen your recent chat". Older archived chats fall out of view.
+export function findReopenableChat(conversations) {
+  const now = Date.now();
+  return (conversations || [])
+    .filter((c) => c.type === 'question' && c.status === 'archived' && c.archived_at
+      && (now - new Date(c.archived_at).getTime()) < REOPEN_WINDOW_MS)
+    .sort((a, b) => new Date(b.archived_at) - new Date(a.archived_at))[0] || null;
 }

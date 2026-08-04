@@ -170,8 +170,9 @@ returns uuid
 language plpgsql security definer set search_path = public
 as $$
 declare
-  v_uid uuid := (select auth.uid());
-  v_id  uuid;
+  v_uid    uuid := (select auth.uid());
+  v_id     uuid;
+  v_active uuid;
 begin
   if v_uid is null then
     raise exception 'not authenticated' using errcode = '42501';
@@ -181,6 +182,28 @@ begin
   end if;
   if p_type is null or p_type not in ('bug','feedback','question','billing','other') then
     p_type := 'question';
+  end if;
+
+  -- Single active support chat (product rule): a user may have only ONE open
+  -- 'question' thread at a time. Starting another while one is active just
+  -- appends the message to the existing chat instead of creating a duplicate —
+  -- the client already routes to "continue chat", this enforces it server-side.
+  -- (Bugs/ideas are one-off submissions and are NOT limited this way.)
+  if p_type = 'question' then
+    select id into v_active
+      from public.support_conversations
+     where user_id = v_uid and type = 'question'
+       and status in ('new','open','waiting_user')
+     order by last_message_at desc
+     limit 1;
+    if v_active is not null then
+      insert into public.support_messages (conversation_id, sender, body)
+        values (v_active, 'user', btrim(p_body));
+      update public.support_conversations
+         set last_message_at = now(), unread_admin = unread_admin + 1
+       where id = v_active;
+      return v_active;
+    end if;
   end if;
 
   insert into public.support_conversations (user_id, type, subject, tech_context, status, unread_admin, last_message_at)
@@ -193,7 +216,7 @@ begin
   return v_id;
 end;
 $$;
-revoke all on function public.support_start_conversation(text, text, jsonb) from public;
+revoke all on function public.support_start_conversation(text, text, jsonb) from public, anon;
 grant execute on function public.support_start_conversation(text, text, jsonb) to authenticated;
 
 -- 3b. support_post_user_message — add a user message to one of the caller's own
@@ -238,7 +261,7 @@ begin
   return v_msg;
 end;
 $$;
-revoke all on function public.support_post_user_message(uuid, text, jsonb) from public;
+revoke all on function public.support_post_user_message(uuid, text, jsonb) from public, anon;
 grant execute on function public.support_post_user_message(uuid, text, jsonb) to authenticated;
 
 -- 3c. support_mark_read — the caller marks admin messages on their own thread as
@@ -256,8 +279,52 @@ begin
    where id = p_conversation_id and user_id = v_uid;
 end;
 $$;
-revoke all on function public.support_mark_read(uuid) from public;
+revoke all on function public.support_mark_read(uuid) from public, anon;
 grant execute on function public.support_mark_read(uuid) to authenticated;
+
+-- 3d. support_archive_conversation — the user ENDS their own support chat. It's
+--     archived (not deleted): re-openable for a while (client shows it for 7 days),
+--     then hidden from the user; a later cron does the real cleanup. Owner-scoped.
+--     This is the "End chat" action in the panel (Slice 2). Idempotent.
+create or replace function public.support_archive_conversation(p_conversation_id uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_uid uuid := (select auth.uid());
+begin
+  if v_uid is null then return; end if;
+  update public.support_conversations
+     set status      = 'archived',
+         archived_at  = now(),
+         resolved_at  = coalesce(resolved_at, now())
+   where id = p_conversation_id and user_id = v_uid;
+end;
+$$;
+revoke all on function public.support_archive_conversation(uuid) from public, anon;
+grant execute on function public.support_archive_conversation(uuid) to authenticated;
+
+-- 3e. support_reopen_conversation — the user reopens a resolved/archived chat
+--     (the "Reopen your recent chat" affordance). Flips it back to open and bumps
+--     reopen_count. No-op if it isn't the caller's or isn't resolved/archived.
+create or replace function public.support_reopen_conversation(p_conversation_id uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_uid uuid := (select auth.uid());
+begin
+  if v_uid is null then return; end if;
+  update public.support_conversations
+     set status       = 'open',
+         archived_at   = null,
+         reopen_count  = reopen_count + 1
+   where id = p_conversation_id and user_id = v_uid
+     and status in ('resolved','archived');
+end;
+$$;
+revoke all on function public.support_reopen_conversation(uuid) from public, anon;
+grant execute on function public.support_reopen_conversation(uuid) to authenticated;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- 4. VERIFY (run these after, ideally as two different users)

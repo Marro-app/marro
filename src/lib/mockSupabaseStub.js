@@ -82,6 +82,18 @@ function supportRpc(name, params, store) {
     const type = validType.includes(params?.p_type) ? params.p_type : 'question';
     const body = (params?.p_body || '').trim();
     if (!body) return { data: null, error: { message: 'message body required' } };
+    // Single active Question: continue the existing open chat instead of a dupe.
+    if (type === 'question') {
+      const active = convos
+        .filter((c) => c.user_id === MOCK_USER_ID && c.type === 'question' && ['new', 'open', 'waiting_user'].includes(c.status))
+        .sort((a, b) => new Date(b.last_message_at) - new Date(a.last_message_at))[0];
+      if (active) {
+        msgs.push({ id: mockId(), conversation_id: active.id, sender: 'user', sender_email: null, body, attachments: null, is_internal_note: false, created_at: now(), read_at: null });
+        active.last_message_at = now();
+        active.unread_admin += 1;
+        return { data: active.id, error: null };
+      }
+    }
     const id = mockId();
     convos.push({
       id, user_id: MOCK_USER_ID, status: 'new', type, priority: 'normal',
@@ -111,6 +123,18 @@ function supportRpc(name, params, store) {
   if (name === 'support_mark_read') {
     const convo = convos.find((c) => c.id === params?.p_conversation_id && c.user_id === MOCK_USER_ID);
     if (convo) convo.unread_user = 0;
+    return { data: null, error: null };
+  }
+  if (name === 'support_archive_conversation') {
+    const convo = convos.find((c) => c.id === params?.p_conversation_id && c.user_id === MOCK_USER_ID);
+    if (convo) { convo.status = 'archived'; convo.archived_at = now(); convo.resolved_at = convo.resolved_at || now(); }
+    return { data: null, error: null };
+  }
+  if (name === 'support_reopen_conversation') {
+    const convo = convos.find((c) => c.id === params?.p_conversation_id && c.user_id === MOCK_USER_ID);
+    if (convo && (convo.status === 'resolved' || convo.status === 'archived')) {
+      convo.status = 'open'; convo.archived_at = null; convo.reopen_count += 1;
+    }
     return { data: null, error: null };
   }
   return null; // not a support RPC
