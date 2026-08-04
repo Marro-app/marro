@@ -20,7 +20,12 @@ const cleanNumInput = (e) => {
   return parts.length > 2 ? parts[0] + '.' + parts.slice(1).join('') : v;
 };
 
-export function BalanceCheckin({ data, upd }) {
+// `bare` drops the outer Card so this can sit directly inside a Modal (opened
+// from the staleness banners) without a card-in-a-sheet double border. `onSaved`
+// fires after a real save (not the big-change confirm step) so that modal can
+// close itself — the header number updating + the banner clearing is the
+// confirmation the student sees in that flow.
+export function BalanceCheckin({ data, upd, bare = false, onSaved }) {
   const readings = data.balanceReadings || [];
   const sorted = [...readings].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   // For the "Past check-ins" list: one row per DATE, matching how the math reads
@@ -56,6 +61,7 @@ export function BalanceCheckin({ data, upd }) {
     setSpendable('');
     setConfirming(false);
     setJustSaved(true);
+    onSaved && onSaved();
   };
 
   const onSubmit = (e) => {
@@ -66,8 +72,9 @@ export function BalanceCheckin({ data, upd }) {
     save();
   };
 
+  const Wrap = bare ? 'div' : Card;
   return (
-    <Card>
+    <Wrap>
       <SectionTitle sub="Just the number from your banking app — no logins, no linking.">
         How much do you have for living costs right now?
       </SectionTitle>
@@ -122,6 +129,6 @@ export function BalanceCheckin({ data, upd }) {
           </div>
         </div>
       )}
-    </Card>
+    </Wrap>
   );
 }

@@ -6,6 +6,7 @@ import { appStorage } from './lib/mockStorage.js';
 import { setAnalyticsContext } from './lib/analytics.js';
 import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
+import { BalanceCheckin } from './components/BalanceCheckin.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
 import { fmt, fmtS, fmtD, fmtDay, fmtDayYear, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr, yearMonthRange, pruneAllYears } from './lib/format.js';
 import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState, readingAgeDays } from './lib/loans.js';
@@ -133,6 +134,10 @@ export function App() {
   // in lib/loans.js). Session-only by design: the real, persisted record is
   // refundPlaybookSeen, written once the Playbook card is dismissed.
   const [refundNudgeConfirmed, setRefundNudgeConfirmed] = useState(null);
+  // Opens the balance check-in as a modal — used by the staleness banners so
+  // their "Check in" button works from ANY tab (setTab("budget") was a dead
+  // click when already on Budget, which read as broken).
+  const [checkinModalOpen, setCheckinModalOpen] = useState(false);
   // Per-event banners ("rsu_"+id, "wkrollover") are meant to reappear for the next
   // event and are intentionally NOT persisted. The Aid tab's static "how your grant
   // works" note ("aidnote") is a one-time tip, not tied to any event, so its
@@ -1474,6 +1479,11 @@ export function App() {
       {editProgram && <ProgramModal data={data} upd={upd} school={profile.school} onClose={()=>{setEditProgram(false);refocusSettingsBtn();}}/>}
       {editAvatar && <AvatarModal data={data} upd={upd} user={session.user} onClose={()=>{setEditAvatar(false);refocusSettingsBtn();}}/>}
       {inviteOpen && <InviteFriendsModal onClose={()=>setInviteOpen(false)}/>}
+      {checkinModalOpen && (
+        <Modal title="Check in your balance" onClose={()=>setCheckinModalOpen(false)} width={460}>
+          <BalanceCheckin data={data} upd={upd} bare onSaved={()=>setCheckinModalOpen(false)}/>
+        </Modal>
+      )}
       {exportOpen && (
         <Modal title="Export my data" onClose={()=>{if(!exportingData) setExportOpen(false);}} width={400}>
           <div style={{fontSize:12,color:C.textMid,marginBottom:10}}>Choose a file format.</div>
@@ -1531,15 +1541,15 @@ export function App() {
            'balance', the other basis 'projection'). ── */}
       {safeToSpend.staleDays!=null && !dismissed["checkin_fallback"] && (
         <Banner type="warn" onClose={()=>dismiss("checkin_fallback")}>
-          Your last balance check-in was {safeToSpend.staleDays} days ago, so we’re showing your <strong>plan estimate</strong> instead of your last balance.{" "}
-          <button type="button" className="btn-fill" onClick={()=>setTab("budget")} style={{background:C.amber,color:"#fff",border:"none",borderRadius:8,padding:"2px 10px",cursor:"pointer",fontSize:11,fontWeight:600,marginLeft:6}}>Check in your balance</button>
+          It’s been {safeToSpend.staleDays} days since your last check-in, so <strong>“Safe to spend” is no longer based on your checking &amp; savings</strong> — it’s now an estimate from your aid, loans &amp; plan. Check in your balance to base it on your real money again.{" "}
+          <button type="button" className="btn-fill" onClick={()=>setCheckinModalOpen(true)} style={{background:C.amber,color:"#fff",border:"none",borderRadius:8,padding:"2px 10px",cursor:"pointer",fontSize:11,fontWeight:600,marginLeft:6}}>Check in your balance</button>
         </Banner>
       )}
       {/* ── Stale check-in: gentle nudge (14–20 days) — number is still balance-based here. ── */}
       {safeToSpend.basis==="balance" && checkinAging && !dismissed["checkin_nudge"] && (
         <Banner type="info" onClose={()=>dismiss("checkin_nudge")}>
           It’s been {checkinAge} days since your last balance check-in. A quick update keeps your “Safe to spend” accurate.{" "}
-          <button type="button" className="btn-fill" onClick={()=>setTab("budget")} style={{background:C.amber,color:"#fff",border:"none",borderRadius:8,padding:"2px 10px",cursor:"pointer",fontSize:11,fontWeight:600,marginLeft:6}}>Check in</button>
+          <button type="button" className="btn-fill" onClick={()=>setCheckinModalOpen(true)} style={{background:C.amber,color:"#fff",border:"none",borderRadius:8,padding:"2px 10px",cursor:"pointer",fontSize:11,fontWeight:600,marginLeft:6}}>Check in</button>
         </Banner>
       )}
 
@@ -1625,10 +1635,10 @@ export function App() {
         const yeEven = Math.round(curYrNet) === 0;
         const yeColor = yeEven ? C.textMid : (curYrNet < 0 ? C.neg : (borrowed ? C.blue : C.green));
         const ye_glance = yeEven
-          ? <span style={{color:C.textMid}}>right on your plan</span>
+          ? <span style={{color:C.textMid}}>even for the year</span>
           : (<>
               <Icon name={curYrNet<0?"arrowDown":"arrowUp"} size={13} color={yeColor}/>
-              <span>{curYrNet<0 ? "short on your plan" : "left over"}</span>
+              <span>{curYrNet<0 ? "short for the year" : "left over"}</span>
             </>);
         const ye_panel = (<>
           <div style={{color:C.textMid}}>{yeEven
@@ -1659,16 +1669,18 @@ export function App() {
         if (showVsPlan) {
           const ringColor = !pace.meaningful ? C.green : pace.drift>0 ? C.green : C.amber;
           const ratio = pace.expected>0 ? pace.actual/pace.expected : 1;
-          if (!pace.meaningful) { vpValue="On track"; vpColor=C.green; vp_glance=<span>on your plan</span>; }
-          else if (pace.drift>0) { vpValue=fmt(pace.drift)+" ahead"; vpColor=C.green; vp_glance=<><Icon name="arrowUp" size={13} color={C.green}/><span>money lasts longer</span></>; }
-          else { vpValue=fmt(Math.abs(pace.drift))+" behind"; vpColor=C.amber; vp_glance=<><Icon name="arrowDown" size={13} color={C.amber}/><span>spending faster</span></>; }
+          if (!pace.meaningful) { vpValue="On track"; vpColor=C.green; vp_glance=<span>on track</span>; }
+          else if (pace.drift>0) { vpValue=fmt(pace.drift)+" ahead"; vpColor=C.green; vp_glance=<><Icon name="arrowUp" size={13} color={C.green}/><span>ahead of pace</span></>; }
+          else { vpValue=fmt(Math.abs(pace.drift))+" behind"; vpColor=C.amber; vp_glance=<><Icon name="arrowDown" size={13} color={C.amber}/><span>behind pace</span></>; }
           vp_panel = (<div style={{display:"flex",gap:12,alignItems:"center"}}>
             <MiniRing pct={ratio} color={ringColor}/>
             <div style={{flex:1}}>
-              <div style={{color:C.textMid}}>Your plan expected about <strong style={{color:C.text}}>{fmt(pace.expected)}</strong> by now; you checked in <strong style={{color:C.text}}>{fmt(pace.actual)}</strong>.</div>
+              <div style={{color:C.textMid}}>This is your spending speed so far — separate from the year-end forecast. Your plan expected you down to about <strong style={{color:C.text}}>{fmt(pace.expected)}</strong> by now; you checked in <strong style={{color:C.text}}>{fmt(pace.actual)}</strong>.</div>
               <div style={{marginTop:6,color:C.gray}}>{
                 !pace.meaningful ? "Right where your plan expects — keep it up."
-                : pace.drift>0 ? "You're ahead, so your money will last longer than planned."
+                : pace.drift>0 ? (curYrNet<0
+                    ? <>You’re spending slower than planned — good. Even so, your plan still finishes <strong style={{color:C.neg}}>short for the year</strong> (see “By end of year”), so staying under plan is what closes that gap.</>
+                    : "You’re spending slower than planned, so your money will last longer than planned.")
                 : <>You’re spending faster than planned.{pace.runOutDate?<> At this pace your money lasts to {fmtDayYear(pace.runOutDate)} instead of {fmtDayYear(runway.runOutDate)}.</>:""} Trim a little or spend closer to plan.</>
               }</div>
             </div>
@@ -1684,7 +1696,7 @@ export function App() {
             <div style={{display:"flex",gap:10,marginBottom:SHOW_GAP_FORECAST&&viewingCurrentYear&&(runway.state==='gap'||runway.state==='overdrawn')?10:20,flexWrap:"wrap",alignItems:"flex-start"}}>
               <HeaderTile label={sLabel} value={sValue} valueColor={C.teal} glance={s_glance} panel={s_panel}/>
               <HeaderTile label="By end of year" value={fmtS(curYrNet)} valueColor={yeColor} glance={ye_glance} panel={ye_panel}/>
-              {showVsPlan && <HeaderTile label="Compared to your plan" value={vpValue} valueColor={vpColor} glance={vp_glance} panel={vp_panel}/>}
+              {showVsPlan && <HeaderTile label="Your pace so far" value={vpValue} valueColor={vpColor} glance={vp_glance} panel={vp_panel}/>}
             </div>
             {SHOW_GAP_FORECAST && viewingCurrentYear && runway.state==='gap' && (
               <div style={{marginBottom:20}}><Banner type="warn">
