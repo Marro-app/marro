@@ -445,11 +445,13 @@ export default function SupportPanel({ onClose }) {
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>Support &amp; feedback</div>
-            <div style={{ fontSize: 11.5, color: C.textMid, marginTop: 1 }}>
+            <div style={{ fontSize: 11.5, color: C.textMid, marginTop: 1, display: 'flex', alignItems: 'center', gap: 5 }}>
               {view === 'hub' ? 'We usually reply within a day'
                 : (view === 'ask' || view === 'askChoice') ? 'Ask a question'
-                : view === 'form' ? `${screenCat.emoji} ${formKey === 'bug' ? 'Report a bug' : 'Share an idea'}`
-                : `${screenCat.emoji} ${screenCat.label}`}
+                : (<>
+                    <Icon name={screenCat.icon} size={13} color={C.textMid} />
+                    {view === 'form' ? (formKey === 'bug' ? 'Report a bug' : 'Share an idea') : screenCat.label}
+                  </>)}
             </div>
           </div>
           {view === 'thread' && isActiveQuestion(convo) && !confirmingEnd && (
@@ -507,7 +509,7 @@ export default function SupportPanel({ onClose }) {
                   aria-label={`Continue your chat${activeQuestion.unread_user > 0 ? `, ${activeQuestion.unread_user} unread` : ''}`}
                   style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', padding: '13px 12px', borderRadius: 12, cursor: 'pointer', minHeight: 58, background: C.selBg, border: `1px solid ${C.sel}`, color: C.text }}
                 >
-                  <span aria-hidden="true" style={{ fontSize: 22, lineHeight: 1, width: 26, textAlign: 'center', flexShrink: 0 }}>💬</span>
+                  <span aria-hidden="true" style={{ width: 26, display: 'inline-flex', justifyContent: 'center', flexShrink: 0 }}><Icon name="chat" size={21} color={C.text} /></span>
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'block', fontSize: 14, fontWeight: 700 }}>Continue your chat</span>
                     <span style={{ display: 'block', fontSize: 11.5, color: C.textMid, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeQuestion.subject || 'Pick up where you left off'}</span>
@@ -522,9 +524,9 @@ export default function SupportPanel({ onClose }) {
                 How can we help?
               </div>
               {[
-                { key: 'question', emoji: '❓', onClick: onQuestion, title: 'Ask a question', sub: 'Chat with us', badge: 0 },
-                { key: 'bug', emoji: '🐛', onClick: () => goForm('bug'), title: 'Report a bug', sub: 'Something broke', badge: 0 },
-                { key: 'idea', emoji: '💡', onClick: () => goForm('idea'), title: 'Share an idea', sub: 'Suggest an improvement', badge: 0 },
+                { key: 'question', icon: 'help', onClick: onQuestion, title: 'Ask a question', sub: 'Chat with us', badge: 0 },
+                { key: 'bug', icon: 'bug', onClick: () => goForm('bug'), title: 'Report a bug', sub: 'Something broke', badge: 0 },
+                { key: 'idea', icon: 'idea', onClick: () => goForm('idea'), title: 'Share an idea', sub: 'Suggest an improvement', badge: 0 },
               ].map((row) => (
                 <button
                   key={row.key}
@@ -533,7 +535,7 @@ export default function SupportPanel({ onClose }) {
                   aria-label={row.badge > 0 ? `${row.title}, ${row.badge} unread` : undefined}
                   style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', padding: '13px 12px', borderRadius: 12, cursor: 'pointer', minHeight: 58, background: C.surface, border: `1px solid ${C.border}`, color: C.text, transition: 'background .15s' }}
                 >
-                  <span aria-hidden="true" style={{ fontSize: 22, lineHeight: 1, width: 26, textAlign: 'center', flexShrink: 0 }}>{row.emoji}</span>
+                  <span aria-hidden="true" style={{ width: 26, display: 'inline-flex', justifyContent: 'center', flexShrink: 0 }}><Icon name={row.icon} size={21} color={C.text} /></span>
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'block', fontSize: 14, fontWeight: 600 }}>{row.title}</span>
                     <span style={{ display: 'block', fontSize: 11.5, color: C.textMid, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.sub}</span>
@@ -554,7 +556,7 @@ export default function SupportPanel({ onClose }) {
                   aria-label={`Reopen your recent chat: ${reopenable.subject || 'support chat'}`}
                   style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', padding: '13px 12px', borderRadius: 12, cursor: sending ? 'default' : 'pointer', background: 'transparent', border: `1px dashed ${C.border}`, color: C.text, minHeight: 52 }}
                 >
-                  <span aria-hidden="true" style={{ fontSize: 18, lineHeight: 1, width: 26, textAlign: 'center', flexShrink: 0 }}>↩︎</span>
+                  <span aria-hidden="true" style={{ width: 26, display: 'inline-flex', justifyContent: 'center', flexShrink: 0 }}><Icon name="reopen" size={17} color={C.textMid} /></span>
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'block', fontSize: 13, fontWeight: 600 }}>Reopen your recent chat</span>
                     <span style={{ display: 'block', fontSize: 11, color: C.textMid, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{reopenable.subject || 'Support chat'}</span>

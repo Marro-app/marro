@@ -12,9 +12,9 @@ import { getSupabase } from './data.js';
 // bug/feedback/question/billing/other); "Idea" maps to 'feedback'. `motif`
 // drives the category-themed background in SupportPanel (plan §6).
 export const SUPPORT_CATEGORIES = [
-  { key: 'question', type: 'question', label: 'Question', emoji: '❓', blurb: 'Ask us anything', motif: 'none' },
-  { key: 'bug',      type: 'bug',      label: 'Bug',      emoji: '🐛', blurb: 'Something broke',  motif: 'bug'  },
-  { key: 'idea',     type: 'feedback', label: 'Idea',     emoji: '💡', blurb: 'Suggest an idea',  motif: 'idea' },
+  { key: 'question', type: 'question', label: 'Question', icon: 'help', blurb: 'Ask us anything', motif: 'none' },
+  { key: 'bug',      type: 'bug',      label: 'Bug',      icon: 'bug',  blurb: 'Something broke',  motif: 'bug'  },
+  { key: 'idea',     type: 'feedback', label: 'Idea',     icon: 'idea', blurb: 'Suggest an idea',  motif: 'idea' },
 ];
 
 export function categoryForType(type) {
