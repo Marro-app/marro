@@ -111,12 +111,12 @@ export function findActiveQuestion(conversations) {
   ) || null;
 }
 
-// The most recent Question the user ended within the reopen window — surfaced as
-// "Reopen your recent chat". Older archived chats fall out of view.
-export function findReopenableChat(conversations) {
+// Every Question the user ended within the reopen window (newest first) —
+// surfaced as the hub's "Recent chats" list. Older archived chats fall out of view.
+export function findReopenableChats(conversations) {
   const now = Date.now();
   return (conversations || [])
     .filter((c) => c.type === 'question' && c.status === 'archived' && c.archived_at
       && (now - new Date(c.archived_at).getTime()) < REOPEN_WINDOW_MS)
-    .sort((a, b) => new Date(b.archived_at) - new Date(a.archived_at))[0] || null;
+    .sort((a, b) => new Date(b.archived_at) - new Date(a.archived_at));
 }

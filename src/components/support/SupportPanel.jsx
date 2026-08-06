@@ -6,7 +6,7 @@ import { Icon } from '../icons.jsx';
 import {
   SUPPORT_CATEGORIES, categoryForType, fetchConversations, fetchMessages,
   startConversation, postMessage, markRead, archiveConversation, reopenConversation,
-  findActiveQuestion, findReopenableChat, ACTIVE_STATUSES,
+  findActiveQuestion, findReopenableChats, ACTIVE_STATUSES,
 } from '../../lib/support.js';
 
 // ── Category-themed background (plan §6) ─────────────────────────────────────
@@ -25,6 +25,16 @@ const rand = (a, b) => a + Math.random() * (b - a);
 // Only Questions are single-active + user-endable; bugs/ideas are submissions.
 function isActiveQuestion(convo) {
   return !!convo && convo.type === 'question' && ACTIVE_STATUSES.includes(convo.status);
+}
+
+// Short "ended 2d ago" relative label for the Recent-chats list.
+function endedAgo(iso) {
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 }
 
 // Top-down beetle drawn facing +x (its travel direction), on a 20×20 grid.
@@ -186,10 +196,10 @@ export default function SupportPanel({ onClose }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
 
-  // The one open Question (if any) and the most-recently-ended chat still inside
-  // the reopen window — drive the hub's "Continue"/"Reopen" affordances.
+  // The one open Question (if any) and every chat ended within the reopen window —
+  // drive the hub's "Continue your chat" card and "Recent chats" list.
   const activeQuestion = findActiveQuestion(conversations);
-  const reopenable = findReopenableChat(conversations);
+  const pastChats = findReopenableChats(conversations);
 
   // The bug/idea form shown on the 'form' screen.
   const activeForm = view === 'form' ? SUPPORT_FORMS[formKey] : null;
@@ -546,23 +556,32 @@ export default function SupportPanel({ onClose }) {
                   <Icon name="chevron" size={14} color={C.textMid} style={{ transform: 'rotate(-90deg)', flexShrink: 0 }} />
                 </button>
               ))}
-              {/* Reopen a recently-ended chat (archived within the last 7 days).
-                  Hidden while an active chat exists — you can't run two at once. */}
-              {!activeQuestion && reopenable && (
-                <button
-                  type="button"
-                  onClick={() => reopenChat(reopenable)}
-                  disabled={sending}
-                  aria-label={`Reopen your recent chat: ${reopenable.subject || 'support chat'}`}
-                  style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', padding: '13px 12px', borderRadius: 12, cursor: sending ? 'default' : 'pointer', background: 'transparent', border: `1px dashed ${C.border}`, color: C.text, minHeight: 52 }}
-                >
-                  <span aria-hidden="true" style={{ width: 26, display: 'inline-flex', justifyContent: 'center', flexShrink: 0 }}><Icon name="reopen" size={17} color={C.textMid} /></span>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: 'block', fontSize: 13, fontWeight: 600 }}>Reopen your recent chat</span>
-                    <span style={{ display: 'block', fontSize: 11, color: C.textMid, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{reopenable.subject || 'Support chat'}</span>
-                  </span>
-                  <Icon name="chevron" size={13} color={C.textMid} style={{ transform: 'rotate(-90deg)', flexShrink: 0 }} />
-                </button>
+              {/* Recent chats — every chat ended within the last 7 days, each
+                  re-openable. Hidden while a chat is active (can't run two at once);
+                  they reappear once the current chat is ended. */}
+              {!activeQuestion && pastChats.length > 0 && (
+                <>
+                  <div style={{ fontSize: 12, color: C.textMid, lineHeight: 1.5, marginTop: 6 }}>
+                    Recent chats
+                  </div>
+                  {pastChats.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => reopenChat(c)}
+                      disabled={sending}
+                      aria-label={`Reopen chat: ${c.subject || 'support chat'}, ended ${endedAgo(c.archived_at)}`}
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', padding: '11px 12px', borderRadius: 12, cursor: sending ? 'default' : 'pointer', background: 'transparent', border: `1px dashed ${C.border}`, color: C.text, minHeight: 52 }}
+                    >
+                      <span aria-hidden="true" style={{ width: 26, display: 'inline-flex', justifyContent: 'center', flexShrink: 0 }}><Icon name="reopen" size={17} color={C.textMid} /></span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.subject || 'Support chat'}</span>
+                        <span style={{ display: 'block', fontSize: 11, color: C.textMid }}>Ended {endedAgo(c.archived_at)} · tap to reopen</span>
+                      </span>
+                      <Icon name="chevron" size={13} color={C.textMid} style={{ transform: 'rotate(-90deg)', flexShrink: 0 }} />
+                    </button>
+                  ))}
+                </>
               )}
             </>
           ) : view === 'askChoice' ? (

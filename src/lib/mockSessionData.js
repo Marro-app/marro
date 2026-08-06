@@ -52,15 +52,37 @@ export function buildMockSupport() {
     // so the panel opens to the category picker by default and offers a "resume"
     // link back to this thread. (A waiting reply — unread_user > 0 — would instead
     // auto-open the thread and light the launcher badge.)
-    conversations: [{
-      id: convoId, user_id: MOCK_USER_ID, status: 'open', type: 'question',
-      priority: 'normal', subject: 'How do I add a loan?', tags: null, tech_context: null,
-      assigned_admin: 'mo@joinmarro.com', linked_issue_url: null, csat: null, csat_comment: null,
-      unread_admin: 0, unread_user: 0, reopen_count: 0,
-      created_at: isoMinsAgo(3000), last_message_at: isoMinsAgo(2880),
-      claimed_at: isoMinsAgo(2940), first_response_at: isoMinsAgo(2880),
-      resolved_at: null, resolved_by: null, archived_at: null, snooze_until: null,
-    }],
+    conversations: [
+      {
+        id: convoId, user_id: MOCK_USER_ID, status: 'open', type: 'question',
+        priority: 'normal', subject: 'How do I add a loan?', tags: null, tech_context: null,
+        assigned_admin: 'mo@joinmarro.com', linked_issue_url: null, csat: null, csat_comment: null,
+        unread_admin: 0, unread_user: 0, reopen_count: 0,
+        created_at: isoMinsAgo(3000), last_message_at: isoMinsAgo(2880),
+        claimed_at: isoMinsAgo(2940), first_response_at: isoMinsAgo(2880),
+        resolved_at: null, resolved_by: null, archived_at: null, snooze_until: null,
+      },
+      // Two chats the user already ended (archived) within the last 7 days — they
+      // populate the hub's "Recent chats" list once no chat is active.
+      {
+        id: 'c0ffee00-0000-4000-8000-000000000002', user_id: MOCK_USER_ID, status: 'archived', type: 'question',
+        priority: 'normal', subject: 'Is my Grad PLUS fee normal?', tags: null, tech_context: null,
+        assigned_admin: 'mo@joinmarro.com', linked_issue_url: null, csat: null, csat_comment: null,
+        unread_admin: 0, unread_user: 0, reopen_count: 0,
+        created_at: isoMinsAgo(1600), last_message_at: isoMinsAgo(1500),
+        claimed_at: isoMinsAgo(1560), first_response_at: isoMinsAgo(1500),
+        resolved_at: isoMinsAgo(1490), resolved_by: null, archived_at: isoMinsAgo(1490), snooze_until: null,
+      },
+      {
+        id: 'c0ffee00-0000-4000-8000-000000000003', user_id: MOCK_USER_ID, status: 'archived', type: 'question',
+        priority: 'normal', subject: 'Refund timing for spring', tags: null, tech_context: null,
+        assigned_admin: 'mo@joinmarro.com', linked_issue_url: null, csat: null, csat_comment: null,
+        unread_admin: 0, unread_user: 0, reopen_count: 0,
+        created_at: isoMinsAgo(5600), last_message_at: isoMinsAgo(5400),
+        claimed_at: isoMinsAgo(5550), first_response_at: isoMinsAgo(5400),
+        resolved_at: isoMinsAgo(5300), resolved_by: null, archived_at: isoMinsAgo(5300), snooze_until: null,
+      },
+    ],
     messages: [
       {
         id: 'a0000000-0000-4000-8000-000000000001', conversation_id: convoId,
@@ -72,6 +94,16 @@ export function buildMockSupport() {
         sender: 'admin', sender_email: 'mo@joinmarro.com',
         body: 'Head to the Loans tab and tap “Add loan” — I can walk you through it if you get stuck!',
         attachments: null, is_internal_note: false, created_at: isoMinsAgo(2880), read_at: isoMinsAgo(2870),
+      },
+      {
+        id: 'a0000000-0000-4000-8000-000000000003', conversation_id: 'c0ffee00-0000-4000-8000-000000000002',
+        sender: 'user', sender_email: null, body: 'Is the 4.2% Grad PLUS origination fee normal?',
+        attachments: null, is_internal_note: false, created_at: isoMinsAgo(1600), read_at: null,
+      },
+      {
+        id: 'a0000000-0000-4000-8000-000000000004', conversation_id: 'c0ffee00-0000-4000-8000-000000000003',
+        sender: 'user', sender_email: null, body: 'When does my spring refund usually land?',
+        attachments: null, is_internal_note: false, created_at: isoMinsAgo(5600), read_at: null,
       },
     ],
   };
