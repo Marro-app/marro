@@ -2,6 +2,16 @@
 
 Newest first. One line per finding: severity · what · fix.
 
+## 2026-08-05 — Support chat: admin inbox + reply + auto-claim (Slice 3, branch `feat/support-slice-3-admin-inbox`)
+
+New Support inbox in the admin console (`src/tabs/admin/AdminSupportSection.jsx`): conversation list with filter chips (Active/Unassigned/Mine/All), thread view, reply composer; first reply auto-claims. Verified via `?mock=1` (mock user is now admin-flagged) in dark theme, keyboard + semantics checked live; all colors are existing audited `C.*` tokens used in their established roles (unread rows reuse `C.selBg`/`C.sel`, badge is `C.bg`-on-`C.danger` per the Slice-2 contrast fix, send button `C.bg`-on-`C.teal` like the panel's).
+
+- **Controls/semantics**: every control is a real `<button>` with the app-wide `:focus-visible` ring; icon-only buttons (back, send) carry `aria-label`s; filter chips use `aria-pressed`; inbox rows are labelled buttons whose `aria-label` carries subject + sender + unread count (the visual badge is `aria-hidden`, so color/count is never the only signal); composer has a visually-hidden `<label>`, errors use `role="alert"`, thread loading uses `role="status"` + `aria-live`.
+- **Hit targets (rule 9)**: composer + send are 44px; the visually smaller back (36px), Refresh (36px), and filter chips (34px) use the existing `.hit-slop` class (`::after` inset −11px) to reach the 44×44pt clickable minimum without growing the visual footprint.
+- **Copy fix pre-ship**: relative timestamps rendered "just now ago" — added `agoLabel()` (`src/lib/supportAdmin.js`) so "just now" skips the suffix; unit-tested.
+- **No motion added** (no reduced-motion surface); no new color tokens.
+- **Harness note**: the `?mock=1` mock user is now admin-flagged and an in-memory `__mockApi` stands in for `api/admin.js`/`api/support.js`, so the full user→admin→user loop is click-testable locally. All of it stays DEV-gated — prod-safety grep (extended with `__mockApi`) verified empty on the production build.
+
 ## 2026-08-04 — Support chat: launcher + user panel (Slice 2, branch `feat/support-slice-2-panel`)
 
 New floating support launcher + slide-up glass chat panel (`src/components/support/`). Verified via `?mock=1` in both themes, desktop; keyboard + focus checks live.

@@ -14,9 +14,14 @@
 - **Slice 0** (admin console → tabs) — ✅ merged to `main`.
 - **Slice 1** (DB foundation: `supabase/support_chat.sql` — tables, RLS, user RPCs) — ✅ merged (PR #61),
   applied + verified on prod.
-- **Slice 2** (user chat panel) — ✅ built on branch `feat/support-slice-2-panel`, **PR #62** open, live on
-  the Vercel preview, **not yet merged**. **Merge PR #62 first** — Slice 3 builds on it.
-- **Next: Slice 3** (admin inbox + reply + auto-claim) → then 4…14. One branch + PR per slice.
+- **Slice 2** (user chat panel) — ✅ merged (PR #62).
+- **Slice 3** (admin inbox + reply + auto-claim) — ✅ built on branch `feat/support-slice-3-admin-inbox`.
+  `api/support.js` (service-role, admin-gated: list / thread / reply with auto-claim + `support_events`
+  log), `src/tabs/admin/AdminSupportSection.jsx` (inbox list + filters + thread + composer),
+  `src/lib/supportAdmin.js` (pure filter/label logic, Vitest-covered). The `?mock=1` harness now
+  admin-flags the mock user and stands in for the admin backends (`__mockApi` in
+  `mockSupabaseStub.js`), so the full user→admin→user loop is click-testable locally with no backend.
+- **Next: Slice 4** (Realtime) → then 5…14. One branch + PR per slice.
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file
 is idempotent — re-running it is safe.

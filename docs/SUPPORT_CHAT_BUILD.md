@@ -7,11 +7,14 @@
 > the Slice 2 build (it wins over this doc / the plan doc where they differ) and the current workflow
 > gotchas (prod SQL, the `?mock=1` harness, grant hardening).
 >
-> **PROGRESS (2026-08-05):** ✅ Slice 0 (admin tabs, PR #60) · ✅ Slice 1 (DB foundation, PR #61) — both
-> merged to `main`, DB live · ✅ Slice 2 (user chat panel) — **PR #62** open on branch
-> `feat/support-slice-2-panel`, live on the Vercel preview, **not yet merged — merge it before starting
-> Slice 3**. Full detail + all locked decisions in `docs/SUPPORT_CHAT_HANDOFF.md` §1–3. **▶ NEXT: Slice 3**
-> (admin inbox + reply + auto-claim — first end-to-end loop).
+> **PROGRESS (2026-08-05):** ✅ Slice 0 (admin tabs, PR #60) · ✅ Slice 1 (DB foundation, PR #61) ·
+> ✅ Slice 2 (user chat panel, PR #62) — all merged to `main`, DB live · ✅ Slice 3 (admin inbox +
+> reply + auto-claim) — built on branch `feat/support-slice-3-admin-inbox`: `api/support.js`
+> (list/thread/reply, admin-gated like `api/admin.js`), `src/tabs/admin/AdminSupportSection.jsx`,
+> pure inbox logic in `src/lib/supportAdmin.js` (Vitest), and the `?mock=1` harness now covers the
+> admin side (mock user is admin-flagged; in-memory `__mockApi` stands in for the admin backends).
+> No new SQL — Slice 1's tables/RLS already cover it. Full detail + locked decisions in
+> `docs/SUPPORT_CHAT_HANDOFF.md` §1–3. **▶ NEXT: Slice 4** (Realtime).
 >
 > **Per-slice template:** Goal · Depends on · Backend/DB · API · Frontend · Tests · **Done when** · Risk.
 > **Workflow (every slice):** branch → push → Vercel preview → optional `/code-review` → self-merge

@@ -82,8 +82,28 @@ export function buildMockSupport() {
         claimed_at: isoMinsAgo(5550), first_response_at: isoMinsAgo(5400),
         resolved_at: isoMinsAgo(5300), resolved_by: null, archived_at: isoMinsAgo(5300), snooze_until: null,
       },
+      // An UNASSIGNED bug report with an unread user message (unread_admin: 1)
+      // — gives the Slice-3 admin inbox an "Unassigned · unread" row so the
+      // auto-claim-on-reply flow is testable in the harness. Invisible to the
+      // user-side hub (only Questions surface there) and unread_user is 0, so
+      // it never auto-opens the user panel.
+      {
+        id: 'c0ffee00-0000-4000-8000-000000000004', user_id: MOCK_USER_ID, status: 'new', type: 'bug',
+        priority: 'normal', subject: 'What went wrong:\nCharts tab shows a blank card', tags: null, tech_context: null,
+        assigned_admin: null, linked_issue_url: null, csat: null, csat_comment: null,
+        unread_admin: 1, unread_user: 0, reopen_count: 0,
+        created_at: isoMinsAgo(90), last_message_at: isoMinsAgo(90),
+        claimed_at: null, first_response_at: null,
+        resolved_at: null, resolved_by: null, archived_at: null, snooze_until: null,
+      },
     ],
     messages: [
+      {
+        id: 'a0000000-0000-4000-8000-000000000005', conversation_id: 'c0ffee00-0000-4000-8000-000000000004',
+        sender: 'user', sender_email: null,
+        body: 'What went wrong:\nCharts tab shows a blank card\n\nWhat I was doing:\nOpened Charts right after adding a loan',
+        attachments: null, is_internal_note: false, created_at: isoMinsAgo(90), read_at: null,
+      },
       {
         id: 'a0000000-0000-4000-8000-000000000001', conversation_id: convoId,
         sender: 'user', sender_email: null, body: 'How do I add a loan to my account?',
