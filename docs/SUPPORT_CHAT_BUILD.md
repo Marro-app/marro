@@ -3,19 +3,15 @@
 > Companion to `SUPPORT_CHAT_PLAN.md` (the *what/why*). This is the *how* — each slice specced to be
 > built, tested, and merged on its own. Section numbers in refs (§n) point at the plan doc.
 >
-> **PROGRESS (2026-08-04):** ✅ Slice 0 (admin tabs, PR #60) · ✅ Slice 1 (DB foundation, PR #61) —
-> both merged to `main` and the DB is live · ✅ Slice 2 (user chat panel) — built on
-> `feat/support-slice-2-panel`: `src/lib/support.js` + `src/components/support/{SupportLauncher,SupportPanel}.jsx`,
-> mounted in `App.jsx`; `?mock=1` harness seeds a sample thread (`buildMockSupport` + stub RPCs).
-> **Scope grew past the original spec on founder feedback:** Bug/Idea are structured *forms* (not chat)
-> with a submit→confirmation flow; **single active Question at a time** (picker "Continue your chat");
-> **End chat** (confirm → archive) + **Reopen** within 7 days; category-themed motifs are crawling
-> beetles / bokeh lights. New user RPCs added to `supabase/support_chat.sql` + applied to prod:
-> `support_archive_conversation`, `support_reopen_conversation`, and a single-active-question guard in
-> `support_start_conversation`; grants hardened to `revoke … from public, anon`. Verified both themes,
-> prod-safety grep clean, 358 tests green. **▶ NEXT: Slice 3** (admin inbox + reply + auto-claim — first
-> end-to-end loop). Prod SQL is run via the Supabase Management API + `SUPABASE_ACCESS_TOKEN` env var
-> (see the `supabase-sql-access` memory).
+> **Before starting Slice 3 or later, read `docs/SUPPORT_CHAT_HANDOFF.md`** — the locked decisions from
+> the Slice 2 build (it wins over this doc / the plan doc where they differ) and the current workflow
+> gotchas (prod SQL, the `?mock=1` harness, grant hardening).
+>
+> **PROGRESS (2026-08-05):** ✅ Slice 0 (admin tabs, PR #60) · ✅ Slice 1 (DB foundation, PR #61) — both
+> merged to `main`, DB live · ✅ Slice 2 (user chat panel) — **PR #62** open on branch
+> `feat/support-slice-2-panel`, live on the Vercel preview, **not yet merged — merge it before starting
+> Slice 3**. Full detail + all locked decisions in `docs/SUPPORT_CHAT_HANDOFF.md` §1–3. **▶ NEXT: Slice 3**
+> (admin inbox + reply + auto-claim — first end-to-end loop).
 >
 > **Per-slice template:** Goal · Depends on · Backend/DB · API · Frontend · Tests · **Done when** · Risk.
 > **Workflow (every slice):** branch → push → Vercel preview → optional `/code-review` → self-merge

@@ -1,6 +1,8 @@
 # Support & Feedback Chat — Planning Doc
 
-> Status: **PLANNING** (no code yet). Decisions locked with founders 2026-08-04.
+> Status: **IN BUILD** (slices 0–2 done/in-PR, see `SUPPORT_CHAT_BUILD.md` for live progress).
+> Original decisions locked with founders 2026-08-04; **`SUPPORT_CHAT_HANDOFF.md` has the decisions made
+> since, during the Slice 2 build, and wins over this doc where they differ.**
 > Owner: Mo. Read alongside `DATA_ETHICS.md` (rule 10), `DESIGN_SYSTEM.md` + `MOTION_SYSTEM.md`
 > (rules 8/9), and CLAUDE.md rule 4 (RLS) + rule 7 (ADA).
 >
