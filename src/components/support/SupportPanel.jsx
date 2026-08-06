@@ -610,10 +610,12 @@ export default function SupportPanel({ onClose }) {
               </button>
             </div>
           ) : view === 'form' && activeForm ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            // Fills the panel: fields flex to share the space evenly (scroll INSIDE
+            // each box, no manual resize), Submit stays pinned at the bottom.
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
               {activeForm.fields.map((f) => (
-                <div key={f.key}>
-                  <label htmlFor={`${fieldId}-${f.key}`} style={{ display: 'block', fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 5 }}>
+                <div key={f.key} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                  <label htmlFor={`${fieldId}-${f.key}`} style={{ flexShrink: 0, display: 'block', fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 5 }}>
                     {f.label}{!f.required && <span style={{ color: C.textMid, fontWeight: 500 }}> (optional)</span>}
                   </label>
                   <textarea
@@ -621,19 +623,18 @@ export default function SupportPanel({ onClose }) {
                     value={form[f.key] || ''}
                     onChange={(e) => setForm((s) => ({ ...s, [f.key]: e.target.value }))}
                     placeholder={f.placeholder}
-                    rows={f.rows}
                     required={f.required}
-                    style={{ width: '100%', resize: 'vertical', minHeight: f.rows * 24, padding: '9px 11px', fontSize: 13.5, lineHeight: 1.5, fontFamily: 'inherit', borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: C.text, boxSizing: 'border-box', outline: 'none' }}
+                    style={{ flex: 1, minHeight: 44, width: '100%', resize: 'none', overflowY: 'auto', padding: '9px 11px', fontSize: 13.5, lineHeight: 1.5, fontFamily: 'inherit', borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: C.text, boxSizing: 'border-box', outline: 'none' }}
                   />
                 </div>
               ))}
-              {error && <div id={errId} role="alert" style={{ fontSize: 12, color: C.danger }}>{error}</div>}
+              {error && <div id={errId} role="alert" style={{ flexShrink: 0, fontSize: 12, color: C.danger }}>{error}</div>}
               <button
                 type="button"
                 onClick={submitForm}
                 disabled={sending || activeForm.fields.some((f) => f.required && !(form[f.key] || '').trim())}
                 className="btn-fill"
-                style={{ padding: '12px', borderRadius: 10, border: 'none', background: C.teal, color: C.bg, fontSize: 13.5, fontWeight: 700, cursor: 'pointer', minHeight: 44, opacity: (sending || activeForm.fields.some((f) => f.required && !(form[f.key] || '').trim())) ? 0.5 : 1, transition: 'opacity .15s' }}
+                style={{ flexShrink: 0, padding: '12px', borderRadius: 10, border: 'none', background: C.teal, color: C.bg, fontSize: 13.5, fontWeight: 700, cursor: 'pointer', minHeight: 44, opacity: (sending || activeForm.fields.some((f) => f.required && !(form[f.key] || '').trim())) ? 0.5 : 1, transition: 'opacity .15s' }}
               >
                 {sending ? 'Submitting…' : activeForm.submitLabel}
               </button>
