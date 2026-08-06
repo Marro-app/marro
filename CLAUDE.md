@@ -12,6 +12,7 @@ Financial companion for med students (started WCM-specific; now school-agnostic)
 - `docs/AI_COST_MODEL.md` — AI cost model, model routing, cost controls + launch safeguards, staged pricing (read before any Phase 4 AI work)
 - `docs/STRATEGY.md` — company/business/AI vision, monetization, equity, legal, infra, two-founder collaboration model (the *why* behind the roadmap)
 - `docs/DATA_ETHICS.md` — **source of truth for sell-vs-don't-sell, aggregate data, partner offers, consent, and all privacy copy (read before any data/monetization/privacy-copy work — see rule 10)**
+- **In-app support chat (in progress, slices 0–14):** `docs/SUPPORT_CHAT_PLAN.md` (what/why) → `docs/SUPPORT_CHAT_BUILD.md` (per-slice spec + current PROGRESS) → `docs/SUPPORT_CHAT_HANDOFF.md` (**locked decisions — wins over the plan doc where they differ; read before writing any support-chat code**)
 
 ## Workflow rules
 1. **Plan first** for multi-feature work — present the plan, wait for approval. Single obvious bug fixes: just do it.

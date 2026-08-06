@@ -13,7 +13,10 @@ import { Card, SectionTitle, Banner } from './primitives.jsx';
 
 // Small input helpers, kept local (they mirror the ones in LoansTab's loan cards).
 const inputStyle = (extra = {}) => ({ border: `1px solid ${C.border}`, borderRadius: 8, padding: '6px 9px', background: C.bg, color: C.text, fontSize: 13, boxSizing: 'border-box', ...extra });
-const labelStyle = { fontSize: 11, color: C.text, marginBottom: 4, display: 'block', fontWeight: 600 };
+// A FUNCTION, not a frozen object literal: C mutates in place on theme swap, so a
+// module-level object would snapshot dark-theme's cream text and stay invisible in
+// light mode (the labels-you-can't-see bug). Read live per render like inputStyle.
+const labelStyle = (extra = {}) => ({ fontSize: 11, color: C.text, marginBottom: 4, display: 'block', fontWeight: 600, ...extra });
 const cleanNumInput = (e) => {
   const v = e.target.value.replace(/[^\d.]/g, '');
   const parts = v.split('.');
@@ -81,14 +84,14 @@ export function BalanceCheckin({ data, upd, bare = false, onSaved }) {
 
       <form onSubmit={onSubmit} style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div style={{ flex: '1 1 170px' }}>
-          <label style={{ ...labelStyle, whiteSpace: 'nowrap' }} htmlFor="bal-spendable">Checking / cash amount</label>
+          <label style={labelStyle({ whiteSpace: 'nowrap' })} htmlFor="bal-spendable">Checking / cash amount</label>
           <input id="bal-spendable" type="number" min="0" value={spendable} placeholder="$0" required
             aria-label="Amount in your checking / cash, across all accounts you spend from"
             onChange={(e) => { setSpendable(cleanNumInput(e)); setConfirming(false); setJustSaved(false); }}
             style={inputStyle({ width: '100%' })} />
         </div>
         <div style={{ flex: '1 1 130px' }}>
-          <label style={labelStyle} htmlFor="bal-savings">Set aside in savings</label>
+          <label style={labelStyle()} htmlFor="bal-savings">Set aside in savings</label>
           <input id="bal-savings" type="number" min="0" value={savings} placeholder="$0"
             aria-label="Set aside in savings, optional"
             onChange={(e) => setSavings(cleanNumInput(e))} style={inputStyle({ width: '100%' })} />

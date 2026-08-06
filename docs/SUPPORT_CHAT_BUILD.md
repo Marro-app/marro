@@ -3,6 +3,16 @@
 > Companion to `SUPPORT_CHAT_PLAN.md` (the *what/why*). This is the *how* — each slice specced to be
 > built, tested, and merged on its own. Section numbers in refs (§n) point at the plan doc.
 >
+> **Before starting Slice 3 or later, read `docs/SUPPORT_CHAT_HANDOFF.md`** — the locked decisions from
+> the Slice 2 build (it wins over this doc / the plan doc where they differ) and the current workflow
+> gotchas (prod SQL, the `?mock=1` harness, grant hardening).
+>
+> **PROGRESS (2026-08-05):** ✅ Slice 0 (admin tabs, PR #60) · ✅ Slice 1 (DB foundation, PR #61) — both
+> merged to `main`, DB live · ✅ Slice 2 (user chat panel) — **PR #62** open on branch
+> `feat/support-slice-2-panel`, live on the Vercel preview, **not yet merged — merge it before starting
+> Slice 3**. Full detail + all locked decisions in `docs/SUPPORT_CHAT_HANDOFF.md` §1–3. **▶ NEXT: Slice 3**
+> (admin inbox + reply + auto-claim — first end-to-end loop).
+>
 > **Per-slice template:** Goal · Depends on · Backend/DB · API · Frontend · Tests · **Done when** · Risk.
 > **Workflow (every slice):** branch → push → Vercel preview → optional `/code-review` → self-merge
 > (CONTRIBUTING). Never push to `main`.

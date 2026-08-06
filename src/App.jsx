@@ -8,6 +8,7 @@ import { InviteGate } from './landing/InviteGate.jsx';
 import { InviteFriendsModal } from './components/InviteFriendsModal.jsx';
 import { BalanceCheckin } from './components/BalanceCheckin.jsx';
 import { NotificationBanner } from './components/NotificationBanner.jsx';
+import SupportLauncher from './components/support/SupportLauncher.jsx';
 import { fmt, fmtS, fmtD, fmtDay, fmtDayYear, fmtA, moTotal, getMonday, getSunday, daysUntil, subMonthlyTotal, yr2, BLANK_MONTHLY, blankYearFields, generateYearConfigs, DEFAULT_CATS, MONTH_NAMES, SETUP_VERSION, DEFAULT_STATE, todayStr, yearMonthRange, pruneAllYears } from './lib/format.js';
 import { projectDebtAtGraduation, computeRunway, estimateRefunds, refundNudgeState, readingAgeDays } from './lib/loans.js';
 import { yearAidBreakdown, unmatchedLoans, availableMoney, coveredMonthIndices } from './lib/aid.js';
@@ -1461,6 +1462,9 @@ export function App() {
 
       {/* ── Notifications banner — "something changed" / referral joins, any signed-in user ── */}
       <NotificationBanner/>
+
+      {/* ── Support & feedback launcher — floating, any signed-in user (Slice 2) ── */}
+      <SupportLauncher/>
 
       {/* ── Offline banner ── */}
       {syncStatus==="offline" && (

@@ -278,11 +278,11 @@
   /* Subtle themed scrollbar for in-panel scroll areas (avatar gallery, modal panels,
      Quick Add's History list) — without this, nested scrollable divs fall back to the
      browser's default (often light/white) scrollbar even inside a dark modal. */
-  .av-scroll, .mm, .themed-scroll { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb, rgba(140,138,128,0.35)) transparent; }
-  .av-scroll::-webkit-scrollbar, .mm::-webkit-scrollbar, .themed-scroll::-webkit-scrollbar { width: 6px; }
-  .av-scroll::-webkit-scrollbar-track, .mm::-webkit-scrollbar-track, .themed-scroll::-webkit-scrollbar-track { background: transparent; }
-  .av-scroll::-webkit-scrollbar-thumb, .mm::-webkit-scrollbar-thumb, .themed-scroll::-webkit-scrollbar-thumb { background: var(--scroll-thumb, rgba(140,138,128,0.32)); border-radius: 6px; }
-  .av-scroll::-webkit-scrollbar-thumb:hover, .mm::-webkit-scrollbar-thumb:hover, .themed-scroll::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover, rgba(140,138,128,0.5)); }
+  .av-scroll, .mm, .themed-scroll, .scrollx { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb, rgba(140,138,128,0.35)) transparent; }
+  .av-scroll::-webkit-scrollbar, .mm::-webkit-scrollbar, .themed-scroll::-webkit-scrollbar, .scrollx::-webkit-scrollbar { width: 6px; height: 6px; }
+  .av-scroll::-webkit-scrollbar-track, .mm::-webkit-scrollbar-track, .themed-scroll::-webkit-scrollbar-track, .scrollx::-webkit-scrollbar-track { background: transparent; }
+  .av-scroll::-webkit-scrollbar-thumb, .mm::-webkit-scrollbar-thumb, .themed-scroll::-webkit-scrollbar-thumb, .scrollx::-webkit-scrollbar-thumb { background: var(--scroll-thumb, rgba(140,138,128,0.32)); border-radius: 6px; }
+  .av-scroll::-webkit-scrollbar-thumb:hover, .mm::-webkit-scrollbar-thumb:hover, .themed-scroll::-webkit-scrollbar-thumb:hover, .scrollx::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover, rgba(140,138,128,0.5)); }
 
   /* ── Ambient blob background ── */
   .blob-layer {
