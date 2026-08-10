@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { C } from '../../lib/theme.js';
-import { Card, SectionTitle, EmptyState } from '../../components/primitives.jsx';
+import { Card, SectionTitle, EmptyState, Modal } from '../../components/primitives.jsx';
 import { Icon } from '../../components/icons.jsx';
 import { supportAdminCall } from '../../lib/data.js';
 import { categoryForType, subscribeToMessages, subscribeToConversations } from '../../lib/support.js';
 import { INBOX_FILTERS, filterInbox, agoLabel, handledByLabel } from '../../lib/supportAdmin.js';
-import { resolveAvailability } from '../../lib/supportAvailability.js';
+import { resolveAvailability, DEFAULT_BUSINESS_HOURS } from '../../lib/supportAvailability.js';
 import { canTransition, waitingLabel } from '../../lib/supportLifecycle.js';
 import { joinSupportPresence, presenceLabel } from '../../lib/supportPresence.js';
 import AttachmentImg from '../../components/support/AttachmentImg.jsx';
@@ -21,6 +21,51 @@ const OVERRIDE_OPTIONS = [
   { key: 'on', label: 'Available' },
   { key: 'off', label: 'Away' },
 ];
+
+// Curated common zones — the caller's own saved tz is always included even
+// if it's not in this list (e.g. set some other way), so the select never
+// silently drops their choice.
+const TIMEZONE_OPTIONS = [
+  { value: 'America/New_York', label: 'Eastern' },
+  { value: 'America/Chicago', label: 'Central' },
+  { value: 'America/Denver', label: 'Mountain' },
+  { value: 'America/Los_Angeles', label: 'Pacific' },
+  { value: 'America/Anchorage', label: 'Alaska' },
+  { value: 'Pacific/Honolulu', label: 'Hawaii' },
+  { value: 'UTC', label: 'UTC' },
+];
+
+const DAY_ROWS = [
+  { key: 'mon', label: 'Monday' }, { key: 'tue', label: 'Tuesday' }, { key: 'wed', label: 'Wednesday' },
+  { key: 'thu', label: 'Thursday' }, { key: 'fri', label: 'Friday' }, { key: 'sat', label: 'Saturday' },
+  { key: 'sun', label: 'Sunday' },
+];
+
+function formatHour(h) {
+  const hour = h % 24;
+  const period = hour < 12 ? 'AM' : 'PM';
+  const twelve = hour % 12 === 0 ? 12 : hour % 12;
+  return h === 24 ? 'Midnight' : `${twelve}:00 ${period}`;
+}
+// Start options exclude 24 (a block can't start at midnight-the-end-marker);
+// end options exclude 0 (a block can't end at midnight-the-start-marker) and
+// include 24 (through midnight).
+const START_HOURS = Array.from({ length: 24 }, (_, h) => h);
+const END_HOURS = Array.from({ length: 24 }, (_, h) => h + 1);
+
+// Pre-fills the editor with the EFFECTIVE schedule (falling back to the
+// 9am-9pm default per day, same as the resolver does) rather than a blank
+// slate — so opening the editor for the first time shows what's actually
+// in effect, not "nothing set up."
+function defaultDraftHours(current) {
+  const base = current && typeof current === 'object' ? current : {};
+  const tz = base.tz || DEFAULT_BUSINESS_HOURS.tz;
+  const days = {};
+  for (const { key } of DAY_ROWS) {
+    days[key] = Array.isArray(base[key]) ? base[key] : DEFAULT_BUSINESS_HOURS[key];
+  }
+  return { tz, ...days };
+}
 
 // Support inbox (Slice 3) — list conversations, open a thread, reply.
 // Every action goes through api/support.js (service-role, admin re-checked
@@ -116,6 +161,22 @@ export default function AdminSupportSection({ initialConversationId, onInitialCo
     const res = await supportAdminCall('set_availability', { override });
     if (res?.ok && res.settings) setSettings(res.settings);
   }, []);
+
+  // Business-hours editor (per-admin): opens with the EFFECTIVE current
+  // schedule as its starting draft, saves the whole thing atomically.
+  const [hoursOpen, setHoursOpen] = useState(false);
+  const [draftHours, setDraftHours] = useState(null);
+  const [savingHours, setSavingHours] = useState(false);
+  const openHoursEditor = useCallback(() => {
+    setDraftHours(defaultDraftHours(settings?.business_hours));
+    setHoursOpen(true);
+  }, [settings]);
+  const saveBusinessHours = useCallback(async () => {
+    setSavingHours(true);
+    const res = await supportAdminCall('set_business_hours', { business_hours: draftHours });
+    setSavingHours(false);
+    if (res?.ok && res.settings) { setSettings(res.settings); setHoursOpen(false); }
+  }, [draftHours]);
 
   // Canned replies (Slice 14): load once per console visit.
   useEffect(() => {
@@ -579,18 +640,21 @@ export default function AdminSupportSection({ initialConversationId, onInitialCo
         </button>
       </div>
 
-      {/* Availability (Slice 6): live pill (text + color, never color alone)
-          + the manual override. The pill reflects the same resolver the user
-          panel's status line reads, so what we advertise is what they see. */}
+      {/* Availability (Slice 6, per-admin): live pill (text + color, never
+          color alone) + the manual override — both scoped to the CALLER's
+          own row now, not a shared team toggle. The team-wide "we're online"
+          the user sees is the OR of every admin's own pill (resolveTeamAvailability).
+          Kept in its own bordered strip, separate from the inbox filter row
+          below — two different concerns that were reading as one crowded line. */}
       {(() => {
         const avail = resolveAvailability(Date.now(), settings);
         const current = settings?.online_override || 'auto';
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', margin: '10px 0 2px' }}>
-            <span role="status" style={{ fontSize: 11.5, fontWeight: 700, color: avail.online ? C.green : C.textMid, background: avail.online ? C.greenLight : C.surface, border: `1px solid ${C.border}`, borderRadius: 999, padding: '4px 10px' }}>
-              {avail.online ? 'Shown as online' : 'Shown as away'}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', margin: '10px 0 14px', padding: '8px 10px', borderRadius: 12, border: `1px solid ${C.border}`, background: C.surface }}>
+            <span role="status" style={{ fontSize: 11.5, fontWeight: 700, color: avail.online ? C.green : C.textMid, background: avail.online ? C.greenLight : 'transparent', border: `1px solid ${avail.online ? 'transparent' : C.border}`, borderRadius: 999, padding: '4px 10px' }}>
+              {avail.online ? "You're online" : "You're away"}
             </span>
-            <div role="group" aria-label="Availability override" style={{ display: 'flex', gap: 4 }}>
+            <div role="group" aria-label="Your availability override" style={{ display: 'flex', gap: 4 }}>
               {OVERRIDE_OPTIONS.map((o) => {
                 const active = current === o.key;
                 return (
@@ -602,10 +666,98 @@ export default function AdminSupportSection({ initialConversationId, onInitialCo
                 );
               })}
             </div>
-            <span style={{ fontSize: 10.5, color: C.textMid }}>Auto = business hours + console open</span>
+            <button type="button" onClick={openHoursEditor} aria-label="Edit your business hours" title="Edit your business hours" className="hit-slop"
+              style={{ marginLeft: 'auto', minWidth: 30, minHeight: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                borderRadius: 999, border: `1px solid ${C.border}`, background: 'transparent', color: C.textMid, cursor: 'pointer' }}>
+              <Icon name="settings" size={15} color={C.textMid} />
+            </button>
           </div>
         );
       })()}
+
+      {hoursOpen && draftHours && (
+        <Modal title="Your business hours" onClose={() => setHoursOpen(false)} width={520}>
+          <p style={{ fontSize: 12.5, color: C.textMid, margin: '0 0 14px' }}>
+            Used by "Auto" to decide when you count as online. Each day can have its own hours, or none at all.
+          </p>
+          <label htmlFor="avail-tz" style={{ fontSize: 12.5, fontWeight: 600, display: 'block', marginBottom: 4 }}>Timezone</label>
+          <select id="avail-tz" value={draftHours.tz}
+            onChange={(e) => setDraftHours((d) => ({ ...d, tz: e.target.value }))}
+            style={{ width: '100%', minHeight: 40, padding: '6px 10px', borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.text, marginBottom: 16 }}>
+            {TIMEZONE_OPTIONS.some((t) => t.value === draftHours.tz) ? null
+              : <option value={draftHours.tz}>{draftHours.tz}</option>}
+            {TIMEZONE_OPTIONS.map((t) => <option key={t.value} value={t.value}>{t.label} ({t.value})</option>)}
+          </select>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {DAY_ROWS.map(({ key, label }) => {
+              const blocks = draftHours[key] || [];
+              const working = blocks.length > 0;
+              const dayLegendId = `avail-day-${key}`;
+              return (
+                <div key={key} style={{ border: `1px solid ${C.border}`, borderRadius: 10, padding: '10px 12px' }} role="group" aria-labelledby={dayLegendId}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label id={dayLegendId} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, flex: 1 }}>
+                      <input type="checkbox" checked={working} onChange={(e) => {
+                        setDraftHours((d) => ({ ...d, [key]: e.target.checked ? [{ start: 9, end: 17 }] : [] }));
+                      }} />
+                      {label}
+                    </label>
+                    {working && (
+                      <button type="button" onClick={() => setDraftHours((d) => ({ ...d, [key]: [...(d[key] || []), { start: 9, end: 17 }] }))}
+                        className="hit-slop" style={{ fontSize: 11.5, fontWeight: 600, color: C.sel, background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                        + Add a range
+                      </button>
+                    )}
+                  </div>
+                  {working && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                      {blocks.map((b, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <select value={b.start} aria-label={`${label} range ${i + 1} start time`}
+                            onChange={(e) => setDraftHours((d) => {
+                              const next = [...d[key]]; next[i] = { ...next[i], start: Number(e.target.value) };
+                              return { ...d, [key]: next };
+                            })}
+                            style={{ minHeight: 34, padding: '4px 8px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surface, color: C.text }}>
+                            {START_HOURS.map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
+                          </select>
+                          <span style={{ fontSize: 11.5, color: C.textMid }}>to</span>
+                          <select value={b.end} aria-label={`${label} range ${i + 1} end time`}
+                            onChange={(e) => setDraftHours((d) => {
+                              const next = [...d[key]]; next[i] = { ...next[i], end: Number(e.target.value) };
+                              return { ...d, [key]: next };
+                            })}
+                            style={{ minHeight: 34, padding: '4px 8px', borderRadius: 6, border: `1px solid ${C.border}`, background: C.surface, color: C.text }}>
+                            {END_HOURS.map((h) => <option key={h} value={h}>{formatHour(h)}</option>)}
+                          </select>
+                          {blocks.length > 1 && (
+                            <button type="button" aria-label={`Remove ${label} range ${i + 1}`}
+                              onClick={() => setDraftHours((d) => ({ ...d, [key]: d[key].filter((_, j) => j !== i) }))}
+                              className="hit-slop" style={{ fontSize: 11.5, color: C.danger, background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+            <button type="button" onClick={() => setHoursOpen(false)} className="btn-pop" style={{ minHeight: 44, padding: '8px 16px', borderRadius: 10, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, cursor: 'pointer' }}>
+              Cancel
+            </button>
+            <button type="button" onClick={saveBusinessHours} disabled={savingHours} className="btn-fill"
+              style={{ minHeight: 44, padding: '8px 16px', borderRadius: 10, border: 'none', background: C.teal, color: C.bg, cursor: savingHours ? 'default' : 'pointer', opacity: savingHours ? 0.7 : 1 }}>
+              {savingHours ? 'Saving…' : 'Save hours'}
+            </button>
+          </div>
+        </Modal>
+      )}
 
       <div role="group" aria-label="Inbox filters" style={{ display: 'flex', gap: 6, margin: '10px 0 12px', flexWrap: 'wrap' }}>
         {INBOX_FILTERS.map((f) => {

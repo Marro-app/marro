@@ -345,45 +345,67 @@ export default async function handler(req, res) {
       }
 
       case 'settings': {
-        // Current availability config for the admin toggle UI.
+        // The caller's OWN availability row for the "Your availability" UI
+        // (per-admin, not shared — see support_admin_availability.sql).
         const { data: settings, error } = await admin
-          .from('support_settings').select('*').eq('id', 1).maybeSingle();
+          .from('support_admin_availability').select('*').eq('admin_email', callerEmail).maybeSingle();
         if (error) throw error;
         return res.status(200).json({ ok: true, settings: settings || null });
       }
 
       case 'heartbeat': {
-        // Bumped while an admin has the Support console open — the availability
-        // resolver treats a stale heartbeat as "not really here" (plan §3).
+        // Bumped while THIS admin has the Support console open — the
+        // availability resolver treats a stale heartbeat as "not really
+        // here" (plan §3). Scoped to the caller's own row.
+        const nowIso = new Date().toISOString();
         const { data: settings, error } = await admin
-          .from('support_settings')
-          .upsert({ id: 1, last_admin_heartbeat: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict: 'id' })
+          .from('support_admin_availability')
+          .upsert({ admin_email: callerEmail, last_heartbeat: nowIso, updated_at: nowIso }, { onConflict: 'admin_email' })
           .select('*');
         if (error) throw error;
         return res.status(200).json({ ok: true, settings: settings?.[0] || null });
       }
 
       case 'set_availability': {
-        // The in-app manual toggle: 'auto' | 'on' | 'off'. Going 'on' also
-        // stamps available_until (the §3 timeout window) and refreshes the
-        // heartbeat so the flip is immediately honest.
+        // The in-app manual toggle: 'auto' | 'on' | 'off', scoped to the
+        // caller's own row. Going 'on' also stamps available_until (the §3
+        // timeout window) and refreshes the heartbeat so the flip is
+        // immediately honest.
         const override = String(body.override || '');
         if (!['auto', 'on', 'off'].includes(override)) {
           return res.status(400).json({ error: 'Invalid override' });
         }
         const nowIso = new Date().toISOString();
-        const patch = { id: 1, online_override: override, updated_at: nowIso };
+        const patch = { admin_email: callerEmail, online_override: override, updated_at: nowIso };
         if (override === 'on') {
           patch.available_until = new Date(Date.now() + 60 * 60000).toISOString(); // 1h window
-          patch.last_admin_heartbeat = nowIso;
+          patch.last_heartbeat = nowIso;
         }
         const { data: settings, error } = await admin
-          .from('support_settings').upsert(patch, { onConflict: 'id' }).select('*');
+          .from('support_admin_availability').upsert(patch, { onConflict: 'admin_email' }).select('*');
         if (error) throw error;
         const { error: evErr } = await admin.from('support_events').insert({
           conversation_id: null, admin_email: callerEmail, action: 'availability_changed', meta: { override },
         });
         if (evErr) console.error('support: availability event log failed', evErr.message);
+        return res.status(200).json({ ok: true, settings: settings?.[0] || null });
+      }
+
+      case 'set_business_hours': {
+        // Per-day/timezone schedule for the caller's own row — see the
+        // withinBusinessHours shape doc in supportAvailability.js. Light
+        // validation only (shape, not exhaustive) since this never gates
+        // anything security-sensitive, just the "are we online" copy.
+        const businessHours = body.business_hours;
+        if (!businessHours || typeof businessHours !== 'object' || typeof businessHours.tz !== 'string') {
+          return res.status(400).json({ error: 'Invalid business_hours' });
+        }
+        const nowIso = new Date().toISOString();
+        const { data: settings, error } = await admin
+          .from('support_admin_availability')
+          .upsert({ admin_email: callerEmail, business_hours: businessHours, updated_at: nowIso }, { onConflict: 'admin_email' })
+          .select('*');
+        if (error) throw error;
         return res.status(200).json({ ok: true, settings: settings?.[0] || null });
       }
 

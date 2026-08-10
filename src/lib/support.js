@@ -101,17 +101,17 @@ export async function rateConversation({ conversationId, csat, comment = null })
   if (error) throw error;
 }
 
-// ── Availability (Slice 6) ──────────────────────────────────────────────────
-// The panel's status line: read the single settings row (RLS: any signed-in
-// user) and resolve it client-side. Null on any failure → callers fall back
-// to the neutral "we usually reply within a day" copy.
+// ── Availability (Slice 6, per-admin) ───────────────────────────────────────
+// The panel's status line: read every admin's row (RLS: any signed-in user)
+// and resolve "is anyone online" client-side. Null on any failure → callers
+// fall back to the neutral "we usually reply within a day" copy.
 export async function fetchAvailability() {
   try {
     const sb = await getSupabase();
-    const { data, error } = await sb.from('support_settings').select('*').eq('id', 1).maybeSingle();
+    const { data, error } = await sb.from('support_admin_availability').select('*');
     if (error) return null;
-    const { resolveAvailability } = await import('./supportAvailability.js');
-    return resolveAvailability(Date.now(), data);
+    const { resolveTeamAvailability } = await import('./supportAvailability.js');
+    return resolveTeamAvailability(Date.now(), data);
   } catch {
     return null;
   }

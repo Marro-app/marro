@@ -214,8 +214,9 @@ export default function SupportPanel({ onClose }) {
   const [csatComment, setCsatComment] = useState('');
   const [csatState, setCsatState] = useState('idle'); // 'idle' | 'sending' | 'done'
 
-  // Honest status line (Slice 6): resolved from support_settings on open.
-  // Null (loading/failed) renders the neutral default copy.
+  // Honest status line (Slice 6): resolved from every admin's availability
+  // row on open (online if any admin currently is). Null (loading/failed)
+  // renders the neutral default copy.
   useEffect(() => {
     let alive = true;
     fetchAvailability().then((a) => { if (alive) setAvailability(a); });

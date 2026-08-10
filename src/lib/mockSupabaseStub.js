@@ -419,14 +419,17 @@ function mockApi(kind, action, params, store) {
       return { ok: true, nudges: [...nudges] };
     });
   }
-  if (action === 'settings' || action === 'heartbeat' || action === 'set_availability') {
-    const rows = store.support_settings || (store.support_settings = []);
-    const st = rows[0] || (rows[0] = { id: 1, online_override: 'auto', business_hours: { tz: 'America/New_York', start: 9, end: 21 }, available_until: null, last_admin_heartbeat: null });
-    if (action === 'heartbeat') st.last_admin_heartbeat = now();
+  if (action === 'settings' || action === 'heartbeat' || action === 'set_availability' || action === 'set_business_hours') {
+    // Per-admin table, but the mock harness only ever has one admin (MOCK_EMAIL).
+    const rows = store.support_admin_availability || (store.support_admin_availability = []);
+    let st = rows.find((r) => r.admin_email === MOCK_EMAIL);
+    if (!st) { st = { admin_email: MOCK_EMAIL, online_override: 'auto', business_hours: { tz: 'America/New_York' }, available_until: null, last_heartbeat: null }; rows.push(st); }
+    if (action === 'heartbeat') st.last_heartbeat = now();
     if (action === 'set_availability') {
       st.online_override = ['auto', 'on', 'off'].includes(params?.override) ? params.override : 'auto';
-      if (st.online_override === 'on') { st.available_until = new Date(Date.now() + 3600000).toISOString(); st.last_admin_heartbeat = now(); }
+      if (st.online_override === 'on') { st.available_until = new Date(Date.now() + 3600000).toISOString(); st.last_heartbeat = now(); }
     }
+    if (action === 'set_business_hours' && params?.business_hours) st.business_hours = params.business_hours;
     st.updated_at = now();
     return { ok: true, settings: { ...st } };
   }
@@ -469,7 +472,7 @@ export function createMockSupabaseStub() {
     support_conversations: seed.conversations,
     support_messages: seed.messages,
     support_events: [],
-    support_settings: [{ id: 1, online_override: 'auto', business_hours: { tz: 'America/New_York', start: 9, end: 21 }, available_until: null, last_admin_heartbeat: null, updated_at: new Date().toISOString() }],
+    support_admin_availability: [{ admin_email: MOCK_EMAIL, online_override: 'auto', business_hours: { tz: 'America/New_York' }, available_until: null, last_heartbeat: null, updated_at: new Date().toISOString() }],
     user_notifications: [],
   };
   const subscribers = new Set();

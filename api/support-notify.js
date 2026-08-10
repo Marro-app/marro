@@ -25,7 +25,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './_config.js';
 // Pure, side-effect-free (unlike the src/lib/data.js import api/_config.js
 // exists to avoid) — the SAME resolver the panel's status line uses, so the
 // reassurance gate and the "We're online" line can never disagree.
-import { resolveAvailability } from '../src/lib/supportAvailability.js';
+import { resolveTeamAvailability } from '../src/lib/supportAvailability.js';
 import { buildSupportAlertContent, postDiscordAlert } from './_discord.js';
 
 // One Discord ping per conversation per window — a burst of follow-up
@@ -84,12 +84,12 @@ export default async function handler(req, res) {
     // ── 1. Auto-reassurance (questions only, once per conversation) ──────────
     // Slice 6: keyed off the availability resolver (was "unclaimed" in slice
     // 5) — if we're honestly offline, say so, even on a claimed thread.
+    // Per-admin availability: online if ANY admin currently resolves online.
     let online = false;
     try {
-      const { data: settings } = await admin
-        .from('support_settings').select('*').eq('id', 1).maybeSingle();
-      online = resolveAvailability(Date.now(), settings).online;
-    } catch { /* missing settings row resolves offline — safe default */ }
+      const { data: rows } = await admin.from('support_admin_availability').select('*');
+      online = resolveTeamAvailability(Date.now(), rows).online;
+    } catch { /* no rows / lookup failure resolves offline — safe default */ }
     let reassured = false;
     if (convo.type === 'question' && !online) {
       const { data: existingSystem, error: sysErr } = await admin
