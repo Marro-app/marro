@@ -489,6 +489,36 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, conversation: updated[0] });
       }
 
+      case 'canned_list': {
+        const { data, error } = await admin
+          .from('support_canned_replies').select('*').order('created_at', { ascending: true }).limit(50);
+        if (error) throw error;
+        return res.status(200).json({ ok: true, canned: data || [] });
+      }
+
+      case 'canned_save': {
+        // Save a reusable reply (Slice 14). Title defaults to the first words.
+        const text = typeof body.body === 'string' ? body.body.trim() : '';
+        if (!text) return res.status(400).json({ error: 'Reply text required' });
+        const title = (typeof body.title === 'string' && body.title.trim())
+          ? body.title.trim().slice(0, 60)
+          : text.replace(/\s+/g, ' ').slice(0, 40);
+        const { data, error } = await admin
+          .from('support_canned_replies')
+          .insert({ title, body: text.slice(0, 2000), created_by: callerEmail })
+          .select('*');
+        if (error) throw error;
+        return res.status(200).json({ ok: true, canned: data?.[0] || null });
+      }
+
+      case 'canned_delete': {
+        const id = String(body.canned_id || '');
+        if (!id) return res.status(400).json({ error: 'Missing canned_id' });
+        const { error } = await admin.from('support_canned_replies').delete().eq('id', id);
+        if (error) throw error;
+        return res.status(200).json({ ok: true });
+      }
+
       case 'nudge_create': {
         // Manual proactive nudge (Slice 13). Held until send_after, then the
         // still-relevant gate re-checks before anything actually goes out.

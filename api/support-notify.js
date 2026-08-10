@@ -109,8 +109,11 @@ export default async function handler(req, res) {
     // Feature-flagged by the env var: absent → silently skipped, everything
     // else still works (lets the preview deploy run without the secret).
     let pinged = false;
+    // Fan-out (Slice 14): Discord + Slack, each feature-flagged by its env
+    // var; the shared per-conversation debounce covers both channels.
     const webhook = process.env.DISCORD_SUPPORT_WEBHOOK_URL;
-    if (webhook) {
+    const slackWebhook = process.env.SLACK_SUPPORT_WEBHOOK_URL;
+    if (webhook || slackWebhook) {
       const since = new Date(Date.now() - PING_DEBOUNCE_MINUTES * 60000).toISOString();
       const { data: recentPing, error: pingErr } = await admin
         .from('support_events')
@@ -128,25 +131,36 @@ export default async function handler(req, res) {
           ? `→ ${convo.assigned_admin} (their thread)`
           : '→ unassigned — first reply claims it';
         const content = `🆘 Support · new ${typeLabel} from ${callerEmail}\n> ${subject}\n${routing} · reply at https://joinmarro.com (Admin → Support)`;
-        try {
-          const resp = await fetch(webhook, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content }),
-          });
-          pinged = resp.ok;
-          if (!resp.ok) console.error('support-notify: Discord webhook returned', resp.status);
-        } catch (e) {
-          // Never fail the request over a webhook hiccup — the message itself
-          // is already stored; the in-app inbox badge still works.
-          console.error('support-notify: Discord webhook failed', e?.message);
+        const channels = [];
+        // Never fail the request over a webhook hiccup — the message itself
+        // is already stored; the in-app inbox badge still works.
+        if (webhook) {
+          try {
+            const resp = await fetch(webhook, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content }),
+            });
+            if (resp.ok) channels.push('discord');
+            else console.error('support-notify: Discord webhook returned', resp.status);
+          } catch (e) { console.error('support-notify: Discord webhook failed', e?.message); }
         }
+        if (slackWebhook) {
+          try {
+            const resp = await fetch(slackWebhook, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: content }), // Slack wants `text`
+            });
+            if (resp.ok) channels.push('slack');
+            else console.error('support-notify: Slack webhook returned', resp.status);
+          } catch (e) { console.error('support-notify: Slack webhook failed', e?.message); }
+        }
+        pinged = channels.length > 0;
         if (pinged) {
           const { error: evErr } = await admin.from('support_events').insert({
             conversation_id: conversationId,
             admin_email: 'system',
-            action: 'discord_ping',
-            meta: { type: convo.type, assigned_admin: convo.assigned_admin || null },
+            action: 'discord_ping', // legacy name; meta.channels says who actually got it
+            meta: { type: convo.type, assigned_admin: convo.assigned_admin || null, channels },
           });
           if (evErr) console.error('support-notify: ping event log failed', evErr.message);
         }

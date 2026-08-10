@@ -9,7 +9,46 @@
 
 ---
 
-## 1. Status snapshot (2026-08-05)
+## 1. Status snapshot (2026-08-08 — ALL SLICES BUILT & PUSHED)
+
+**TL;DR for a fresh session (including Mo's):** every slice (0–14) is built. 0–2 are merged; 3–14 are
+open PRs **stacked in a chain** — each PR's base is the previous slice's branch, so each diff shows
+only its own slice. **Merge strictly in order** #63 → #64 → … → #74 (after each merge, GitHub
+retargets the next PR onto main automatically; if a PR shows conflicts, `gh pr update-branch` it).
+Never push to `main` directly.
+
+| PR | Slice | Branch |
+|---|---|---|
+| [#63](https://github.com/Marro-app/marro/pull/63) | 3 · Admin inbox + reply + auto-claim | `feat/support-slice-3-admin-inbox` |
+| [#64](https://github.com/Marro-app/marro/pull/64) | 4 · Realtime (live both directions) | `feat/support-slice-4-realtime` |
+| [#65](https://github.com/Marro-app/marro/pull/65) | 5 · Discord alerts + auto-reassurance | `feat/support-slice-5-alerts` |
+| [#66](https://github.com/Marro-app/marro/pull/66) | 6 · Availability + reply banner | `feat/support-slice-6-availability` |
+| [#67](https://github.com/Marro-app/marro/pull/67) | 7 · Lifecycle, queues + archive | `feat/support-slice-7-lifecycle` |
+| [#68](https://github.com/Marro-app/marro/pull/68) | 8 · Presence soft-lock | `feat/support-slice-8-presence` |
+| [#69](https://github.com/Marro-app/marro/pull/69) | 9 · Triage depth | `feat/support-slice-9-triage` |
+| [#70](https://github.com/Marro-app/marro/pull/70) | 10 · Screenshot + annotate | `feat/support-slice-10-screenshot` |
+| [#71](https://github.com/Marro-app/marro/pull/71) | 11 · CSAT + away email | `feat/support-slice-11-csat` |
+| [#72](https://github.com/Marro-app/marro/pull/72) | 12 · Metrics dashboard | `feat/support-slice-12-metrics` |
+| [#73](https://github.com/Marro-app/marro/pull/73) | 13 · Nudges + still-relevant gate | `feat/support-slice-13-nudges` |
+| [#74](https://github.com/Marro-app/marro/pull/74) | 14 · Polish (rate limits, canned, Slack) | `feat/support-slice-14-polish` |
+
+**Founder manual steps (once, as slices land):**
+1. **Studio SQL, in this order** (all idempotent): re-run `support_chat.sql` → `support_realtime.sql`
+   → `support_settings.sql` → `support_attachments.sql` → `support_csat.sql` → `support_metrics.sql`
+   → `support_nudges.sql` → `support_canned.sql`.
+2. **Vercel env:** `DISCORD_SUPPORT_WEBHOOK_URL` (required for pings) · `SLACK_SUPPORT_WEBHOOK_URL`
+   (optional).
+3. **Two-browser tests** (need two admin accounts): live "Handled by" flip (slice 4) and
+   viewing/typing presence chips (slice 8).
+
+**Deferred, deliberately:** Web Push (PWA service-worker surgery — own branch later) ·
+html2canvas render-from-code screenshot fallback (upload covers it) · detector-triggered nudges
+(manual only until real usage signals exist) · the deep profile drill-down (blocked on the plan-§4
+Terms/Privacy language) · inbound email→thread.
+
+---
+
+## 1b. Original status snapshot (2026-08-05, superseded by the above)
 
 - **Slice 0** (admin console → tabs) — ✅ merged to `main`.
 - **Slice 1** (DB foundation: `supabase/support_chat.sql` — tables, RLS, user RPCs) — ✅ merged (PR #61),
@@ -116,7 +155,21 @@
   auto-send unverifiable conditions). Evaluation is lazy on `nudge_list` (no cron); delivery =
   `user_notifications` (kind `nudge`); `nudge_sent`/`nudge_cancelled` support_events feed the §13.5
   F metrics later. Composer shows a live "still relevant?" warning (600ms-debounced context check).
-- **Next: Slice 14** (polish) — remaining: rate limiting, canned replies, Slack channel, Web Push.
+- **Slice 14** (polish) — ✅ built on branch `feat/support-slice-14-polish`. (a) **Rate limiting**
+  inside the user RPCs (10 new threads + 60 user messages per user per 24h; friendly P0001 messages
+  the panel surfaces verbatim) — **re-run `supabase/support_chat.sql`**; the RPC copy that briefly
+  lived in `support_attachments.sql` was removed so files can't drift. (b) **Canned replies** —
+  `supabase/support_canned.sql` (service-role-only table), composer picker (+ "Save draft as
+  canned", manage/delete), shared between admins. (c) **Slack channel** — `api/support-notify.js`
+  fans out to Discord AND Slack (`SLACK_SUPPORT_WEBHOOK_URL`, optional), one shared debounce, the
+  event's `meta.channels` records who got it. (d) **Web Push — DEFERRED**: it's the one add-on that
+  touches the PWA service worker (vite-plugin-pwa injectManifest surgery + VAPID keys + a
+  push_subscriptions table); do it as its own branch with real-device testing when wanted.
+- **🏁 Slices 3–14 all built** as stacked branches (`feat/support-slice-3-admin-inbox` → … →
+  `feat/support-slice-14-polish`). Prod SQL run-order once merging: `support_chat.sql` (re-run) →
+  `support_realtime.sql` → `support_settings.sql` → `support_attachments.sql` → `support_csat.sql`
+  → `support_metrics.sql` → `support_nudges.sql` → `support_canned.sql`. Vercel env:
+  `DISCORD_SUPPORT_WEBHOOK_URL` (+ optional `SLACK_SUPPORT_WEBHOOK_URL`).
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file
 is idempotent — re-running it is safe.

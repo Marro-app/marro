@@ -356,8 +356,9 @@ export default function SupportPanel({ onClose }) {
       }
       setDraft('');
       setAttachment(null);
-    } catch {
-      setError("Couldn't send your message. Please try again.");
+    } catch (e) {
+      // P0001 = a deliberate, user-facing message from the RPC (rate limit).
+      setError(e?.code === 'P0001' ? e.message : "Couldn't send your message. Please try again.");
     } finally {
       setSending(false);
     }
@@ -386,8 +387,8 @@ export default function SupportPanel({ onClose }) {
       setAttachment(null);
       setSentKind(activeForm.sentLabel);
       setView('sent');
-    } catch {
-      setError("Couldn't submit that. Please try again.");
+    } catch (e) {
+      setError(e?.code === 'P0001' ? e.message : "Couldn't submit that. Please try again.");
     } finally {
       setSending(false);
     }

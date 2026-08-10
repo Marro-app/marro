@@ -371,6 +371,22 @@ function mockApi(kind, action, params, store) {
     emitRealtime('support_conversations', 'UPDATE', convo);
     return { ok: true, conversation: { ...convo, user_email: MOCK_EMAIL, user_name: 'Test Student' } };
   }
+  if (action === 'canned_list' || action === 'canned_save' || action === 'canned_delete') {
+    const canned = store.support_canned || (store.support_canned = []);
+    if (action === 'canned_save') {
+      const text = (params?.body || '').trim();
+      if (!text) return { ok: false, error: 'Reply text required' };
+      const row = { id: mockId(), title: (params?.title || text.replace(/\s+/g, ' ').slice(0, 40)), body: text.slice(0, 2000), created_by: MOCK_EMAIL, created_at: now() };
+      canned.push(row);
+      return { ok: true, canned: row };
+    }
+    if (action === 'canned_delete') {
+      const i = canned.findIndex((c) => c.id === params?.canned_id);
+      if (i >= 0) canned.splice(i, 1);
+      return { ok: true };
+    }
+    return { ok: true, canned: [...canned] };
+  }
   if (action === 'nudge_create' || action === 'nudge_list' || action === 'nudge_cancel' || action === 'nudge_context') {
     const nudges = store.support_nudges || (store.support_nudges = []);
     const ctxFor = () => ({
