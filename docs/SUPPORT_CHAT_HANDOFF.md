@@ -116,7 +116,21 @@
   auto-send unverifiable conditions). Evaluation is lazy on `nudge_list` (no cron); delivery =
   `user_notifications` (kind `nudge`); `nudge_sent`/`nudge_cancelled` support_events feed the §13.5
   F metrics later. Composer shows a live "still relevant?" warning (600ms-debounced context check).
-- **Next: Slice 14** (polish) — remaining: rate limiting, canned replies, Slack channel, Web Push.
+- **Slice 14** (polish) — ✅ built on branch `feat/support-slice-14-polish`. (a) **Rate limiting**
+  inside the user RPCs (10 new threads + 60 user messages per user per 24h; friendly P0001 messages
+  the panel surfaces verbatim) — **re-run `supabase/support_chat.sql`**; the RPC copy that briefly
+  lived in `support_attachments.sql` was removed so files can't drift. (b) **Canned replies** —
+  `supabase/support_canned.sql` (service-role-only table), composer picker (+ "Save draft as
+  canned", manage/delete), shared between admins. (c) **Slack channel** — `api/support-notify.js`
+  fans out to Discord AND Slack (`SLACK_SUPPORT_WEBHOOK_URL`, optional), one shared debounce, the
+  event's `meta.channels` records who got it. (d) **Web Push — DEFERRED**: it's the one add-on that
+  touches the PWA service worker (vite-plugin-pwa injectManifest surgery + VAPID keys + a
+  push_subscriptions table); do it as its own branch with real-device testing when wanted.
+- **🏁 Slices 3–14 all built** as stacked branches (`feat/support-slice-3-admin-inbox` → … →
+  `feat/support-slice-14-polish`). Prod SQL run-order once merging: `support_chat.sql` (re-run) →
+  `support_realtime.sql` → `support_settings.sql` → `support_attachments.sql` → `support_csat.sql`
+  → `support_metrics.sql` → `support_nudges.sql` → `support_canned.sql`. Vercel env:
+  `DISCORD_SUPPORT_WEBHOOK_URL` (+ optional `SLACK_SUPPORT_WEBHOOK_URL`).
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file
 is idempotent — re-running it is safe.

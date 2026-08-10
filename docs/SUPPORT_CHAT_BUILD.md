@@ -59,7 +59,16 @@
 > Nudges view (composer w/ live "still relevant?" warning + list + cancel), lazy evaluation in
 > `api/support.js` (deliver via user_notifications or auto-cancel w/ reason; `nudge_sent`/
 > `nudge_cancelled` events). Detector-triggered nudges deferred — manual only for now.
-> **▶ NEXT: Slice 14** (polish: rate limiting, canned replies, Slack; Web Push last).
+> · ✅ Slice 14 (polish) — branch `feat/support-slice-14-polish`:
+> rate limiting in the user RPCs (10 threads + 60 msgs / user / 24h — **re-run
+> `supabase/support_chat.sql`**), canned replies (`supabase/support_canned.sql` + composer picker),
+> Slack fan-out in `api/support-notify.js` (`SLACK_SUPPORT_WEBHOOK_URL` env, optional). **Web Push
+> is deferred** (PWA service-worker surgery — its own branch when wanted).
+>
+> **🏁 ALL SLICES BUILT (3–14, branches stacked 3→…→14, unpushed).** Slice-by-slice SQL still to run
+> in Studio, in order: `support_chat.sql` (re-run) · `support_realtime.sql` · `support_settings.sql`
+> · `support_attachments.sql` · `support_csat.sql` · `support_metrics.sql` · `support_nudges.sql` ·
+> `support_canned.sql`. Env vars: `DISCORD_SUPPORT_WEBHOOK_URL` (+ optional `SLACK_SUPPORT_WEBHOOK_URL`).
 >
 > **Per-slice template:** Goal · Depends on · Backend/DB · API · Frontend · Tests · **Done when** · Risk.
 > **Workflow (every slice):** branch → push → Vercel preview → optional `/code-review` → self-merge

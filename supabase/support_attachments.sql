@@ -45,63 +45,12 @@ create policy "support attachments read own or admin" on storage.objects
     )
   );
 
--- ── support_start_conversation now accepts attachments on the first message ─
-drop function if exists public.support_start_conversation(text, text, jsonb);
-
-create or replace function public.support_start_conversation(
-  p_type text, p_body text, p_tech_context jsonb default null, p_attachments jsonb default null)
-returns uuid
-language plpgsql security definer set search_path = public
-as $$
-declare
-  v_uid    uuid := (select auth.uid());
-  v_id     uuid;
-  v_active uuid;
-begin
-  if v_uid is null then
-    raise exception 'not authenticated' using errcode = '42501';
-  end if;
-  if p_body is null or length(btrim(p_body)) = 0 then
-    raise exception 'message body required' using errcode = '22023';
-  end if;
-  if p_type is null or p_type not in ('bug','feedback','question','billing','other') then
-    p_type := 'question';
-  end if;
-
-  -- Single active Question (unchanged — see supabase/support_chat.sql).
-  if p_type = 'question' then
-    select id into v_active
-      from public.support_conversations
-     where user_id = v_uid and type = 'question'
-       and status in ('new','open','waiting_user')
-     order by last_message_at desc
-     limit 1;
-    if v_active is not null then
-      insert into public.support_messages (conversation_id, sender, body, attachments)
-        values (v_active, 'user', btrim(p_body), p_attachments);
-      update public.support_conversations
-         set last_message_at = now(), unread_admin = unread_admin + 1
-       where id = v_active;
-      return v_active;
-    end if;
-  end if;
-
-  insert into public.support_conversations (user_id, type, subject, tech_context, status, unread_admin, last_message_at)
-    values (v_uid, p_type, left(btrim(p_body), 80), p_tech_context, 'new', 1, now())
-    returning id into v_id;
-
-  insert into public.support_messages (conversation_id, sender, body, attachments)
-    values (v_id, 'user', btrim(p_body), p_attachments);
-
-  return v_id;
-end;
-$$;
--- Grant hardening (handoff decision 12): name anon explicitly.
-revoke all on function public.support_start_conversation(text, text, jsonb, jsonb) from public, anon;
-grant execute on function public.support_start_conversation(text, text, jsonb, jsonb) to authenticated;
+-- ── support_start_conversation ──────────────────────────────────────────────
+-- The RPC change that pairs with this bucket (a 4th p_attachments param) lives
+-- CANONICALLY in supabase/support_chat.sql — re-run that file after this one.
+-- (An earlier revision duplicated the function here; removed so the two files
+-- can never drift.)
 
 -- VERIFY:
---   select has_function_privilege('anon',
---     'public.support_start_conversation(text,text,jsonb,jsonb)', 'execute');  -- false
 --   -- storage: as user A upload to A/..., read it; reading B/... fails; as
 --   -- admin, reading A/... succeeds.

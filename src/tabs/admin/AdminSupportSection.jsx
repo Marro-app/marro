@@ -86,6 +86,7 @@ export default function AdminSupportSection() {
   const [sending, setSending] = useState(false);
   const [replyError, setReplyError] = useState('');
   const [profile, setProfile] = useState(null);   // identity summary (Slice 9)
+  const [canned, setCanned] = useState([]);       // canned replies (Slice 14)
   const [noteMode, setNoteMode] = useState(false); // composer sends an internal note
   const [tagInput, setTagInput] = useState('');
 
@@ -114,6 +115,23 @@ export default function AdminSupportSection() {
   const setOverride = useCallback(async (override) => {
     const res = await supportAdminCall('set_availability', { override });
     if (res?.ok && res.settings) setSettings(res.settings);
+  }, []);
+
+  // Canned replies (Slice 14): load once per console visit.
+  useEffect(() => {
+    let alive = true;
+    supportAdminCall('canned_list').then((res) => { if (alive && res?.ok) setCanned(res.canned || []); });
+    return () => { alive = false; };
+  }, []);
+  const saveCanned = useCallback(async () => {
+    const text = draft.trim();
+    if (!text) return;
+    const res = await supportAdminCall('canned_save', { body: text });
+    if (res?.ok && res.canned) setCanned((cs) => [...cs, res.canned]);
+  }, [draft]);
+  const deleteCanned = useCallback(async (id) => {
+    const res = await supportAdminCall('canned_delete', { canned_id: id });
+    if (res?.ok) setCanned((cs) => cs.filter((c) => c.id !== id));
   }, []);
 
   const load = useCallback(async () => {
@@ -463,6 +481,44 @@ export default function AdminSupportSection() {
             <input type="checkbox" checked={noteMode} onChange={(e) => setNoteMode(e.target.checked)} style={{ width: 15, height: 15, accentColor: C.amber }} />
             Internal note — the user never sees this
           </label>
+          {!noteMode && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+              <select
+                aria-label="Insert a canned reply"
+                value=""
+                onChange={(e) => {
+                  const c = canned.find((x) => x.id === e.target.value);
+                  if (c) onDraftChange(draft ? `${draft}\n${c.body}` : c.body);
+                }}
+                style={{ minHeight: 34, padding: '6px 10px', fontSize: 12, borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.text, maxWidth: 220 }}>
+                <option value="" disabled>Canned replies…</option>
+                {canned.length === 0 && <option value="" disabled>None saved yet</option>}
+                {canned.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+              </select>
+              {draft.trim() && (
+                <button type="button" onClick={saveCanned} className="btn-pop hit-slop"
+                  style={{ minHeight: 30, padding: '5px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text }}>
+                  Save draft as canned
+                </button>
+              )}
+              {canned.length > 0 && (
+                <details style={{ fontSize: 11.5, color: C.textMid }}>
+                  <summary style={{ cursor: 'pointer' }}>Manage</summary>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
+                    {canned.map((c) => (
+                      <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ color: C.text }}>{c.title}</span>
+                        <button type="button" aria-label={`Delete canned reply ${c.title}`} onClick={() => deleteCanned(c.id)} className="xbtn"
+                          style={{ width: 20, height: 20, borderRadius: 10, border: 'none', background: 'transparent', color: C.textMid, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, lineHeight: 1 }}>
+                          <span aria-hidden="true">✕</span>
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </div>
+          )}
           <label htmlFor={fieldId} style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>
             {noteMode ? 'Your internal note' : 'Your reply'}
           </label>

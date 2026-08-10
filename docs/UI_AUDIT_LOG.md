@@ -2,6 +2,12 @@
 
 Newest first. One line per finding: severity · what · fix.
 
+## 2026-08-07 — Support chat: polish (Slice 14, branch `feat/support-slice-14-polish`)
+
+- **Canned replies**: native labeled `<select>` ("Insert a canned reply"), Save-draft/Manage as outlined `.hit-slop` buttons, per-item delete with `aria-label`; inserting appends to the draft (never overwrites silently).
+- **Rate limits** surface as the server's own friendly sentence via `role="alert"` (P0001 passthrough) — no dead-end generic error for a deliberate limit.
+- No new colors/motion. Verified save→pick→insert loop on `?mock=1`.
+
 ## 2026-08-07 — Support chat: proactive nudges (Slice 13, branch `feat/support-slice-13-nudges`)
 
 - Nudges view: composer fields all have real `<label htmlFor>`s (email, send-timing `<select>`, message textarea); the "still relevant?" warning is `role="status"` (amber text ≥4.5:1 both themes), errors `role="alert"`; "Schedule nudge" is the view's single filled primary; state pills (Scheduled/Sent/Auto-cancelled) carry their meaning in text, color is secondary; per-row Cancel is an outlined `.hit-slop` button. Verified on `?mock=1`: composing to a user with an open thread shows the warning AND the gate auto-cancels with "thread already open" at evaluation.

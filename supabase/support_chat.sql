@@ -248,6 +248,15 @@ begin
     raise exception 'conversation not found' using errcode = '42501';
   end if;
 
+  -- Rate limit (Slice 14): same 24h message ceiling as start_conversation.
+  if (select count(*) from public.support_messages m
+       join public.support_conversations c on c.id = m.conversation_id
+      where c.user_id = v_uid and m.sender = 'user'
+        and m.created_at > now() - interval '24 hours') >= 60 then
+    raise exception 'You''re sending messages very fast — take a breather and try again in a bit.'
+      using errcode = 'P0001';
+  end if;
+
   insert into public.support_messages (conversation_id, sender, body, attachments)
     values (p_conversation_id, 'user', btrim(p_body), p_attachments)
     returning id into v_msg;
