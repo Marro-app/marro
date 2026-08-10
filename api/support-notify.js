@@ -9,12 +9,11 @@
 //      of messages = one ping. Once a thread is claimed, the ping names the
 //      owner so the other founder can ignore it (per-admin channel prefs are
 //      Slice 14).
-//   2. AUTO-REASSURANCE — a QUESTION landing in an unclaimed thread gets a
-//      one-time `system` message ("Thanks — we'll get back to you soon") so
-//      the user never feels ignored. Questions only: bug/idea submissions
-//      already end on an explicit confirmation screen and aren't chats.
-//      (Slice 6 upgrades the trigger from "unclaimed" to the availability
-//      resolver.)
+//   2. AUTO-REASSURANCE — a QUESTION landing while we're OFFLINE (per the
+//      shared availability resolver, Slice 6) gets a one-time `system`
+//      message ("we'll get back to you soon") so the user never feels
+//      ignored. Questions only: bug/idea submissions already end on an
+//      explicit confirmation screen and aren't chats.
 //
 // TRUST BOUNDARY: unlike api/support.js this is called by REGULAR users — so
 // the caller's token is verified and the conversation must be THEIR OWN
@@ -23,6 +22,10 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './_config.js';
+// Pure, side-effect-free (unlike the src/lib/data.js import api/_config.js
+// exists to avoid) — the SAME resolver the panel's status line uses, so the
+// reassurance gate and the "We're online" line can never disagree.
+import { resolveAvailability } from '../src/lib/supportAvailability.js';
 
 // One Discord ping per conversation per window — a burst of follow-up
 // messages shouldn't buzz the founders repeatedly.
@@ -76,8 +79,16 @@ export default async function handler(req, res) {
     if (convo.user_id !== callerId) return res.status(403).json({ error: 'Not authorized' });
 
     // ── 1. Auto-reassurance (questions only, once per conversation) ──────────
+    // Slice 6: keyed off the availability resolver (was "unclaimed" in slice
+    // 5) — if we're honestly offline, say so, even on a claimed thread.
+    let online = false;
+    try {
+      const { data: settings } = await admin
+        .from('support_settings').select('*').eq('id', 1).maybeSingle();
+      online = resolveAvailability(Date.now(), settings).online;
+    } catch { /* missing settings row resolves offline — safe default */ }
     let reassured = false;
-    if (convo.type === 'question' && !convo.assigned_admin) {
+    if (convo.type === 'question' && !online) {
       const { data: existingSystem, error: sysErr } = await admin
         .from('support_messages')
         .select('id')

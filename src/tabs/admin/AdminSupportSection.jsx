@@ -5,6 +5,17 @@ import { Icon } from '../../components/icons.jsx';
 import { supportAdminCall } from '../../lib/data.js';
 import { categoryForType, subscribeToMessages, subscribeToConversations } from '../../lib/support.js';
 import { INBOX_FILTERS, filterInbox, agoLabel, handledByLabel } from '../../lib/supportAdmin.js';
+import { resolveAvailability } from '../../lib/supportAvailability.js';
+
+// How often the open console re-affirms "an admin is actually here" — well
+// inside the resolver's 20-minute staleness window.
+const HEARTBEAT_MS = 5 * 60000;
+
+const OVERRIDE_OPTIONS = [
+  { key: 'auto', label: 'Auto' },
+  { key: 'on', label: 'Available' },
+  { key: 'off', label: 'Away' },
+];
 
 // Support inbox (Slice 3) — list conversations, open a thread, reply.
 // Every action goes through api/support.js (service-role, admin re-checked
@@ -66,6 +77,27 @@ export default function AdminSupportSection() {
   const listRef = useRef(null);
   const errId = useId();
   const fieldId = useId();
+
+  const [settings, setSettings] = useState(null);
+
+  // Availability (Slice 6): heartbeat while the console is open (this is the
+  // "an admin is actually here" signal the resolver requires), plus the
+  // manual Auto/Available/Away override. First beat doubles as the fetch.
+  useEffect(() => {
+    let alive = true;
+    const beat = async () => {
+      const res = await supportAdminCall('heartbeat');
+      if (alive && res?.ok && res.settings) setSettings(res.settings);
+    };
+    beat();
+    const t = setInterval(beat, HEARTBEAT_MS);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+
+  const setOverride = useCallback(async (override) => {
+    const res = await supportAdminCall('set_availability', { override });
+    if (res?.ok && res.settings) setSettings(res.settings);
+  }, []);
 
   const load = useCallback(async () => {
     setLoadError('');
@@ -243,6 +275,34 @@ export default function AdminSupportSection() {
           Refresh
         </button>
       </div>
+
+      {/* Availability (Slice 6): live pill (text + color, never color alone)
+          + the manual override. The pill reflects the same resolver the user
+          panel's status line reads, so what we advertise is what they see. */}
+      {(() => {
+        const avail = resolveAvailability(Date.now(), settings);
+        const current = settings?.online_override || 'auto';
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', margin: '10px 0 2px' }}>
+            <span role="status" style={{ fontSize: 11.5, fontWeight: 700, color: avail.online ? C.green : C.textMid, background: avail.online ? C.greenLight : C.surface, border: `1px solid ${C.border}`, borderRadius: 999, padding: '4px 10px' }}>
+              {avail.online ? 'Shown as online' : 'Shown as away'}
+            </span>
+            <div role="group" aria-label="Availability override" style={{ display: 'flex', gap: 4 }}>
+              {OVERRIDE_OPTIONS.map((o) => {
+                const active = current === o.key;
+                return (
+                  <button key={o.key} type="button" aria-pressed={active} onClick={() => setOverride(o.key)} className="hit-slop"
+                    style={{ minHeight: 30, padding: '5px 11px', borderRadius: 999, fontSize: 11.5, fontWeight: active ? 700 : 500, cursor: 'pointer',
+                      border: `1px solid ${active ? C.sel : C.border}`, background: active ? C.selBg : 'transparent', color: C.text }}>
+                    {o.label}
+                  </button>
+                );
+              })}
+            </div>
+            <span style={{ fontSize: 10.5, color: C.textMid }}>Auto = business hours + console open</span>
+          </div>
+        );
+      })()}
 
       <div role="group" aria-label="Inbox filters" style={{ display: 'flex', gap: 6, margin: '10px 0 12px', flexWrap: 'wrap' }}>
         {INBOX_FILTERS.map((f) => {

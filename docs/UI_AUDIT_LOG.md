@@ -2,6 +2,14 @@
 
 Newest first. One line per finding: severity · what · fix.
 
+## 2026-08-07 — Support chat: Realtime + alerts + availability (Slices 4–6, stacked branches)
+
+Slices 4 (`feat/support-slice-4-realtime`), 5 (`…-slice-5-alerts`), 6 (`…-slice-6-availability`). Verified on `?mock=1` (dark), keyboard + semantics live; all tokens existing `C.*` in established roles.
+
+- **Slice 4 (no new chrome):** message/inbox updates now stream in live — no visual changes; the admin Refresh button stays as fallback. Live regions unchanged (transcript is a normal flow, not `aria-live` — matches the existing panel behavior).
+- **Slice 5 (no new chrome):** the one-time "we'll get back to you" reassurance renders through the existing system-bubble style (centered, `C.textMid`, ≥4.5:1 both themes).
+- **Slice 6:** admin inbox gains an availability row — a `role="status"` pill ("Shown as online/away" — text + color, never color alone; `C.green` on `C.greenLight` / `C.textMid` on `C.surface`) and an Auto/Available/Away override (`role="group"` + `aria-label`, real `<button>`s with `aria-pressed`, `.hit-slop` to ≥44pt). User panel status line swaps copy via the same resolver ("We're online — expect a quick reply" / "We usually reply within a day") — informational text, no color-only signal. Verified: Available forces online in the panel; Away/out-of-hours shows the neutral line.
+
 ## 2026-08-05 — Support chat: admin inbox + reply + auto-claim (Slice 3, branch `feat/support-slice-3-admin-inbox`)
 
 New Support inbox in the admin console (`src/tabs/admin/AdminSupportSection.jsx`): conversation list with filter chips (Active/Unassigned/Mine/All), thread view, reply composer; first reply auto-claims. Verified via `?mock=1` (mock user is now admin-flagged) in dark theme, keyboard + semantics checked live; all colors are existing audited `C.*` tokens used in their established roles (unread rows reuse `C.selBg`/`C.sel`, badge is `C.bg`-on-`C.danger` per the Slice-2 contrast fix, send button `C.bg`-on-`C.teal` like the panel's).

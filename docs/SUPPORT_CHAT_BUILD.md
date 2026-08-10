@@ -23,7 +23,11 @@
 > webhook ping, 10-min debounce per convo via `support_events`, owner named once claimed;
 > one-time system reassurance on unattended **questions**), fired client-side after each user
 > send. **⚠️ Discord needs the `DISCORD_SUPPORT_WEBHOOK_URL` Vercel env var** — absent = pings
-> silently off, everything else works. **▶ NEXT: Slice 6** (availability + "we replied" banner).
+> silently off, everything else works. · ✅ Slice 6 (availability) — branch `feat/support-slice-6-availability`:
+> `supabase/support_settings.sql` (**run in Studio**), pure resolver `src/lib/supportAvailability.js`
+> (Vitest ×10; shared by the panel status line AND the server reassurance gate), heartbeat +
+> Auto/Available/Away override in the admin console, honest status line in the panel, admin reply →
+> `user_notifications` banner. **▶ NEXT: Slice 7** (lifecycle + queues + archive).
 >
 > **Per-slice template:** Goal · Depends on · Backend/DB · API · Frontend · Tests · **Done when** · Risk.
 > **Workflow (every slice):** branch → push → Vercel preview → optional `/code-review` → self-merge

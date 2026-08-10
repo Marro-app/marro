@@ -36,7 +36,17 @@
   (debounced 10 min/conversation via a `discord_ping` row in `support_events`; names the owner once
   claimed). **Ethan action: add `DISCORD_SUPPORT_WEBHOOK_URL` to Vercel env** (server-side only —
   never in the client); until then pings are silently skipped and everything else works.
-- **Next: Slice 6** (availability resolver + inbound "we replied") → then 7…14.
+- **Slice 6** (availability + "we replied") — ✅ built on branch `feat/support-slice-6-availability`.
+  Single-row `support_settings` (**prod SQL to run: `supabase/support_settings.sql`** — readable by
+  any signed-in user, written only via the backend). Pure `resolveAvailability()` in
+  `src/lib/supportAvailability.js` — model: `off`→offline; `on`→online only while the signal is
+  fresh (heartbeat <20 min or `available_until` future); `auto`→in-hours (9–21 ET) AND fresh
+  signal — hours alone never claim online. The SAME resolver runs client-side (status line) and in
+  `api/support-notify.js` (reassurance now keys off `online=false`, not "unclaimed"). Console
+  heartbeats every 5 min while open; Auto/Available/Away override in the inbox header ('on' stamps
+  a 1h `available_until`). Admin reply inserts a `user_notifications` row → existing
+  NotificationBanner ("Marro replied…").
+- **Next: Slice 7** (lifecycle + queues + archive) → then 8…14.
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file
 is idempotent — re-running it is safe.

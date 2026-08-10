@@ -6,8 +6,9 @@ import { Icon } from '../icons.jsx';
 import {
   SUPPORT_CATEGORIES, categoryForType, fetchConversations, fetchMessages,
   startConversation, postMessage, markRead, archiveConversation, reopenConversation,
-  subscribeToMessages, notifySupport, findActiveQuestion, findReopenableChats, ACTIVE_STATUSES,
+  subscribeToMessages, notifySupport, fetchAvailability, findActiveQuestion, findReopenableChats, ACTIVE_STATUSES,
 } from '../../lib/support.js';
+import { availabilityLine } from '../../lib/supportAvailability.js';
 
 // ── Category-themed background (plan §6) ─────────────────────────────────────
 // Decorative, aria-hidden motif that changes with the conversation type:
@@ -195,6 +196,15 @@ export default function SupportPanel({ onClose }) {
   const [confirmingEnd, setConfirmingEnd] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
+  const [availability, setAvailability] = useState(null); // resolved {online, reason} | null
+
+  // Honest status line (Slice 6): resolved from support_settings on open.
+  // Null (loading/failed) renders the neutral default copy.
+  useEffect(() => {
+    let alive = true;
+    fetchAvailability().then((a) => { if (alive) setAvailability(a); });
+    return () => { alive = false; };
+  }, []);
 
   // The one open Question (if any) and every chat ended within the reopen window —
   // drive the hub's "Continue your chat" card and "Recent chats" list.
@@ -477,7 +487,7 @@ export default function SupportPanel({ onClose }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>Support &amp; feedback</div>
             <div style={{ fontSize: 11.5, color: C.textMid, marginTop: 1, display: 'flex', alignItems: 'center', gap: 5 }}>
-              {view === 'hub' ? 'We usually reply within a day'
+              {view === 'hub' ? availabilityLine(availability)
                 : (view === 'ask' || view === 'askChoice') ? 'Ask a question'
                 : (<>
                     <Icon name={screenCat.icon} size={13} color={C.textMid} />

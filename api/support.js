@@ -194,7 +194,73 @@ export default async function handler(req, res) {
         const { error: evErr } = await admin.from('support_events').insert(events);
         if (evErr) console.error('support: events insert failed', conversationId, evErr.message);
 
+        // Inbound "we replied" (Slice 6): reuse the existing in-app
+        // notification pipeline (user_notifications → NotificationBanner) so
+        // the user hears about the reply even with the panel closed. Best-
+        // effort — the reply itself is already stored either way.
+        try {
+          const { data: ownerRow } = await admin
+            .from('support_conversations').select('user_id').eq('id', conversationId).maybeSingle();
+          if (ownerRow?.user_id) {
+            const { data: ownerUser } = await admin.auth.admin.getUserById(ownerRow.user_id);
+            const ownerEmail = (ownerUser?.user?.email || '').toLowerCase();
+            if (ownerEmail) {
+              const { error: notifErr } = await admin.from('user_notifications').insert({
+                email: ownerEmail, kind: 'support',
+                message: 'Marro replied to your support message — open Support to read it.',
+                metadata: { conversation_id: conversationId },
+              });
+              if (notifErr) console.error('support: reply notification failed', conversationId, notifErr.message);
+            }
+          }
+        } catch (e) {
+          console.error('support: reply notification failed', conversationId, e?.message);
+        }
+
         return res.status(200).json({ ok: true, message, claimed, assigned_admin: convo.assigned_admin || callerEmail });
+      }
+
+      case 'settings': {
+        // Current availability config for the admin toggle UI.
+        const { data: settings, error } = await admin
+          .from('support_settings').select('*').eq('id', 1).maybeSingle();
+        if (error) throw error;
+        return res.status(200).json({ ok: true, settings: settings || null });
+      }
+
+      case 'heartbeat': {
+        // Bumped while an admin has the Support console open — the availability
+        // resolver treats a stale heartbeat as "not really here" (plan §3).
+        const { data: settings, error } = await admin
+          .from('support_settings')
+          .upsert({ id: 1, last_admin_heartbeat: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict: 'id' })
+          .select('*');
+        if (error) throw error;
+        return res.status(200).json({ ok: true, settings: settings?.[0] || null });
+      }
+
+      case 'set_availability': {
+        // The in-app manual toggle: 'auto' | 'on' | 'off'. Going 'on' also
+        // stamps available_until (the §3 timeout window) and refreshes the
+        // heartbeat so the flip is immediately honest.
+        const override = String(body.override || '');
+        if (!['auto', 'on', 'off'].includes(override)) {
+          return res.status(400).json({ error: 'Invalid override' });
+        }
+        const nowIso = new Date().toISOString();
+        const patch = { id: 1, online_override: override, updated_at: nowIso };
+        if (override === 'on') {
+          patch.available_until = new Date(Date.now() + 60 * 60000).toISOString(); // 1h window
+          patch.last_admin_heartbeat = nowIso;
+        }
+        const { data: settings, error } = await admin
+          .from('support_settings').upsert(patch, { onConflict: 'id' }).select('*');
+        if (error) throw error;
+        const { error: evErr } = await admin.from('support_events').insert({
+          conversation_id: null, admin_email: callerEmail, action: 'availability_changed', meta: { override },
+        });
+        if (evErr) console.error('support: availability event log failed', evErr.message);
+        return res.status(200).json({ ok: true, settings: settings?.[0] || null });
       }
 
       default:

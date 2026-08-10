@@ -236,6 +236,17 @@ function mockApi(kind, action, params, store) {
       .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     return { ok: true, messages };
   }
+  if (action === 'settings' || action === 'heartbeat' || action === 'set_availability') {
+    const rows = store.support_settings || (store.support_settings = []);
+    const st = rows[0] || (rows[0] = { id: 1, online_override: 'auto', business_hours: { tz: 'America/New_York', start: 9, end: 21 }, available_until: null, last_admin_heartbeat: null });
+    if (action === 'heartbeat') st.last_admin_heartbeat = now();
+    if (action === 'set_availability') {
+      st.online_override = ['auto', 'on', 'off'].includes(params?.override) ? params.override : 'auto';
+      if (st.online_override === 'on') { st.available_until = new Date(Date.now() + 3600000).toISOString(); st.last_admin_heartbeat = now(); }
+    }
+    st.updated_at = now();
+    return { ok: true, settings: { ...st } };
+  }
   if (action === 'reply') {
     const convo = convos.find((c) => c.id === params?.conversation_id);
     if (!convo) return { ok: false, error: 'Conversation not found' };
@@ -256,6 +267,11 @@ function mockApi(kind, action, params, store) {
     events.push({ conversation_id: convo.id, admin_email: MOCK_EMAIL, action: 'replied', meta: { message_id: message.id }, at: now() });
     emitRealtime('support_messages', 'INSERT', message);
     emitRealtime('support_conversations', 'UPDATE', convo);
+    (store.user_notifications || (store.user_notifications = [])).push({
+      id: Date.now(), email: MOCK_EMAIL, kind: 'support',
+      message: 'Marro replied to your support message — open Support to read it.',
+      metadata: { conversation_id: convo.id }, created_at: now(), dismissed_at: null,
+    });
     return { ok: true, message, claimed, assigned_admin: convo.assigned_admin };
   }
   return { ok: false, error: 'Unknown action' };
@@ -270,6 +286,8 @@ export function createMockSupabaseStub() {
     support_conversations: seed.conversations,
     support_messages: seed.messages,
     support_events: [],
+    support_settings: [{ id: 1, online_override: 'auto', business_hours: { tz: 'America/New_York', start: 9, end: 21 }, available_until: null, last_admin_heartbeat: null, updated_at: new Date().toISOString() }],
+    user_notifications: [],
   };
   const subscribers = new Set();
 

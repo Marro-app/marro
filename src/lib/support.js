@@ -91,6 +91,22 @@ export async function reopenConversation(conversationId) {
   if (error) throw error;
 }
 
+// ── Availability (Slice 6) ──────────────────────────────────────────────────
+// The panel's status line: read the single settings row (RLS: any signed-in
+// user) and resolve it client-side. Null on any failure → callers fall back
+// to the neutral "we usually reply within a day" copy.
+export async function fetchAvailability() {
+  try {
+    const sb = await getSupabase();
+    const { data, error } = await sb.from('support_settings').select('*').eq('id', 1).maybeSingle();
+    if (error) return null;
+    const { resolveAvailability } = await import('./supportAvailability.js');
+    return resolveAvailability(Date.now(), data);
+  } catch {
+    return null;
+  }
+}
+
 // ── Outbound alerts (Slice 5) ───────────────────────────────────────────────
 // Fire-and-forget nudge to api/support-notify.js after a user message lands:
 // pings the founders' Discord (debounced server-side) and drops the one-time
