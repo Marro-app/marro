@@ -344,15 +344,6 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, message, claimed, assigned_admin: convo.assigned_admin || callerEmail });
       }
 
-      case 'settings': {
-        // The caller's OWN availability row for the "Your availability" UI
-        // (per-admin, not shared — see support_admin_availability.sql).
-        const { data: settings, error } = await admin
-          .from('support_admin_availability').select('*').eq('admin_email', callerEmail).maybeSingle();
-        if (error) throw error;
-        return res.status(200).json({ ok: true, settings: settings || null });
-      }
-
       case 'heartbeat': {
         // Bumped while THIS admin has the Support console open — the
         // availability resolver treats a stale heartbeat as "not really

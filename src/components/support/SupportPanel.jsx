@@ -6,7 +6,7 @@ import { Icon } from '../icons.jsx';
 import {
   SUPPORT_CATEGORIES, categoryForType, fetchConversations, fetchMessages,
   startConversation, postMessage, markRead, archiveConversation, reopenConversation, rateConversation,
-  subscribeToMessages, notifySupport, fetchAvailability, findActiveQuestion, findReopenableChats, ACTIVE_STATUSES,
+  subscribeToMessages, notifySupport, fetchAvailability, subscribeToAvailability, findActiveQuestion, findReopenableChats, ACTIVE_STATUSES,
 } from '../../lib/support.js';
 import { availabilityLine } from '../../lib/supportAvailability.js';
 import { buildTechContext } from '../../lib/consoleBuffer.js';
@@ -215,12 +215,18 @@ export default function SupportPanel({ onClose }) {
   const [csatState, setCsatState] = useState('idle'); // 'idle' | 'sending' | 'done'
 
   // Honest status line (Slice 6): resolved from every admin's availability
-  // row on open (online if any admin currently is). Null (loading/failed)
-  // renders the neutral default copy.
+  // row on open (online if any admin currently is), then kept live — a
+  // heartbeat going stale or any admin's override flipping should update the
+  // line while the panel is sitting open, not just on next mount (the
+  // resolver's whole point is to never advertise stale presence).
   useEffect(() => {
     let alive = true;
+    let unsubscribe = () => {};
     fetchAvailability().then((a) => { if (alive) setAvailability(a); });
-    return () => { alive = false; };
+    subscribeToAvailability((a) => { if (alive) setAvailability(a); }).then((unsub) => {
+      if (alive) unsubscribe = unsub; else unsub();
+    });
+    return () => { alive = false; unsubscribe(); };
   }, []);
 
   // The one open Question (if any) and every chat ended within the reopen window —

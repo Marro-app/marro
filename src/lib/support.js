@@ -117,6 +117,24 @@ export async function fetchAvailability() {
   }
 }
 
+// Live updates to the team's availability: any admin's row changing (a
+// heartbeat going stale, an override flip, edited hours) should update an
+// already-open panel's status line, not just the next cold fetch — the
+// resolver's whole point is to never advertise stale presence. The payload
+// only carries the ONE row that changed, but the team answer is an OR across
+// every admin, so on any change we just re-resolve from a fresh full read.
+export async function subscribeToAvailability(onChange) {
+  const sb = await getSupabase();
+  if (typeof sb.channel !== 'function') return () => {};
+  const refresh = () => { fetchAvailability().then((a) => { if (a) onChange(a); }); };
+  const ch = sb.channel('support-availability')
+    .on('postgres_changes',
+      { event: '*', schema: 'public', table: 'support_admin_availability' },
+      refresh)
+    .subscribe();
+  return () => { try { sb.removeChannel(ch); } catch { /* already gone */ } };
+}
+
 // ── Outbound alerts (Slice 5) ───────────────────────────────────────────────
 // Fire-and-forget nudge to api/support-notify.js after a user message lands:
 // pings the founders' Discord (debounced server-side) and drops the one-time

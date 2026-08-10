@@ -419,7 +419,7 @@ function mockApi(kind, action, params, store) {
       return { ok: true, nudges: [...nudges] };
     });
   }
-  if (action === 'settings' || action === 'heartbeat' || action === 'set_availability' || action === 'set_business_hours') {
+  if (action === 'heartbeat' || action === 'set_availability' || action === 'set_business_hours') {
     // Per-admin table, but the mock harness only ever has one admin (MOCK_EMAIL).
     const rows = store.support_admin_availability || (store.support_admin_availability = []);
     let st = rows.find((r) => r.admin_email === MOCK_EMAIL);
@@ -431,6 +431,7 @@ function mockApi(kind, action, params, store) {
     }
     if (action === 'set_business_hours' && params?.business_hours) st.business_hours = params.business_hours;
     st.updated_at = now();
+    emitRealtime('support_admin_availability', 'UPDATE', st);
     return { ok: true, settings: { ...st } };
   }
   if (action === 'reply') {
