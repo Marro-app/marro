@@ -5,7 +5,7 @@ import { XBtn } from '../primitives.jsx';
 import { Icon } from '../icons.jsx';
 import {
   SUPPORT_CATEGORIES, categoryForType, fetchConversations, fetchMessages,
-  startConversation, postMessage, markRead, archiveConversation, reopenConversation,
+  startConversation, postMessage, markRead, archiveConversation, reopenConversation, rateConversation,
   subscribeToMessages, notifySupport, fetchAvailability, findActiveQuestion, findReopenableChats, ACTIVE_STATUSES,
 } from '../../lib/support.js';
 import { availabilityLine } from '../../lib/supportAvailability.js';
@@ -210,6 +210,9 @@ export default function SupportPanel({ onClose }) {
   const [studioOpen, setStudioOpen] = useState(false);     // screenshot studio (Slice 10)
   const [attachment, setAttachment] = useState(null);      // pending uploaded ref, rides on the next send
   const [attachBusy, setAttachBusy] = useState(false);
+  const [csat, setCsat] = useState(null);          // 'up' | 'down' picked on the ended screen
+  const [csatComment, setCsatComment] = useState('');
+  const [csatState, setCsatState] = useState('idle'); // 'idle' | 'sending' | 'done'
 
   // Honest status line (Slice 6): resolved from support_settings on open.
   // Null (loading/failed) renders the neutral default copy.
@@ -423,7 +426,7 @@ export default function SupportPanel({ onClose }) {
   }, [sending, openThread]);
 
   // Hub navigation. The hub shows all three options; each opens its own screen.
-  const goHub = () => { setView('hub'); setForm({}); setDraft(''); setConfirmingEnd(false); setError(null); };
+  const goHub = () => { setView('hub'); setForm({}); setDraft(''); setConfirmingEnd(false); setError(null); setCsat(null); setCsatComment(''); setCsatState('idle'); };
   const goAsk = () => { setDraft(''); setError(null); setView('ask'); };
   const goForm = (key) => { setFormKey(key); setForm({}); setError(null); setView('form'); };
   // "Ask a question": start fresh if no chat is open; otherwise ask whether to
@@ -482,6 +485,20 @@ export default function SupportPanel({ onClose }) {
       )}
     </div>
   );
+
+  // CSAT (Slice 11): rate the ended chat. One tap + optional line; skippable.
+  const submitCsat = useCallback(async () => {
+    if (!convo || !csat || csatState === 'sending') return;
+    setCsatState('sending');
+    try {
+      await rateConversation({ conversationId: convo.id, csat, comment: csatComment });
+      setConversations((cs) => cs.map((c) => (c.id === convo.id ? { ...c, csat, csat_comment: csatComment || null } : c)));
+      setCsatState('done');
+    } catch {
+      setCsatState('idle');
+      setError("Couldn't save your rating. Please try again.");
+    }
+  }, [convo, csat, csatComment, csatState]);
 
   const onKeyDownField = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
@@ -589,8 +606,44 @@ export default function SupportPanel({ onClose }) {
               <div style={{ fontSize: 12.5, color: C.textMid, lineHeight: 1.5, maxWidth: 270 }}>
                 Thanks for reaching out. You can reopen this chat for the next 7 days if you need us again.
               </div>
-              {/* CSAT slot: when the satisfaction slice lands, the 👍/👎 "How did we do?"
-                  prompt goes here (writes csat/csat_comment on this conversation). */}
+              {/* CSAT (Slice 11) — lives on the ended screen per decision 8.
+                  One-tap, optional comment, never blocking (Done always works). */}
+              {convo && !convo.csat && csatState !== 'done' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, marginTop: 2 }}>
+                  <div id="sup-csat-label" style={{ fontSize: 12.5, fontWeight: 600, color: C.text }}>How did we do?</div>
+                  <div role="group" aria-labelledby="sup-csat-label" style={{ display: 'flex', gap: 10 }}>
+                    {[{ key: 'up', icon: 'thumbup', label: 'Helpful' }, { key: 'down', icon: 'thumbdown', label: 'Not helpful' }].map((o) => (
+                      <button key={o.key} type="button" aria-pressed={csat === o.key} aria-label={o.label}
+                        onClick={() => setCsat((v) => (v === o.key ? null : o.key))}
+                        style={{ width: 44, height: 44, borderRadius: 22, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                          border: `1px solid ${csat === o.key ? C.sel : C.border}`, background: csat === o.key ? C.selBg : 'transparent', color: C.text }}>
+                        <Icon name={o.icon} size={20} color={C.text} />
+                      </button>
+                    ))}
+                  </div>
+                  {csat && (
+                    <>
+                      <label htmlFor="sup-csat-comment" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>
+                        Anything you want to add? (optional)
+                      </label>
+                      <input
+                        id="sup-csat-comment"
+                        value={csatComment}
+                        onChange={(e) => setCsatComment(e.target.value)}
+                        maxLength={300}
+                        placeholder="Anything you want to add? (optional)"
+                        style={{ width: 'min(260px, 100%)', minHeight: 40, padding: '9px 12px', fontSize: 12.5, borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, color: C.text, boxSizing: 'border-box', outline: 'none' }}
+                      />
+                      <button type="button" onClick={submitCsat} disabled={csatState === 'sending'} className="btn-pop"
+                        style={{ padding: '9px 18px', borderRadius: 10, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', minHeight: 40, opacity: csatState === 'sending' ? 0.6 : 1 }}>
+                        {csatState === 'sending' ? 'Sending…' : 'Send rating'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              ) : csatState === 'done' ? (
+                <div role="status" style={{ fontSize: 12.5, color: C.textMid }}>Thanks for the feedback!</div>
+              ) : null}
               <button type="button" onClick={goHub} className="btn-fill" style={{ marginTop: 4, padding: '10px 22px', borderRadius: 10, border: 'none', background: C.teal, color: C.bg, fontSize: 13, fontWeight: 700, cursor: 'pointer', minHeight: 44 }}>
                 Done
               </button>

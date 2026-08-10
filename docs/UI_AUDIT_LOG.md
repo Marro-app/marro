@@ -2,6 +2,11 @@
 
 Newest first. One line per finding: severity · what · fix.
 
+## 2026-08-07 — Support chat: CSAT (Slice 11, branch `feat/support-slice-11-csat`)
+
+- Thumbs are 44×44 real `<button>`s with `aria-pressed` + explicit `aria-label`s ("Helpful"/"Not helpful") in a `role="group"` labeled "How did we do?" — new `thumbup`/`thumbdown` line icons (decision 10: no emoji). Optional comment input has a visually-hidden `<label>`; "Send rating" is outlined (Done stays the screen's one filled action, rule 9). Never blocking: Done works at every stage; confirmation is `role="status"`.
+- Verified on `?mock=1`: end chat → prompt → rate + comment → thanks state; ended screen unchanged otherwise.
+
 ## 2026-08-07 — Support chat: screenshot + annotate (Slice 10, branch `feat/support-slice-10-screenshot`)
 
 - **Studio dialog**: `role="dialog"` + `aria-modal`, Esc closes (text entry first, then the studio), ✕ is the audited XBtn. Every tool is a real labeled `<button>` with `aria-pressed` + `.hit-slop`; capture explains itself ("takes a single frame — nothing is recorded").

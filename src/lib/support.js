@@ -91,6 +91,16 @@ export async function reopenConversation(conversationId) {
   if (error) throw error;
 }
 
+// Rate an ended chat (Slice 11): 'up' | 'down' + optional one-liner. Owner-
+// scoped and only effective on resolved/archived threads (enforced in SQL).
+export async function rateConversation({ conversationId, csat, comment = null }) {
+  const sb = await getSupabase();
+  const { error } = await sb.rpc('support_rate_conversation', {
+    p_conversation_id: conversationId, p_csat: csat, p_comment: comment,
+  });
+  if (error) throw error;
+}
+
 // ── Availability (Slice 6) ──────────────────────────────────────────────────
 // The panel's status line: read the single settings row (RLS: any signed-in
 // user) and resolve it client-side. Null on any failure → callers fall back

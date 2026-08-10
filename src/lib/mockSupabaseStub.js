@@ -196,6 +196,15 @@ function supportRpc(name, params, store) {
     }
     return { data: null, error: null };
   }
+  if (name === 'support_rate_conversation') {
+    const convo = convos.find((c) => c.id === params?.p_conversation_id && c.user_id === MOCK_USER_ID);
+    if (convo && ['resolved', 'archived'].includes(convo.status) && ['up', 'down'].includes(params?.p_csat)) {
+      convo.csat = params.p_csat;
+      convo.csat_comment = (params?.p_comment || '').trim().slice(0, 300) || null;
+      emitRealtime('support_conversations', 'UPDATE', convo);
+    }
+    return { data: null, error: null };
+  }
   return null; // not a support RPC
 }
 

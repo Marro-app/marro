@@ -45,7 +45,11 @@
 > re-creates `support_start_conversation` with a `p_attachments` param), lazy `ScreenshotStudio`
 > (getDisplayMedia capture primary, upload fallback — the html2canvas middle path was deliberately
 > skipped; annotate: box/arrow/draw/text/BLUR + undo), attach flow on the bug form + chat composer,
-> signed-URL rendering both sides. **▶ NEXT: Slice 11** (CSAT + reply-when-gone email).
+> signed-URL rendering both sides. · ✅ Slice 11 (CSAT + away email) —
+> branch `feat/support-slice-11-csat`: `supabase/support_csat.sql` (**run in Studio** — owner-scoped
+> rating RPC), thumbs (new Marro line icons, no emoji) + optional comment on the "Chat ended" slot,
+> reply-when-gone email in `api/support.js` (user's last message >15 min old → email via
+> `api/_email.js`, debounced 6h/convo via `reply_emailed` events). **▶ NEXT: Slice 12** (metrics).
 >
 > **Per-slice template:** Goal · Depends on · Backend/DB · API · Frontend · Tests · **Done when** · Risk.
 > **Workflow (every slice):** branch → push → Vercel preview → optional `/code-review` → self-merge
