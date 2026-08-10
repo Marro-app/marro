@@ -28,7 +28,15 @@
   stub emulates channels in-memory and emits on every mutation, so the live loop is testable on
   `?mock=1`. **Prod SQL to run: `supabase/support_realtime.sql`** (idempotent; adds both tables to
   the `supabase_realtime` publication — RLS already scopes events, no new policies).
-- **Next: Slice 5** (Discord alerts + auto-reassurance) → then 6…14. One branch + PR per slice.
+- **Slice 5** (alerts) — ✅ built on branch `feat/support-slice-5-alerts`. `api/support-notify.js`
+  is called fire-and-forget by the client after every user send (`notifySupport()` in
+  `src/lib/support.js`): verifies the caller owns the conversation, then (a) inserts a one-time
+  `system` reassurance into an **unclaimed question** ("we'll get back to you soon" — questions
+  only; bug/idea flows end on their own confirmation screen), and (b) posts a Discord ping
+  (debounced 10 min/conversation via a `discord_ping` row in `support_events`; names the owner once
+  claimed). **Ethan action: add `DISCORD_SUPPORT_WEBHOOK_URL` to Vercel env** (server-side only —
+  never in the client); until then pings are silently skipped and everything else works.
+- **Next: Slice 6** (availability resolver + inbound "we replied") → then 7…14.
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file
 is idempotent — re-running it is safe.

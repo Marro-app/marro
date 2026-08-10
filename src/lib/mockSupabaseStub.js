@@ -201,10 +201,25 @@ function mockApi(kind, action, params, store) {
     if (action === 'email_usage') return { ok: true, available: false };
     return { ok: false, error: 'Not available in the dev harness.' };
   }
-  // kind === 'support'
   const convos = store.support_conversations || (store.support_conversations = []);
   const msgs = store.support_messages || (store.support_messages = []);
   const events = store.support_events || (store.support_events = []);
+  if (kind === 'notify') {
+    // Slice 5 stand-in for api/support-notify.js: reassure an unattended
+    // question once (no Discord in the harness — logged as skipped).
+    const convo = convos.find((c) => c.id === params?.conversation_id);
+    if (!convo) return { ok: false, error: 'Conversation not found' };
+    let reassured = false;
+    if (convo.type === 'question' && !convo.assigned_admin
+        && !msgs.some((m) => m.conversation_id === convo.id && m.sender === 'system')) {
+      const m = { id: mockId(), conversation_id: convo.id, sender: 'system', sender_email: null, body: "Thanks for reaching out — we're not at the desk right now, but we'll get back to you soon.", attachments: null, is_internal_note: false, created_at: now(), read_at: null };
+      msgs.push(m);
+      emitRealtime('support_messages', 'INSERT', m);
+      reassured = true;
+    }
+    return { ok: true, reassured, pinged: false };
+  }
+  // kind === 'support'
   if (action === 'list') {
     const conversations = [...convos]
       .sort((a, b) => new Date(b.last_message_at) - new Date(a.last_message_at))

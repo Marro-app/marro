@@ -19,7 +19,11 @@
 > live thread/badge/inbox in SupportPanel + SupportLauncher + AdminSupportSection, in-memory
 > channel emulation in the mock stub. **⚠️ RUN `supabase/support_realtime.sql` in Studio** (adds the
 > two support tables to the `supabase_realtime` publication) or delivery stays fetch-only.
-> **▶ NEXT: Slice 5** (Discord alerts + auto-reassurance).
+> · ✅ Slice 5 (alerts) — branch `feat/support-slice-5-alerts`: `api/support-notify.js` (Discord
+> webhook ping, 10-min debounce per convo via `support_events`, owner named once claimed;
+> one-time system reassurance on unattended **questions**), fired client-side after each user
+> send. **⚠️ Discord needs the `DISCORD_SUPPORT_WEBHOOK_URL` Vercel env var** — absent = pings
+> silently off, everything else works. **▶ NEXT: Slice 6** (availability + "we replied" banner).
 >
 > **Per-slice template:** Goal · Depends on · Backend/DB · API · Frontend · Tests · **Done when** · Risk.
 > **Workflow (every slice):** branch → push → Vercel preview → optional `/code-review` → self-merge

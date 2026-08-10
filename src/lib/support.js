@@ -91,6 +91,27 @@ export async function reopenConversation(conversationId) {
   if (error) throw error;
 }
 
+// ── Outbound alerts (Slice 5) ───────────────────────────────────────────────
+// Fire-and-forget nudge to api/support-notify.js after a user message lands:
+// pings the founders' Discord (debounced server-side) and drops the one-time
+// "we'll get back to you" system message into an unattended question. Never
+// throws and never blocks the send path — a failed notify only means no ping.
+export async function notifySupport(conversationId) {
+  try {
+    const sb = await getSupabase();
+    // Dev harness: the stub simulates the reassurance path in-memory.
+    if (import.meta.env.DEV && sb.__mockApi) { sb.__mockApi('notify', 'notify', { conversation_id: conversationId }); return; }
+    const { data: { session } } = await sb.auth.getSession();
+    const token = session?.access_token;
+    if (!token) return;
+    fetch('/api/support-notify', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversation_id: conversationId }),
+    }).catch(() => {});
+  } catch { /* best-effort */ }
+}
+
 // ── Realtime (Slice 4) ──────────────────────────────────────────────────────
 // Live delivery via postgres_changes. RLS scopes what each side receives:
 // users only get events for their own rows (internal notes excluded by the

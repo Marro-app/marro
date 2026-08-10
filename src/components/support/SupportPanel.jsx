@@ -6,7 +6,7 @@ import { Icon } from '../icons.jsx';
 import {
   SUPPORT_CATEGORIES, categoryForType, fetchConversations, fetchMessages,
   startConversation, postMessage, markRead, archiveConversation, reopenConversation,
-  subscribeToMessages, findActiveQuestion, findReopenableChats, ACTIVE_STATUSES,
+  subscribeToMessages, notifySupport, findActiveQuestion, findReopenableChats, ACTIVE_STATUSES,
 } from '../../lib/support.js';
 
 // ── Category-themed background (plan §6) ─────────────────────────────────────
@@ -313,6 +313,7 @@ export default function SupportPanel({ onClose }) {
     try {
       if (view === 'ask') {
         const id = await startConversation({ type: 'question', body });
+        notifySupport(id); // fire-and-forget: Discord ping + auto-reassurance (slice 5)
         const convos = await fetchConversations();
         setConversations(convos);
         const target = convos.find((c) => c.id === id) || null;
@@ -321,6 +322,7 @@ export default function SupportPanel({ onClose }) {
         setView('thread');
       } else {
         await postMessage({ conversationId: convo.id, body });
+        notifySupport(convo.id); // fire-and-forget (slice 5)
         setMessages(await fetchMessages(convo.id));
         setConversations((cs) => cs.map((c) => (c.id === convo.id
           ? { ...c, last_message_at: new Date().toISOString(), status: (c.status === 'resolved' || c.status === 'archived') ? 'open' : c.status }
@@ -345,6 +347,7 @@ export default function SupportPanel({ onClose }) {
       const cat = SUPPORT_CATEGORIES.find((c) => c.key === formKey) || SUPPORT_CATEGORIES[0];
       const body = activeForm.compose(form);
       const id = await startConversation({ type: cat.type, body });
+      notifySupport(id); // fire-and-forget: Discord ping (slice 5)
       const convos = await fetchConversations();
       setConversations(convos);
       setConvo(convos.find((c) => c.id === id) || null);
