@@ -3,7 +3,7 @@ import { C } from '../../lib/theme.js';
 import { Card, SectionTitle, EmptyState } from '../../components/primitives.jsx';
 import { Icon } from '../../components/icons.jsx';
 import { supportAdminCall } from '../../lib/data.js';
-import { categoryForType } from '../../lib/support.js';
+import { categoryForType, subscribeToMessages, subscribeToConversations } from '../../lib/support.js';
 import { INBOX_FILTERS, filterInbox, agoLabel, handledByLabel } from '../../lib/supportAdmin.js';
 
 // Support inbox (Slice 3) — list conversations, open a thread, reply.
@@ -85,6 +85,37 @@ export default function AdminSupportSection() {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, threadLoading]);
+
+  // Live inbox (Slice 4): conversation changes stream in over the admin RLS
+  // lane. Known rows are patched in place (preserving the user_name/email
+  // enrichment the event payload doesn't carry) and re-sorted by activity; a
+  // BRAND-NEW conversation triggers a full reload to pick up its enrichment.
+  useEffect(() => {
+    let dead = false, unsub = null;
+    subscribeToConversations((row) => {
+      setOpenConvo((c) => (c && c.id === row.id ? { ...c, ...row } : c));
+      setConversations((cs) => {
+        const idx = cs.findIndex((c) => c.id === row.id);
+        if (idx < 0) { load(); return cs; }
+        const next = [...cs];
+        next[idx] = { ...next[idx], ...row };
+        next.sort((a, b) => new Date(b.last_message_at) - new Date(a.last_message_at));
+        return next;
+      });
+    }).then((u) => { if (dead) u(); else unsub = u; });
+    return () => { dead = true; if (unsub) unsub(); };
+  }, [load]);
+
+  // Live thread: new messages on the open conversation append as they land
+  // (dedup by id — our own replies also arrive back through the channel).
+  useEffect(() => {
+    if (!openConvo?.id) return undefined;
+    let dead = false, unsub = null;
+    subscribeToMessages(openConvo.id, (m) => {
+      setMessages((ms) => (ms.some((x) => x.id === m.id) ? ms : [...ms, m]));
+    }).then((u) => { if (dead) u(); else unsub = u; });
+    return () => { dead = true; if (unsub) unsub(); };
+  }, [openConvo?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openThread = useCallback(async (convo) => {
     setOpenConvo(convo);

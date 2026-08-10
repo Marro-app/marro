@@ -91,6 +91,39 @@ export async function reopenConversation(conversationId) {
   if (error) throw error;
 }
 
+// ── Realtime (Slice 4) ──────────────────────────────────────────────────────
+// Live delivery via postgres_changes. RLS scopes what each side receives:
+// users only get events for their own rows (internal notes excluded by the
+// user-lane policy); admins get everything via the is_admin() lane. Each
+// helper resolves to an UNSUBSCRIBE function — callers must run it on unmount
+// or the channel leaks. Fail-soft: if the client has no channel support
+// (defensive), the unsubscribe is a no-op and callers fall back to refetch.
+
+// New messages on one conversation (both directions).
+export async function subscribeToMessages(conversationId, onInsert) {
+  const sb = await getSupabase();
+  if (typeof sb.channel !== 'function') return () => {};
+  const ch = sb.channel(`support-msgs-${conversationId}`)
+    .on('postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'support_messages', filter: `conversation_id=eq.${conversationId}` },
+      (payload) => { if (payload?.new) onInsert(payload.new); })
+    .subscribe();
+  return () => { try { sb.removeChannel(ch); } catch { /* already gone */ } };
+}
+
+// Conversation-level changes (new threads, unread/status/last_message bumps).
+// Fires with the changed row; callers usually just refetch or patch state.
+export async function subscribeToConversations(onChange) {
+  const sb = await getSupabase();
+  if (typeof sb.channel !== 'function') return () => {};
+  const ch = sb.channel('support-convos')
+    .on('postgres_changes',
+      { event: '*', schema: 'public', table: 'support_conversations' },
+      (payload) => { if (payload?.new) onChange(payload.new); })
+    .subscribe();
+  return () => { try { sb.removeChannel(ch); } catch { /* already gone */ } };
+}
+
 // Total unread admin replies across all of the user's threads — drives the
 // launcher badge.
 export function totalUnread(conversations) {

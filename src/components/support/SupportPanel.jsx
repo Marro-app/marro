@@ -6,7 +6,7 @@ import { Icon } from '../icons.jsx';
 import {
   SUPPORT_CATEGORIES, categoryForType, fetchConversations, fetchMessages,
   startConversation, postMessage, markRead, archiveConversation, reopenConversation,
-  findActiveQuestion, findReopenableChats, ACTIVE_STATUSES,
+  subscribeToMessages, findActiveQuestion, findReopenableChats, ACTIVE_STATUSES,
 } from '../../lib/support.js';
 
 // ── Category-themed background (plan §6) ─────────────────────────────────────
@@ -250,6 +250,24 @@ export default function SupportPanel({ onClose }) {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, loading, view]);
+
+  // Live delivery (Slice 4): while a thread is open, new messages stream in
+  // over Realtime (RLS-scoped to this user's own rows). Admin replies arriving
+  // while we're looking are marked read immediately, so no stale badge. Dedup
+  // by id — our own sends also come back through the channel after the refetch.
+  useEffect(() => {
+    if (view !== 'thread' || !convo?.id) return undefined;
+    const convoId = convo.id;
+    let dead = false, unsub = null;
+    subscribeToMessages(convoId, (m) => {
+      setMessages((ms) => (ms.some((x) => x.id === m.id) ? ms : [...ms, m]));
+      if (m.sender === 'admin') {
+        markRead(convoId).catch(() => {});
+        setConversations((cs) => cs.map((c) => (c.id === convoId ? { ...c, unread_user: 0 } : c)));
+      }
+    }).then((u) => { if (dead) u(); else unsub = u; });
+    return () => { dead = true; if (unsub) unsub(); };
+  }, [view, convo?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Focus trap + Esc + focus restore (mirrors the Modal primitive's contract).
   useEffect(() => {

@@ -14,7 +14,12 @@
 > pure inbox logic in `src/lib/supportAdmin.js` (Vitest), and the `?mock=1` harness now covers the
 > admin side (mock user is admin-flagged; in-memory `__mockApi` stands in for the admin backends).
 > No new SQL — Slice 1's tables/RLS already cover it. Full detail + locked decisions in
-> `docs/SUPPORT_CHAT_HANDOFF.md` §1–3. **▶ NEXT: Slice 4** (Realtime).
+> `docs/SUPPORT_CHAT_HANDOFF.md` §1–3. · ✅ Slice 4 (Realtime) — branch
+> `feat/support-slice-4-realtime` (stacked on slice 3): subscribe helpers in `src/lib/support.js`,
+> live thread/badge/inbox in SupportPanel + SupportLauncher + AdminSupportSection, in-memory
+> channel emulation in the mock stub. **⚠️ RUN `supabase/support_realtime.sql` in Studio** (adds the
+> two support tables to the `supabase_realtime` publication) or delivery stays fetch-only.
+> **▶ NEXT: Slice 5** (Discord alerts + auto-reassurance).
 >
 > **Per-slice template:** Goal · Depends on · Backend/DB · API · Frontend · Tests · **Done when** · Risk.
 > **Workflow (every slice):** branch → push → Vercel preview → optional `/code-review` → self-merge

@@ -21,7 +21,14 @@
   `src/lib/supportAdmin.js` (pure filter/label logic, Vitest-covered). The `?mock=1` harness now
   admin-flags the mock user and stands in for the admin backends (`__mockApi` in
   `mockSupabaseStub.js`), so the full user→admin→user loop is click-testable locally with no backend.
-- **Next: Slice 4** (Realtime) → then 5…14. One branch + PR per slice.
+- **Slice 4** (Realtime) — ✅ built on branch `feat/support-slice-4-realtime` (stacked on slice 3).
+  `subscribeToMessages`/`subscribeToConversations` in `src/lib/support.js` (postgres_changes,
+  RLS-scoped both lanes); SupportPanel thread + SupportLauncher badge + AdminSupportSection
+  inbox/thread all update live (refetch paths kept as fallback — Refresh button stays). The mock
+  stub emulates channels in-memory and emits on every mutation, so the live loop is testable on
+  `?mock=1`. **Prod SQL to run: `supabase/support_realtime.sql`** (idempotent; adds both tables to
+  the `supabase_realtime` publication — RLS already scopes events, no new policies).
+- **Next: Slice 5** (Discord alerts + auto-reassurance) → then 6…14. One branch + PR per slice.
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file
 is idempotent — re-running it is safe.

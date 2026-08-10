@@ -67,6 +67,38 @@ function mockId() {
   try { return crypto.randomUUID(); } catch { return 'mock-' + Math.random().toString(16).slice(2) + Date.now().toString(16); }
 }
 
+// ── In-memory Realtime emulation (Slice 4) ──────────────────────────────────
+// Just enough of supabase-js's channel API (channel().on('postgres_changes',
+// spec, cb).subscribe() / removeChannel()) that the real subscribe helpers in
+// src/lib/support.js run unmodified. Mutations in supportRpc/mockApi call
+// emitRealtime() so a user message lights up the admin inbox live (and vice
+// versa) with zero backend. Registry is module-scope: one page = one bus.
+const rtChannels = new Set();
+function emitRealtime(table, eventType, row) {
+  // Async like the real thing — never re-enters React mid-update.
+  setTimeout(() => { rtChannels.forEach((ch) => ch._dispatch(table, eventType, row)); }, 0);
+}
+function makeChannel() {
+  const ch = {
+    _handlers: [],
+    on(_type, spec, cb) { ch._handlers.push({ spec, cb }); return ch; },
+    subscribe(cb) { rtChannels.add(ch); if (cb) cb('SUBSCRIBED'); return ch; },
+    unsubscribe() { rtChannels.delete(ch); },
+    _dispatch(table, eventType, row) {
+      ch._handlers.forEach(({ spec, cb }) => {
+        if (spec.table !== table) return;
+        if (spec.event !== '*' && spec.event !== eventType) return;
+        if (spec.filter) {
+          const m = /^(\w+)=eq\.(.+)$/.exec(spec.filter);
+          if (m && String(row[m[1]]) !== m[2]) return;
+        }
+        cb({ eventType, new: { ...row } });
+      });
+    },
+  };
+  return ch;
+}
+
 // In-memory implementation of the Slice-1 support RPCs, mirroring the SQL
 // semantics in supabase/support_chat.sql closely enough that the real
 // src/lib/support.js code paths behave identically against the harness:
@@ -88,9 +120,12 @@ function supportRpc(name, params, store) {
         .filter((c) => c.user_id === MOCK_USER_ID && c.type === 'question' && ['new', 'open', 'waiting_user'].includes(c.status))
         .sort((a, b) => new Date(b.last_message_at) - new Date(a.last_message_at))[0];
       if (active) {
-        msgs.push({ id: mockId(), conversation_id: active.id, sender: 'user', sender_email: null, body, attachments: null, is_internal_note: false, created_at: now(), read_at: null });
+        const m = { id: mockId(), conversation_id: active.id, sender: 'user', sender_email: null, body, attachments: null, is_internal_note: false, created_at: now(), read_at: null };
+        msgs.push(m);
         active.last_message_at = now();
         active.unread_admin += 1;
+        emitRealtime('support_messages', 'INSERT', m);
+        emitRealtime('support_conversations', 'UPDATE', active);
         return { data: active.id, error: null };
       }
     }
@@ -103,7 +138,10 @@ function supportRpc(name, params, store) {
       created_at: now(), last_message_at: now(), claimed_at: null, first_response_at: null,
       resolved_at: null, resolved_by: null, archived_at: null, snooze_until: null,
     });
-    msgs.push({ id: mockId(), conversation_id: id, sender: 'user', sender_email: null, body, attachments: null, is_internal_note: false, created_at: now(), read_at: null });
+    const first = { id: mockId(), conversation_id: id, sender: 'user', sender_email: null, body, attachments: null, is_internal_note: false, created_at: now(), read_at: null };
+    msgs.push(first);
+    emitRealtime('support_conversations', 'INSERT', convos[convos.length - 1]);
+    emitRealtime('support_messages', 'INSERT', first);
     return { data: id, error: null };
   }
   if (name === 'support_post_user_message') {
@@ -112,28 +150,35 @@ function supportRpc(name, params, store) {
     const body = (params?.p_body || '').trim();
     if (!body) return { data: null, error: { message: 'message body required' } };
     const mid = mockId();
-    msgs.push({ id: mid, conversation_id: convo.id, sender: 'user', sender_email: null, body, attachments: params?.p_attachments ?? null, is_internal_note: false, created_at: now(), read_at: null });
+    const m = { id: mid, conversation_id: convo.id, sender: 'user', sender_email: null, body, attachments: params?.p_attachments ?? null, is_internal_note: false, created_at: now(), read_at: null };
+    msgs.push(m);
     convo.last_message_at = now();
     convo.unread_admin += 1;
     if (convo.status === 'resolved' || convo.status === 'archived') {
       convo.status = 'open'; convo.reopen_count += 1; convo.archived_at = null;
     }
+    emitRealtime('support_messages', 'INSERT', m);
+    emitRealtime('support_conversations', 'UPDATE', convo);
     return { data: mid, error: null };
   }
   if (name === 'support_mark_read') {
     const convo = convos.find((c) => c.id === params?.p_conversation_id && c.user_id === MOCK_USER_ID);
-    if (convo) convo.unread_user = 0;
+    if (convo) { convo.unread_user = 0; emitRealtime('support_conversations', 'UPDATE', convo); }
     return { data: null, error: null };
   }
   if (name === 'support_archive_conversation') {
     const convo = convos.find((c) => c.id === params?.p_conversation_id && c.user_id === MOCK_USER_ID);
-    if (convo) { convo.status = 'archived'; convo.archived_at = now(); convo.resolved_at = convo.resolved_at || now(); }
+    if (convo) {
+      convo.status = 'archived'; convo.archived_at = now(); convo.resolved_at = convo.resolved_at || now();
+      emitRealtime('support_conversations', 'UPDATE', convo);
+    }
     return { data: null, error: null };
   }
   if (name === 'support_reopen_conversation') {
     const convo = convos.find((c) => c.id === params?.p_conversation_id && c.user_id === MOCK_USER_ID);
     if (convo && (convo.status === 'resolved' || convo.status === 'archived')) {
       convo.status = 'open'; convo.archived_at = null; convo.reopen_count += 1;
+      emitRealtime('support_conversations', 'UPDATE', convo);
     }
     return { data: null, error: null };
   }
@@ -170,6 +215,7 @@ function mockApi(kind, action, params, store) {
     const convo = convos.find((c) => c.id === params?.conversation_id);
     if (!convo) return { ok: false, error: 'Conversation not found' };
     convo.unread_admin = 0;
+    emitRealtime('support_conversations', 'UPDATE', convo);
     const messages = msgs
       .filter((m) => m.conversation_id === convo.id)
       .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
@@ -193,6 +239,8 @@ function mockApi(kind, action, params, store) {
     convo.last_message_at = now();
     convo.unread_user += 1;
     events.push({ conversation_id: convo.id, admin_email: MOCK_EMAIL, action: 'replied', meta: { message_id: message.id }, at: now() });
+    emitRealtime('support_messages', 'INSERT', message);
+    emitRealtime('support_conversations', 'UPDATE', convo);
     return { ok: true, message, claimed, assigned_admin: convo.assigned_admin };
   }
   return { ok: false, error: 'Unknown action' };
@@ -232,6 +280,9 @@ export function createMockSupabaseStub() {
     // Dev-harness stand-in for the admin backends — see adminApiCall() in
     // data.js, which routes here instead of fetch() when this hook exists.
     __mockApi: (kind, action, params) => mockApi(kind, action, params, store),
+    // Realtime emulation (Slice 4): same channel API shape as supabase-js.
+    channel: () => makeChannel(),
+    removeChannel: (ch) => { rtChannels.delete(ch); },
     rpc: async (name, params) => {
       if (name === 'is_email_allowed') return { data: true, error: null }; // dev-harness user always passes the invite gate, localhost-only
       // Admin-flagged since Slice 3 so the Admin tab (and its Support inbox)
