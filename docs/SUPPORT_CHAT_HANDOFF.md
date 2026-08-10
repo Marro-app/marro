@@ -63,7 +63,17 @@
   the console leaves the channel. Awareness only — auto-claim still settles ownership. No SQL.
   **Verify with two admin browsers on the Vercel preview** (the one-tab mock harness has no second
   admin; presence is a silent no-op there).
-- **Next: Slice 9** (triage depth) → then 10…14.
+- **Slice 9** (triage depth) — ✅ built on branch `feat/support-slice-9-triage`. Priority
+  (low/normal/urgent chips; Urgent surfaces in row meta), tags (sanitized server-side: kebab-case,
+  ≤30 chars, ≤10), internal notes (composer checkbox → `add_note`; amber dashed bubbles labeled
+  "user never sees this"; NO unread/last_message bump; excluded from the user RLS lane — re-verified
+  through the user read path), identity summary on threads (name/email/school/joined — the §4-allowed
+  identity context; the full profile drill-down remains deferred until the Terms/Privacy support-access
+  language ships), and bug tech-context: `src/lib/consoleBuffer.js` (last-10 console.error ring buffer,
+  installed at boot in `main.jsx`) + environment snapshot attached ONLY on bug submissions —
+  technical-only, no financial data, rendered as a collapsible "Debug info" `<details>` in the thread.
+  New `support_events` verbs: `priority_changed`, `tagged`, `note_added`. No new SQL.
+- **Next: Slice 10** (screenshot + annotate) → then 11…14.
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file
 is idempotent — re-running it is safe.
