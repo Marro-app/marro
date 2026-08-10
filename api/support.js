@@ -25,6 +25,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './_config.js';
 // api/support-notify.js) — the ONE definition of which status moves are legal.
 import { canTransition, eventForTransition, sweep } from '../src/lib/supportLifecycle.js';
 import { sendEmail } from './_email.js';
+import { evaluateNudge, NUDGE_FREQUENCY_WINDOW_DAYS } from '../src/lib/nudgeGate.js';
 
 // Reply-when-gone email (Slice 11): only when the user looks gone (their last
 // message is older than this), and at most once per conversation per window.
@@ -488,11 +489,132 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, conversation: updated[0] });
       }
 
+      case 'nudge_create': {
+        // Manual proactive nudge (Slice 13). Held until send_after, then the
+        // still-relevant gate re-checks before anything actually goes out.
+        const target = String(body.target_email || '').toLowerCase().trim();
+        const text = typeof body.body === 'string' ? body.body.trim() : '';
+        if (!target || !/.+@.+/.test(target)) return res.status(400).json({ error: 'Valid target email required' });
+        if (!text) return res.status(400).json({ error: 'Nudge text required' });
+        const delayHours = Math.max(0, Math.min(24 * 14, Number(body.delay_hours) || 0));
+        const { data: rows, error } = await admin.from('support_nudges').insert({
+          created_by: callerEmail,
+          target_email: target,
+          body: text.slice(0, 500),
+          trigger_kind: 'manual',
+          recheck_condition: { type: 'no_open_support_thread' },
+          send_after: new Date(Date.now() + delayHours * 3600000).toISOString(),
+        }).select('*');
+        if (error) throw error;
+        return res.status(200).json({ ok: true, nudge: rows?.[0] || null });
+      }
+
+      case 'nudge_list': {
+        // Evaluate due nudges first (lazy — no cron), then return the recent set.
+        await evaluateDueNudges(admin);
+        const { data: nudges, error } = await admin
+          .from('support_nudges').select('*')
+          .order('created_at', { ascending: false }).limit(50);
+        if (error) throw error;
+        return res.status(200).json({ ok: true, nudges: nudges || [] });
+      }
+
+      case 'nudge_cancel': {
+        const id = String(body.nudge_id || '');
+        if (!id) return res.status(400).json({ error: 'Missing nudge_id' });
+        const { data: rows, error } = await admin
+          .from('support_nudges')
+          .update({ state: 'cancelled', cancelled_reason: 'admin_cancelled' })
+          .eq('id', id).eq('state', 'scheduled')
+          .select('*');
+        if (error) throw error;
+        return res.status(200).json({ ok: true, cancelled: (rows || []).length > 0 });
+      }
+
+      case 'nudge_context': {
+        // Live state for the composer's "still relevant?" preview.
+        const target = String(body.target_email || '').toLowerCase().trim();
+        if (!target) return res.status(400).json({ error: 'Missing target_email' });
+        const ctx = await nudgeContextFor(admin, target, new Date(0).toISOString());
+        return res.status(200).json({ ok: true, context: ctx });
+      }
+
       default:
         return res.status(400).json({ error: 'Unknown action' });
     }
   } catch (e) {
     console.error('support: action failed', action, e?.message);
     return res.status(500).json({ error: 'Action failed. Please try again.' });
+  }
+}
+
+// ── Nudge evaluation (Slice 13) ─────────────────────────────────────────────
+// Live context for one target at evaluation/compose time. Email → uid via the
+// Admin API (fine at beta scale), then their support activity.
+async function nudgeContextFor(admin, targetEmail, sinceIso) {
+  const ctx = { userActiveThread: false, userMessagedSince: false, sentToTargetInWindow: 0 };
+  try {
+    const { data: usersPage } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    const user = (usersPage?.users || []).find((u) => (u.email || '').toLowerCase() === targetEmail);
+    if (user) {
+      const { data: convos } = await admin
+        .from('support_conversations').select('id, status, last_message_at').eq('user_id', user.id);
+      ctx.userActiveThread = (convos || []).some((c) => ['new', 'open', 'waiting_user'].includes(c.status));
+      if ((convos || []).length) {
+        const ids = convos.map((c) => c.id);
+        const { data: msgs } = await admin
+          .from('support_messages').select('id').in('conversation_id', ids)
+          .eq('sender', 'user').gte('created_at', sinceIso).limit(1);
+        ctx.userMessagedSince = (msgs || []).length > 0;
+      }
+    }
+    const windowStart = new Date(Date.now() - NUDGE_FREQUENCY_WINDOW_DAYS * 86400000).toISOString();
+    const { data: recent } = await admin
+      .from('support_nudges').select('id').eq('target_email', targetEmail)
+      .eq('state', 'sent').gte('sent_at', windowStart).limit(1);
+    ctx.sentToTargetInWindow = (recent || []).length;
+  } catch (e) {
+    console.error('support: nudge context failed', targetEmail, e?.message);
+  }
+  return ctx;
+}
+
+// Run the still-relevant gate over every due nudge: send via the in-app
+// notification pipeline, or auto-cancel with the reason recorded. Lazy (no
+// cron) — invoked from nudge_list; the pure gate itself is Vitest-covered.
+async function evaluateDueNudges(admin) {
+  try {
+    const { data: due, error } = await admin
+      .from('support_nudges').select('*')
+      .eq('state', 'scheduled')
+      .lte('send_after', new Date().toISOString())
+      .limit(25);
+    if (error) throw error;
+    for (const nudge of due || []) {
+      const ctx = await nudgeContextFor(admin, nudge.target_email, nudge.created_at);
+      const verdict = evaluateNudge(nudge, ctx);
+      if (verdict.action === 'send') {
+        const { error: notifErr } = await admin.from('user_notifications').insert({
+          email: nudge.target_email, kind: 'nudge', message: nudge.body, metadata: { nudge_id: nudge.id },
+        });
+        if (notifErr) { console.error('support: nudge delivery failed', nudge.id, notifErr.message); continue; }
+        await admin.from('support_nudges')
+          .update({ state: 'sent', sent_at: new Date().toISOString() }).eq('id', nudge.id);
+        const { error: evErr } = await admin.from('support_events').insert({
+          conversation_id: null, admin_email: 'system', action: 'nudge_sent', meta: { nudge_id: nudge.id, target: nudge.target_email },
+        });
+        if (evErr) console.error('support: nudge event failed', nudge.id, evErr.message);
+      } else if (verdict.action === 'cancel') {
+        await admin.from('support_nudges')
+          .update({ state: 'cancelled', cancelled_reason: verdict.reason }).eq('id', nudge.id);
+        const { error: evErr } = await admin.from('support_events').insert({
+          conversation_id: null, admin_email: 'system', action: 'nudge_cancelled', meta: { nudge_id: nudge.id, reason: verdict.reason },
+        });
+        if (evErr) console.error('support: nudge event failed', nudge.id, evErr.message);
+      }
+      // 'wait' → leave it scheduled.
+    }
+  } catch (e) {
+    console.error('support: nudge evaluation failed', e?.message);
   }
 }

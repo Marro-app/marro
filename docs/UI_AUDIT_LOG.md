@@ -2,6 +2,10 @@
 
 Newest first. One line per finding: severity · what · fix.
 
+## 2026-08-07 — Support chat: proactive nudges (Slice 13, branch `feat/support-slice-13-nudges`)
+
+- Nudges view: composer fields all have real `<label htmlFor>`s (email, send-timing `<select>`, message textarea); the "still relevant?" warning is `role="status"` (amber text ≥4.5:1 both themes), errors `role="alert"`; "Schedule nudge" is the view's single filled primary; state pills (Scheduled/Sent/Auto-cancelled) carry their meaning in text, color is secondary; per-row Cancel is an outlined `.hit-slop` button. Verified on `?mock=1`: composing to a user with an open thread shows the warning AND the gate auto-cancels with "thread already open" at evaluation.
+
 ## 2026-08-07 — Support chat: metrics dashboard (Slice 12, branch `feat/support-slice-12-metrics`)
 
 - Read-only reporting view: range chips + back button follow the section's existing `aria-pressed`/`.hit-slop` idioms; the sparkline SVG is `role="img"` with a descriptive `aria-label` (peak included) and share-of-load bars are `aria-hidden` decoration beside full text equivalents ("67% · 3 handled · …") — no data conveyed by graphics alone. Aging rows repeat "waiting Xh" as text (`C.danger` on card bg ≥4.5:1 both themes). No motion, no new tokens. Verified render + numbers against the seeded store on `?mock=1`.
