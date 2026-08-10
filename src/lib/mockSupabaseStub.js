@@ -40,6 +40,12 @@ function makeQueryBuilder(table, store) {
       }
       let matched = rows;
       filters.forEach(([col, val]) => { matched = matched.filter((r) => r[col] === val); });
+      // RLS parity (Slice 9): the USER lane never sees internal notes — the
+      // real policy excludes them; user-side reads here go through from(),
+      // while the admin lane (mockApi 'thread') reads the store directly.
+      if (table === 'support_messages' && op.kind === 'select') {
+        matched = matched.filter((r) => !r.is_internal_note);
+      }
       if (op.kind === 'update') {
         matched.forEach((r) => Object.assign(r, op.payload));
         return { data: matched, error: null };
@@ -242,7 +248,33 @@ function mockApi(kind, action, params, store) {
     const messages = msgs
       .filter((m) => m.conversation_id === convo.id)
       .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-    return { ok: true, messages };
+    return { ok: true, messages, profile: { name: 'Test Student', email: MOCK_EMAIL, school: 'Weill Cornell Medicine', joined: '2026-01-01T00:00:00.000Z' } };
+  }
+  if (action === 'set_priority') {
+    const convo = convos.find((c) => c.id === params?.conversation_id);
+    if (!convo) return { ok: false, error: 'Conversation not found' };
+    convo.priority = params?.priority || 'normal';
+    emitRealtime('support_conversations', 'UPDATE', convo);
+    return { ok: true, conversation: { ...convo, user_email: MOCK_EMAIL, user_name: 'Test Student' } };
+  }
+  if (action === 'set_tags') {
+    const convo = convos.find((c) => c.id === params?.conversation_id);
+    if (!convo) return { ok: false, error: 'Conversation not found' };
+    const tags = (Array.isArray(params?.tags) ? params.tags : [])
+      .map((t) => String(t).toLowerCase().trim().replace(/\s+/g, '-').slice(0, 30))
+      .filter(Boolean).filter((t, i, a) => a.indexOf(t) === i).slice(0, 10);
+    convo.tags = tags.length ? tags : null;
+    emitRealtime('support_conversations', 'UPDATE', convo);
+    return { ok: true, conversation: { ...convo, user_email: MOCK_EMAIL, user_name: 'Test Student' } };
+  }
+  if (action === 'add_note') {
+    const convo = convos.find((c) => c.id === params?.conversation_id);
+    if (!convo) return { ok: false, error: 'Conversation not found' };
+    const text = (params?.body || '').trim();
+    if (!text) return { ok: false, error: 'Note text required' };
+    const message = { id: mockId(), conversation_id: convo.id, sender: 'admin', sender_email: MOCK_EMAIL, body: text, attachments: null, is_internal_note: true, created_at: now(), read_at: null };
+    msgs.push(message);
+    return { ok: true, message };
   }
   if (action === 'set_status') {
     const convo = convos.find((c) => c.id === params?.conversation_id);
