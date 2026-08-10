@@ -107,6 +107,22 @@ export async function fetchAvailability() {
   }
 }
 
+// Live updates to the single settings row — an admin's heartbeat going stale
+// or an override flip should update an already-open panel's status line, not
+// just the next cold fetch. Resolves each change before calling back so the
+// caller never has to re-import the resolver.
+export async function subscribeToAvailability(onChange) {
+  const sb = await getSupabase();
+  if (typeof sb.channel !== 'function') return () => {};
+  const { resolveAvailability } = await import('./supportAvailability.js');
+  const ch = sb.channel('support-availability')
+    .on('postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'support_settings', filter: 'id=eq.1' },
+      (payload) => { if (payload?.new) onChange(resolveAvailability(Date.now(), payload.new)); })
+    .subscribe();
+  return () => { try { sb.removeChannel(ch); } catch { /* already gone */ } };
+}
+
 // ── Outbound alerts (Slice 5) ───────────────────────────────────────────────
 // Fire-and-forget nudge to api/support-notify.js after a user message lands:
 // pings the founders' Discord (debounced server-side) and drops the one-time

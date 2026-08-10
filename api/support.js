@@ -220,14 +220,6 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, message, claimed, assigned_admin: convo.assigned_admin || callerEmail });
       }
 
-      case 'settings': {
-        // Current availability config for the admin toggle UI.
-        const { data: settings, error } = await admin
-          .from('support_settings').select('*').eq('id', 1).maybeSingle();
-        if (error) throw error;
-        return res.status(200).json({ ok: true, settings: settings || null });
-      }
-
       case 'heartbeat': {
         // Bumped while an admin has the Support console open — the availability
         // resolver treats a stale heartbeat as "not really here" (plan §3).
