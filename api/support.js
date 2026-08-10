@@ -24,6 +24,12 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './_config.js';
 // Pure, side-effect-free (same rationale as the resolver import in
 // api/support-notify.js) — the ONE definition of which status moves are legal.
 import { canTransition, eventForTransition, sweep } from '../src/lib/supportLifecycle.js';
+import { sendEmail } from './_email.js';
+
+// Reply-when-gone email (Slice 11): only when the user looks gone (their last
+// message is older than this), and at most once per conversation per window.
+const AWAY_AFTER_MINUTES = 15;
+const REPLY_EMAIL_DEBOUNCE_HOURS = 6;
 
 // Bounded list read so the inbox payload can't blow up as the beta grows.
 const LIST_LIMIT = 200;
@@ -259,6 +265,47 @@ export default async function handler(req, res) {
                 metadata: { conversation_id: conversationId },
               });
               if (notifErr) console.error('support: reply notification failed', conversationId, notifErr.message);
+
+              // Reply-when-gone email (Slice 11): if the user's last message
+              // is old enough that they've likely left the app, the in-app
+              // banner won't reach them — send an email too. Debounced per
+              // conversation via a support_events row so a burst of replies
+              // is one email; the plan-level caps in _email.js still apply.
+              try {
+                const { data: lastUserMsg } = await admin
+                  .from('support_messages').select('created_at')
+                  .eq('conversation_id', conversationId).eq('sender', 'user')
+                  .order('created_at', { ascending: false }).limit(1);
+                const lastAt = lastUserMsg?.[0]?.created_at ? new Date(lastUserMsg[0].created_at).getTime() : null;
+                const away = lastAt != null && Date.now() - lastAt > AWAY_AFTER_MINUTES * 60000;
+                if (away) {
+                  const since = new Date(Date.now() - REPLY_EMAIL_DEBOUNCE_HOURS * 3600000).toISOString();
+                  const { data: recentEmail } = await admin
+                    .from('support_events').select('id')
+                    .eq('conversation_id', conversationId).eq('action', 'reply_emailed')
+                    .gte('at', since).limit(1);
+                  if (!recentEmail || recentEmail.length === 0) {
+                    const { ok: emailed, error: sendErr } = await sendEmail({
+                      to: ownerEmail,
+                      subject: 'Marro replied to your support message',
+                      html: `<p>Hi — we replied to your support message.</p>
+<p>Open Marro and tap the chat bubble in the corner to read it:</p>
+<p><a href="https://joinmarro.com">joinmarro.com</a></p>
+<p style="color:#888;font-size:12px">You're getting this because you contacted Marro support and weren't in the app when we answered.</p>`,
+                      type: 'support_reply',
+                    });
+                    if (!emailed) console.error('support: reply email failed', conversationId, sendErr);
+                    else {
+                      const { error: evEmErr } = await admin.from('support_events').insert({
+                        conversation_id: conversationId, admin_email: 'system', action: 'reply_emailed', meta: { to: ownerEmail },
+                      });
+                      if (evEmErr) console.error('support: reply_emailed event failed', conversationId, evEmErr.message);
+                    }
+                  }
+                }
+              } catch (e) {
+                console.error('support: reply-when-gone email failed', conversationId, e?.message);
+              }
             }
           }
         } catch (e) {

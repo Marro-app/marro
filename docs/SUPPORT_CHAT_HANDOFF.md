@@ -86,7 +86,18 @@
   control) + undo (12 deep). Attach affordance on the bug form AND the question composer; refs
   stored as `[{path,type,w,h}]` on the message; rendering resolves 1h signed URLs (AttachmentImg,
   shared by both sides). 5 MB cap client-side.
-- **Next: Slice 11** (CSAT + reply-when-gone email) → then 12…14.
+- **Slice 11** (CSAT + reply-when-gone email) — ✅ built on branch `feat/support-slice-11-csat`.
+  **Prod SQL to run: `supabase/support_csat.sql`** (`support_rate_conversation` — owner-scoped,
+  resolved/archived only, up/down + ≤300-char comment, re-rating overwrites). UI fills the reserved
+  "Chat ended" slot (decision 8): 44pt thumb buttons (`thumbup`/`thumbdown` added to icons.jsx —
+  no emoji), optional comment, skippable (Done always works), "Thanks for the feedback" on save.
+  Reply-when-gone: an admin reply also emails the user when their last message is >15 min old
+  (in-app banner won't reach them), debounced 6h/conversation via `reply_emailed` support_events;
+  plan-level Resend caps in `_email.js` apply. Inbound email→thread stays deferred (plan §13 note).
+  **Harness gotcha (general):** don't verify mock-store state via a second dynamic `import()` from
+  the console after HMR — module identity differs and you'll read a fresh seeded store; verify
+  through the UI instead.
+- **Next: Slice 12** (metrics dashboard) → then 13…14.
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file
 is idempotent — re-running it is safe.
