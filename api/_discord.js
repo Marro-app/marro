@@ -8,12 +8,17 @@ function parseWebhook(url) {
   return m ? { id: m[1], token: m[2] } : null;
 }
 
-export function buildSupportAlertContent({ typeLabel, subject, callerEmail, assignedAdmin, conversationId }) {
-  const routing = assignedAdmin
-    ? `→ ${assignedAdmin} (their thread)`
-    : '→ unassigned — first reply claims it';
+// `submitter`/`claimedBy` are display names when available, falling back to
+// email (most users have a Google full_name, but it's not guaranteed).
+// Claimed state gets its own leading glyph (✅ vs 🆘) rather than just a
+// routing-line text change — glanceable at channel-scroll speed, not just on
+// a careful re-read.
+export function buildSupportAlertContent({ typeLabel, subject, submitter, claimedBy, conversationId }) {
   const link = `https://joinmarro.com/?support_convo=${conversationId}`;
-  return `🆘 Support · new ${typeLabel} from ${callerEmail}\n> ${subject}\n${routing} · ${link}`;
+  if (claimedBy) {
+    return `✅ Claimed by ${claimedBy} · ${typeLabel} from ${submitter}\n> ${subject}\n${link}`;
+  }
+  return `🆘 Support · new ${typeLabel} from ${submitter}\n> ${subject}\n→ unassigned — first reply claims it · ${link}`;
 }
 
 // Post a new alert message. Returns the new message id on success (needed

@@ -60,6 +60,8 @@ export default async function handler(req, res) {
   }
   const callerId = userData.user.id;
   const callerEmail = (userData.user.email || '').toLowerCase();
+  const callerMeta = userData.user.user_metadata || {};
+  const callerName = callerMeta.full_name || callerMeta.name || callerEmail;
 
   const admin = createClient(SUPABASE_URL, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -128,8 +130,26 @@ export default async function handler(req, res) {
       if (!recentPing || recentPing.length === 0) {
         const typeLabel = convo.type === 'feedback' ? 'idea' : convo.type;
         const subject = (convo.subject || '').replace(/\s+/g, ' ').slice(0, 120);
+        // Rare path: a follow-up message on a thread that's ALREADY claimed
+        // (the claim-moment edit in api/support.js already announced the
+        // name once) — resolve it here too so a re-ping never regresses to
+        // showing a bare email.
+        let claimedByName = null;
+        if (convo.assigned_admin) {
+          try {
+            const { data: usersPage } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+            const match = (usersPage?.users || []).find(
+              (u) => (u.email || '').toLowerCase() === convo.assigned_admin,
+            );
+            const meta = match?.user_metadata || {};
+            claimedByName = meta.full_name || meta.name || convo.assigned_admin;
+          } catch (e) {
+            console.error('support-notify: claimer name lookup failed', e?.message);
+            claimedByName = convo.assigned_admin;
+          }
+        }
         const content = buildSupportAlertContent({
-          typeLabel, subject, callerEmail, assignedAdmin: convo.assigned_admin, conversationId,
+          typeLabel, subject, submitter: callerName, claimedBy: claimedByName, conversationId,
         });
         const channels = [];
         // Never fail the request over a webhook hiccup — the message itself

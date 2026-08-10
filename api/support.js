@@ -63,6 +63,8 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Invalid or expired session' });
   }
   const callerEmail = (userData.user.email || '').toLowerCase();
+  const callerMeta = userData.user.user_metadata || {};
+  const callerName = callerMeta.full_name || callerMeta.name || callerEmail;
 
   // Step 2 — service-role client + the REAL admin authorization check.
   const admin = createClient(SUPABASE_URL, serviceRoleKey, {
@@ -259,11 +261,13 @@ export default async function handler(req, res) {
           if (webhook) {
             try {
               const { data: ownerUser } = await admin.auth.admin.getUserById(convo.user_id);
-              const ownerEmail = (ownerUser?.user?.email || '').toLowerCase();
+              const ownerMeta = ownerUser?.user?.user_metadata || {};
+              const ownerName = ownerMeta.full_name || ownerMeta.name
+                || (ownerUser?.user?.email || '').toLowerCase() || 'a user';
               const typeLabel = convo.type === 'feedback' ? 'idea' : convo.type;
               const subject = (convo.subject || '').replace(/\s+/g, ' ').slice(0, 120);
               const content = buildSupportAlertContent({
-                typeLabel, subject, callerEmail: ownerEmail || 'a user', assignedAdmin: callerEmail, conversationId,
+                typeLabel, subject, submitter: ownerName, claimedBy: callerName, conversationId,
               });
               const edited = await editDiscordAlert(webhook, convo.discord_message_id, content);
               if (!edited) console.error('support: discord alert edit failed', conversationId);
