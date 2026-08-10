@@ -4,17 +4,21 @@
 // "pure logic → Vitest" seam). No I/O here — AdminSupportSection.jsx owns the
 // fetching (via supportAdminCall in data.js) and passes plain data in.
 
-// The queue filters the Slice-3 inbox offers. The full §9.5 queue set
-// (Waiting/Snoozed/Resolved/Archived) lands with the Slice-7 status machine —
-// these three are the ones that make sense before lifecycle controls exist.
+// The full §9.5 queue set (Slice 7). 'Active' = needs attention now (not
+// snoozed, not closed); the status queues slice the rest of the lifecycle.
 export const INBOX_FILTERS = [
-  { key: 'active', label: 'Active' },      // everything not closed out
+  { key: 'active', label: 'Active' },
   { key: 'unassigned', label: 'Unassigned' },
   { key: 'mine', label: 'Mine' },
-  { key: 'all', label: 'All' },            // includes resolved/archived history
+  { key: 'waiting', label: 'Waiting' },     // waiting on the user
+  { key: 'snoozed', label: 'Snoozed' },
+  { key: 'resolved', label: 'Resolved' },
+  { key: 'archived', label: 'Archived' },
+  { key: 'all', label: 'All' },
 ];
 
 const CLOSED_STATUSES = ['resolved', 'archived'];
+const PARKED_STATUSES = ['resolved', 'archived', 'snoozed']; // out of the active queues
 
 // Which conversations a filter shows. `adminEmail` is the caller (for 'mine').
 // Rows are assumed pre-sorted newest-activity-first by the backend; filtering
@@ -24,14 +28,22 @@ export function filterInbox(conversations, filter, adminEmail) {
   const email = (adminEmail || '').toLowerCase();
   switch (filter) {
     case 'unassigned':
-      return rows.filter((c) => !c.assigned_admin && !CLOSED_STATUSES.includes(c.status));
+      return rows.filter((c) => !c.assigned_admin && !PARKED_STATUSES.includes(c.status));
     case 'mine':
       return rows.filter((c) => (c.assigned_admin || '').toLowerCase() === email && !CLOSED_STATUSES.includes(c.status));
+    case 'waiting':
+      return rows.filter((c) => c.status === 'waiting_user');
+    case 'snoozed':
+      return rows.filter((c) => c.status === 'snoozed');
+    case 'resolved':
+      return rows.filter((c) => c.status === 'resolved');
+    case 'archived':
+      return rows.filter((c) => c.status === 'archived');
     case 'all':
       return rows;
     case 'active':
     default:
-      return rows.filter((c) => !CLOSED_STATUSES.includes(c.status));
+      return rows.filter((c) => !PARKED_STATUSES.includes(c.status));
   }
 }
 

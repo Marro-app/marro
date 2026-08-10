@@ -2,6 +2,13 @@
 
 Newest first. One line per finding: severity · what · fix.
 
+## 2026-08-07 — Support chat: lifecycle + queues (Slice 7, branch `feat/support-slice-7-lifecycle`)
+
+- **Thread action row** (Resolve / Snooze 1d / Reopen / Archive / Release / Reassign): all outlined `.btn-pop` ghosts — no second filled primary competes with Send (rule 9); `role="group"` + `aria-label="Conversation actions"`; `.hit-slop` to ≥44pt; buttons appear only when the pure state machine allows the move, so no dead/disabled-mystery controls. Reassign opens a labeled email `<input>` (real `<label htmlFor>`) + "Hand off".
+- **Queue chips** extended to the full §9.5 set (8 chips, `aria-pressed`, wrap on narrow widths, `.hit-slop`).
+- **"unanswered Xh" badge**: `C.danger` on `C.dangerLight` (same pairing as the audited unread badge context — text+color, and the row's aria-label already carries the unread state; the wait chip is supplementary info, also present in row meta text for SRs via visible text).
+- **Archived = read-only**: composer swaps for an explanatory line ("This thread is archived — reopen it to reply") — no silently-disabled inputs (NN/g). Verified full loop on `?mock=1`: Resolve → Archive (composer gone) → Reopen (composer back); queue chips filter; wait badge renders.
+
 ## 2026-08-07 — Support chat: Realtime + alerts + availability (Slices 4–6, stacked branches)
 
 Slices 4 (`feat/support-slice-4-realtime`), 5 (`…-slice-5-alerts`), 6 (`…-slice-6-availability`). Verified on `?mock=1` (dark), keyboard + semantics live; all tokens existing `C.*` in established roles.

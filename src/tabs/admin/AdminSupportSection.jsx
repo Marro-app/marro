@@ -6,6 +6,7 @@ import { supportAdminCall } from '../../lib/data.js';
 import { categoryForType, subscribeToMessages, subscribeToConversations } from '../../lib/support.js';
 import { INBOX_FILTERS, filterInbox, agoLabel, handledByLabel } from '../../lib/supportAdmin.js';
 import { resolveAvailability } from '../../lib/supportAvailability.js';
+import { canTransition, waitingLabel } from '../../lib/supportLifecycle.js';
 
 // How often the open console re-affirms "an admin is actually here" — well
 // inside the resolver's 20-minute staleness window.
@@ -200,6 +201,33 @@ export default function AdminSupportSection() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(); }
   };
 
+  // ── Lifecycle + ownership actions (Slice 7) ────────────────────────────────
+  const [actionBusy, setActionBusy] = useState(false);
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [reassignTo, setReassignTo] = useState('');
+
+  // Patch the acted-on conversation everywhere it lives (thread + list).
+  const applyConvo = useCallback((row) => {
+    if (!row) return;
+    setOpenConvo((c) => (c && c.id === row.id ? { ...c, ...row } : c));
+    setConversations((cs) => cs.map((c) => (c.id === row.id ? { ...c, ...row } : c)));
+  }, []);
+
+  const doAction = useCallback(async (action, params = {}) => {
+    if (!openConvo || actionBusy) return;
+    setActionBusy(true);
+    setReplyError('');
+    const res = await supportAdminCall(action, { conversation_id: openConvo.id, ...params });
+    if (!res || res.ok === false || res.error) {
+      setReplyError(res?.error || "That didn't go through. Please try again.");
+    } else {
+      applyConvo(res.conversation);
+      setReassignOpen(false);
+      setReassignTo('');
+    }
+    setActionBusy(false);
+  }, [openConvo, actionBusy, applyConvo]);
+
   const visible = filterInbox(conversations, filter, callerEmail);
 
   // ── Thread view ────────────────────────────────────────────────────────────
@@ -229,6 +257,50 @@ export default function AdminSupportSection() {
           </span>
         </div>
 
+        {/* Lifecycle + ownership controls (Slice 7). Which buttons show is
+            driven by the same pure state machine the backend enforces, so the
+            UI can never offer an illegal move. All ghost/outlined (rule 9 —
+            no competing primaries; Send stays the one filled action). */}
+        <div role="group" aria-label="Conversation actions" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+          {[
+            canTransition(openConvo.status, 'resolved') && { label: 'Resolve', onClick: () => doAction('set_status', { status: 'resolved' }) },
+            canTransition(openConvo.status, 'snoozed') && { label: 'Snooze 1d', onClick: () => doAction('set_status', { status: 'snoozed', snooze_hours: 24 }) },
+            (openConvo.status === 'resolved' || openConvo.status === 'archived') && { label: 'Reopen', onClick: () => doAction('set_status', { status: 'open' }) },
+            openConvo.status === 'resolved' && { label: 'Archive', onClick: () => doAction('set_status', { status: 'archived' }) },
+            !!openConvo.assigned_admin && { label: 'Release', onClick: () => doAction('release') },
+            !!openConvo.assigned_admin && { label: reassignOpen ? 'Cancel reassign' : 'Reassign', onClick: () => { setReassignOpen((v) => !v); setReassignTo(''); } },
+          ].filter(Boolean).map((b) => (
+            <button key={b.label} type="button" onClick={b.onClick} disabled={actionBusy} className="btn-pop hit-slop"
+              style={{ minHeight: 32, padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text, opacity: actionBusy ? 0.6 : 1 }}>
+              {b.label}
+            </button>
+          ))}
+          {openConvo.status === 'snoozed' && openConvo.snooze_until && (
+            <span style={{ alignSelf: 'center', fontSize: 11, color: C.textMid }}>
+              Snoozed until {new Date(openConvo.snooze_until).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric' })}
+            </span>
+          )}
+        </div>
+        {reassignOpen && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+            <label htmlFor={`${fieldId}-reassign`} style={{ fontSize: 12, fontWeight: 600, color: C.text }}>Hand to</label>
+            <input
+              id={`${fieldId}-reassign`}
+              type="email"
+              value={reassignTo}
+              onChange={(e) => setReassignTo(e.target.value)}
+              placeholder="other admin's email"
+              style={{ flex: 1, minHeight: 36, padding: '7px 11px', fontSize: 12.5, borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface, color: C.text, boxSizing: 'border-box', outline: 'none' }}
+            />
+            <button type="button" disabled={!reassignTo.trim() || actionBusy}
+              onClick={() => doAction('reassign', { admin_email: reassignTo.trim() })}
+              className="btn-pop"
+              style={{ minHeight: 36, padding: '7px 14px', borderRadius: 9, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text, opacity: (!reassignTo.trim() || actionBusy) ? 0.5 : 1 }}>
+              Hand off
+            </button>
+          </div>
+        )}
+
         <div ref={listRef} className="themed-scroll"
           style={{ maxHeight: 420, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 2px 10px' }}>
           {threadLoading
@@ -236,6 +308,13 @@ export default function AdminSupportSection() {
             : messages.map((m) => <AdminBubble key={m.id} msg={m} />)}
         </div>
 
+        {/* Archived threads are read-only until reopened (plan §9.5). */}
+        {openConvo.status === 'archived' ? (
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10, fontSize: 12, color: C.textMid }}>
+            {replyError && <div id={errId} role="alert" style={{ fontSize: 12, color: C.danger, marginBottom: 8 }}>{replyError}</div>}
+            This thread is archived — reopen it to reply.
+          </div>
+        ) : (
         <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
           {replyError && <div id={errId} role="alert" style={{ fontSize: 12, color: C.danger, marginBottom: 8 }}>{replyError}</div>}
           <label htmlFor={fieldId} style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>
@@ -259,6 +338,7 @@ export default function AdminSupportSection() {
             </button>
           </div>
         </div>
+        )}
       </Card>
     );
   }
@@ -347,9 +427,16 @@ export default function AdminSupportSection() {
                   <span style={{ display: 'block', fontSize: 11.5, color: C.textMid, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {who} · {cat.label} · {agoLabel(c.last_message_at)}
                     {handledBy ? ` · Handled by ${handledBy}` : c.status !== 'resolved' && c.status !== 'archived' ? ' · Unassigned' : ''}
+                    {c.status === 'waiting_user' ? ' · Waiting on user' : ''}
+                    {c.status === 'snoozed' ? ' · Snoozed' : ''}
                     {(c.status === 'resolved' || c.status === 'archived') ? ` · ${c.status === 'archived' ? 'Archived' : 'Resolved'}` : ''}
                   </span>
                 </span>
+                {waitingLabel(c) && (
+                  <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: C.danger, background: C.dangerLight, border: `1px solid ${C.border}`, borderRadius: 999, padding: '3px 8px' }}>
+                    {waitingLabel(c)}
+                  </span>
+                )}
                 {c.unread_admin > 0 && (
                   <span aria-hidden="true" style={{ flexShrink: 0, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, background: C.danger, color: C.bg, fontSize: 10.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                     {c.unread_admin > 9 ? '9+' : c.unread_admin}

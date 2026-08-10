@@ -156,6 +156,8 @@ function supportRpc(name, params, store) {
     convo.unread_admin += 1;
     if (convo.status === 'resolved' || convo.status === 'archived') {
       convo.status = 'open'; convo.reopen_count += 1; convo.archived_at = null;
+    } else if (convo.status === 'waiting_user' || convo.status === 'snoozed') {
+      convo.status = 'open'; convo.snooze_until = null;
     }
     emitRealtime('support_messages', 'INSERT', m);
     emitRealtime('support_conversations', 'UPDATE', convo);
@@ -236,6 +238,31 @@ function mockApi(kind, action, params, store) {
       .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     return { ok: true, messages };
   }
+  if (action === 'set_status') {
+    const convo = convos.find((c) => c.id === params?.conversation_id);
+    if (!convo) return { ok: false, error: 'Conversation not found' };
+    const target = params?.status;
+    if (target === 'resolved') { convo.resolved_at = now(); convo.resolved_by = MOCK_EMAIL; }
+    if (target === 'archived') { convo.archived_at = now(); }
+    if (target === 'snoozed') { convo.snooze_until = new Date(Date.now() + (params?.snooze_hours || 24) * 3600000).toISOString(); }
+    if (target === 'open') {
+      convo.archived_at = null; convo.snooze_until = null;
+      if (['resolved', 'archived'].includes(convo.status)) convo.reopen_count += 1;
+    }
+    convo.status = target;
+    events.push({ conversation_id: convo.id, admin_email: MOCK_EMAIL, action: 'status_changed', meta: { to: target }, at: now() });
+    emitRealtime('support_conversations', 'UPDATE', convo);
+    return { ok: true, conversation: { ...convo, user_email: MOCK_EMAIL, user_name: 'Test Student' } };
+  }
+  if (action === 'reassign' || action === 'release') {
+    const convo = convos.find((c) => c.id === params?.conversation_id);
+    if (!convo) return { ok: false, error: 'Conversation not found' };
+    if (action === 'reassign') { convo.assigned_admin = (params?.admin_email || '').toLowerCase(); convo.claimed_at = now(); }
+    else convo.assigned_admin = null;
+    events.push({ conversation_id: convo.id, admin_email: MOCK_EMAIL, action: action === 'reassign' ? 'reassigned' : 'released', meta: null, at: now() });
+    emitRealtime('support_conversations', 'UPDATE', convo);
+    return { ok: true, conversation: { ...convo, user_email: MOCK_EMAIL, user_name: 'Test Student' } };
+  }
   if (action === 'settings' || action === 'heartbeat' || action === 'set_availability') {
     const rows = store.support_settings || (store.support_settings = []);
     const st = rows[0] || (rows[0] = { id: 1, online_override: 'auto', business_hours: { tz: 'America/New_York', start: 9, end: 21 }, available_until: null, last_admin_heartbeat: null });
@@ -258,9 +285,9 @@ function mockApi(kind, action, params, store) {
     if (claimed) {
       convo.assigned_admin = MOCK_EMAIL;
       convo.claimed_at = now();
-      if (convo.status === 'new') convo.status = 'open';
       events.push({ conversation_id: convo.id, admin_email: MOCK_EMAIL, action: 'claimed', meta: { via: 'auto_claim_on_reply' }, at: now() });
     }
+    if (convo.status === 'new' || convo.status === 'open') convo.status = 'waiting_user';
     convo.first_response_at = convo.first_response_at || now();
     convo.last_message_at = now();
     convo.unread_user += 1;

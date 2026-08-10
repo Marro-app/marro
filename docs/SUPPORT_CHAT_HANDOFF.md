@@ -46,7 +46,17 @@
   heartbeats every 5 min while open; Auto/Available/Away override in the inbox header ('on' stamps
   a 1h `available_until`). Admin reply inserts a `user_notifications` row → existing
   NotificationBanner ("Marro replied…").
-- **Next: Slice 7** (lifecycle + queues + archive) → then 8…14.
+- **Slice 7** (lifecycle + queues + archive) — ✅ built on branch `feat/support-slice-7-lifecycle`.
+  Pure `src/lib/supportLifecycle.js` (transition matrix, event verbs, sweep, waiting labels —
+  Vitest) imported by BOTH `api/support.js` and the console UI, so the buttons offered are exactly
+  the moves the backend allows. Semantics: admin reply flips new/open → `waiting_user`; a user
+  reply wakes waiting/snoozed → `open` (**prod SQL: re-run `supabase/support_chat.sql`** — the
+  `support_post_user_message` RPC changed; idempotent). `set_status` (resolve/archive/snooze N h/
+  reopen) + `reassign`/`release` all log `support_events`. No cron yet: `list` runs a lazy sweep
+  (due snoozes wake; resolved >30 days auto-archive, `admin_email='system'`, `via:'sweep'`).
+  Archived threads are read-only until reopened. User side: admin-RESOLVED questions now count as
+  "ended" for the hub's Recent-chats list (reopenable 7 days, `resolved_at`-based).
+- **Next: Slice 8** (presence soft-lock) → then 9…14.
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file
 is idempotent — re-running it is safe.

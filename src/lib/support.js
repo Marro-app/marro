@@ -181,12 +181,15 @@ export function findActiveQuestion(conversations) {
   ) || null;
 }
 
-// Every Question the user ended within the reopen window (newest first) —
-// surfaced as the hub's "Recent chats" list. Older archived chats fall out of view.
+// Every Question that ENDED within the reopen window (newest first) — surfaced
+// as the hub's "Recent chats" list. "Ended" covers both the user archiving it
+// AND an admin resolving it (Slice 7) — to the user those are the same thing.
+// Older ended chats fall out of view (admins keep the full record).
 export function findReopenableChats(conversations) {
   const now = Date.now();
+  const endedAt = (c) => c.status === 'archived' ? c.archived_at : c.resolved_at;
   return (conversations || [])
-    .filter((c) => c.type === 'question' && c.status === 'archived' && c.archived_at
-      && (now - new Date(c.archived_at).getTime()) < REOPEN_WINDOW_MS)
-    .sort((a, b) => new Date(b.archived_at) - new Date(a.archived_at));
+    .filter((c) => c.type === 'question' && ['archived', 'resolved'].includes(c.status) && endedAt(c)
+      && (now - new Date(endedAt(c)).getTime()) < REOPEN_WINDOW_MS)
+    .sort((a, b) => new Date(endedAt(b)) - new Date(endedAt(a)));
 }
