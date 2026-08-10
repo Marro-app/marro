@@ -2,6 +2,15 @@
 
 Newest first. One line per finding: severity · what · fix.
 
+## 2026-08-07 — Support chat: screenshot + annotate (Slice 10, branch `feat/support-slice-10-screenshot`)
+
+- **Studio dialog**: `role="dialog"` + `aria-modal`, Esc closes (text entry first, then the studio), ✕ is the audited XBtn. Every tool is a real labeled `<button>` with `aria-pressed` + `.hit-slop`; capture explains itself ("takes a single frame — nothing is recorded").
+- **Non-visual path (plan §8)**: canvas drawing is inherently pointer-based, so the accessible route is first-class — "Upload an image instead" (labeled file input) is always present and skips annotation entirely; annotation is optional sugar, never required.
+- **Privacy**: Blur/redact pixelates in-place (mosaic), tip copy nudges users to hide private numbers pre-send — supports the §4 no-financial-data stance. Capture stops screen-share tracks immediately after one frame.
+- **Attachment chip** ("Screenshot attached" + labeled remove ✕); images in bubbles are links ("open full size" aria-label) with alt text; failed refs degrade to text ("Attachment unavailable"), never broken images.
+- **Two real bugs found + fixed pre-ship**: (1) the annotate canvas wasn't mounted during the picker stage, so loading an image silently no-oped — canvas now stays mounted (hidden); (2) React PORTAL event bubbling — clicks inside the portaled studio bubbled up the React tree to SupportPanel's close-on-scrim handler and closed the whole panel; stopPropagation on the studio root fixes it (noted as a general portal gotcha).
+- Verified on `?mock=1`: upload → annotate (box) → attach → bug submit → image renders in the admin thread (in-memory storage emulation). Lazy-chunk check: `getDisplayMedia` absent from the main bundle.
+
 ## 2026-08-07 — Support chat: triage depth (Slice 9, branch `feat/support-slice-9-triage`)
 
 - **Priority chips**: `role="group"` labeled "Priority", `aria-pressed` states, `.hit-slop` ≥44pt; Urgent's active state is `C.danger`-on-`C.dangerLight` (~5:1 both themes) AND the word "Urgent" appears in row meta — never color alone.

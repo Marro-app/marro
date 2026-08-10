@@ -73,7 +73,20 @@
   installed at boot in `main.jsx`) + environment snapshot attached ONLY on bug submissions —
   technical-only, no financial data, rendered as a collapsible "Debug info" `<details>` in the thread.
   New `support_events` verbs: `priority_changed`, `tagged`, `note_added`. No new SQL.
-- **Next: Slice 10** (screenshot + annotate) → then 11…14.
+- **Slice 10** (screenshot + annotate) — ✅ built on branch `feat/support-slice-10-screenshot`.
+  **Prod SQL to run: `supabase/support_attachments.sql`** — creates the PRIVATE `support-attachments`
+  bucket (storage RLS: users insert only into their own `<uid>/` folder; owner-or-admin read) AND
+  re-creates `support_start_conversation` with a 4th `p_attachments` param (drops the old 3-arg
+  overload; `support_chat.sql` updated to match). Lazy-loaded `ScreenshotStudio.jsx` (own chunk —
+  verified absent from the main bundle): PRIMARY = `getDisplayMedia` one-frame capture (tracks
+  stopped immediately); FALLBACK = plain image upload (also the non-visual path and the mobile
+  path). **Deviation from plan §8: the html2canvas render-from-code middle path was skipped** —
+  heavy dep, mangles glass/canvas; upload covers it (revisit only if mobile demand shows up).
+  Annotation: highlight box / arrow / freehand / text / BLUR-pixelate (the user's own redaction
+  control) + undo (12 deep). Attach affordance on the bug form AND the question composer; refs
+  stored as `[{path,type,w,h}]` on the message; rendering resolves 1h signed URLs (AttachmentImg,
+  shared by both sides). 5 MB cap client-side.
+- **Next: Slice 11** (CSAT + reply-when-gone email) → then 12…14.
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file
 is idempotent — re-running it is safe.
