@@ -32,7 +32,11 @@
 > actions, admin reply → `waiting_user`, user reply wakes waiting/snoozed threads (**⚠️ re-run
 > `supabase/support_chat.sql`** — the user RPC changed), lazy sweep on list (due snoozes wake,
 > resolved >30d auto-archives), full queue chips + "unanswered Xh" badges, archived = read-only.
-> **▶ NEXT: Slice 8** (presence soft-lock).
+> · ✅ Slice 8 (presence) — branch `feat/support-slice-8-presence`:
+> `src/lib/supportPresence.js` (one shared Presence channel, `{viewing, typing}` keyed by admin
+> email; fail-soft no-op without channel support), "viewing/typing…" chips on inbox rows + a
+> soft-lock banner in the thread; typing debounces off after 2.5s. Needs two admin browsers to
+> see — test on the preview. **▶ NEXT: Slice 9** (triage depth).
 >
 > **Per-slice template:** Goal · Depends on · Backend/DB · API · Frontend · Tests · **Done when** · Risk.
 > **Workflow (every slice):** branch → push → Vercel preview → optional `/code-review` → self-merge
