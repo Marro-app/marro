@@ -26,6 +26,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './_config.js';
 import { canTransition, eventForTransition, sweep } from '../src/lib/supportLifecycle.js';
 import { sendEmail } from './_email.js';
 import { evaluateNudge, NUDGE_FREQUENCY_WINDOW_DAYS } from '../src/lib/nudgeGate.js';
+import { buildSupportAlertContent, editDiscordAlert } from './_discord.js';
 
 // Reply-when-gone email (Slice 11): only when the user looks gone (their last
 // message is older than this), and at most once per conversation per window.
@@ -203,7 +204,7 @@ export default async function handler(req, res) {
 
         const { data: convo, error: convoErr } = await admin
           .from('support_conversations')
-          .select('id, status, assigned_admin, first_response_at')
+          .select('id, status, assigned_admin, first_response_at, type, subject, user_id, discord_message_id')
           .eq('id', conversationId)
           .maybeSingle();
         if (convoErr) throw convoErr;
@@ -248,6 +249,29 @@ export default async function handler(req, res) {
         events.push({ conversation_id: conversationId, admin_email: callerEmail, action: 'replied', meta: { message_id: message?.id || null } });
         const { error: evErr } = await admin.from('support_events').insert(events);
         if (evErr) console.error('support: events insert failed', conversationId, evErr.message);
+
+        // Edit the original Discord alert in place on claim, rather than
+        // posting a second message — so the channel always reflects current
+        // ownership instead of accumulating duplicate "unassigned" pings.
+        // Best-effort: a failed edit never blocks the reply itself.
+        if (claimed && convo.discord_message_id) {
+          const webhook = process.env.DISCORD_SUPPORT_WEBHOOK_URL;
+          if (webhook) {
+            try {
+              const { data: ownerUser } = await admin.auth.admin.getUserById(convo.user_id);
+              const ownerEmail = (ownerUser?.user?.email || '').toLowerCase();
+              const typeLabel = convo.type === 'feedback' ? 'idea' : convo.type;
+              const subject = (convo.subject || '').replace(/\s+/g, ' ').slice(0, 120);
+              const content = buildSupportAlertContent({
+                typeLabel, subject, callerEmail: ownerEmail || 'a user', assignedAdmin: callerEmail, conversationId,
+              });
+              const edited = await editDiscordAlert(webhook, convo.discord_message_id, content);
+              if (!edited) console.error('support: discord alert edit failed', conversationId);
+            } catch (e) {
+              console.error('support: discord alert edit threw', conversationId, e?.message);
+            }
+          }
+        }
 
         // Inbound "we replied" (Slice 6): reuse the existing in-app
         // notification pipeline (user_notifications → NotificationBanner) so

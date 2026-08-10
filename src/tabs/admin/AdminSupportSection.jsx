@@ -72,7 +72,7 @@ function AdminBubble({ msg }) {
   );
 }
 
-export default function AdminSupportSection() {
+export default function AdminSupportSection({ initialConversationId, onInitialConversationConsumed } = {}) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [conversations, setConversations] = useState([]);
@@ -204,6 +204,19 @@ export default function AdminSupportSection() {
     }
     setThreadLoading(false);
   }, []);
+
+  // Deep link from a Discord alert (?support_convo=<id>, see App.jsx): once
+  // the inbox has loaded, jump straight into that thread. Guarded by a ref
+  // (not just the prop) so it fires exactly once even if the parent's clear
+  // callback lags a render behind.
+  const deepLinkHandledRef = useRef(false);
+  useEffect(() => {
+    if (!initialConversationId || deepLinkHandledRef.current || loading) return;
+    deepLinkHandledRef.current = true;
+    const row = conversations.find((c) => c.id === initialConversationId);
+    if (row) openThread(row);
+    onInitialConversationConsumed?.();
+  }, [initialConversationId, conversations, loading, openThread, onInitialConversationConsumed]);
 
   const backToInbox = useCallback(() => {
     setOpenConvo(null);
