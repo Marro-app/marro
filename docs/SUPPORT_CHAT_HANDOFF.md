@@ -97,7 +97,16 @@
   **Harness gotcha (general):** don't verify mock-store state via a second dynamic `import()` from
   the console after HMR — module identity differs and you'll read a fresh seeded store; verify
   through the UI instead.
-- **Next: Slice 12** (metrics dashboard) → then 13…14.
+- **Slice 12** (metrics dashboard) — ✅ built on branch `feat/support-slice-12-metrics`.
+  **Prod SQL to run: `supabase/support_metrics.sql`** — six SECURITY DEFINER RPCs
+  (`support_metrics_overview/by_admin/aging/volume_by_type/daily_volume/csat_summary`), each
+  self-checking `is_admin()` and returning aggregates only (zero rows for non-admins, like the
+  Usage dashboard). Console gains a **Metrics** button → read-only view: headline tiles (new,
+  backlog, unanswered, first-response median+p90, resolution, time-to-claim, reopened, CSAT),
+  14-day sparkline (inline SVG, `role="img"` with a text alternative), per-admin share-of-load
+  bars (largest-remainder rounding — always sums to 100), by-type volume, live "waiting on us"
+  watchlist. Pure math in `src/lib/supportMetrics.js` (Vitest ×5). Mock stub emulates all six RPCs.
+- **Next: Slice 13** (proactive nudges) → then 14.
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file
 is idempotent — re-running it is safe.

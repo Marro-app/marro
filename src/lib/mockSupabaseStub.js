@@ -196,6 +196,67 @@ function supportRpc(name, params, store) {
     }
     return { data: null, error: null };
   }
+  if (name === 'support_metrics_overview') {
+    const winMs = (params?.p_days || 30) * 86400000;
+    const inWin = convos.filter((c) => Date.now() - new Date(c.created_at) < winMs);
+    const secs = (a, b) => (new Date(a) - new Date(b)) / 1000;
+    const percentile = (arr, p) => {
+      if (!arr.length) return null;
+      const sorted = [...arr].sort((x, y) => x - y);
+      return sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))];
+    };
+    const fr = inWin.filter((c) => c.first_response_at).map((c) => secs(c.first_response_at, c.created_at));
+    const rs = inWin.filter((c) => c.resolved_at).map((c) => secs(c.resolved_at, c.created_at));
+    const cl = inWin.filter((c) => c.claimed_at).map((c) => secs(c.claimed_at, c.created_at));
+    return { data: [{
+      new_conversations: inWin.length,
+      open_backlog: convos.filter((c) => ['new', 'open', 'waiting_user', 'snoozed'].includes(c.status)).length,
+      deferred_unanswered: convos.filter((c) => ['new', 'open'].includes(c.status) && !c.first_response_at).length,
+      reopened: inWin.filter((c) => c.reopen_count > 0).length,
+      median_first_response_s: percentile(fr, 0.5), p90_first_response_s: percentile(fr, 0.9),
+      median_resolution_s: percentile(rs, 0.5), p90_resolution_s: percentile(rs, 0.9),
+      median_claim_s: percentile(cl, 0.5),
+    }], error: null };
+  }
+  if (name === 'support_metrics_by_admin') {
+    const byAdmin = {};
+    convos.filter((c) => c.assigned_admin).forEach((c) => {
+      const a = byAdmin[c.assigned_admin] || (byAdmin[c.assigned_admin] = { admin_email: c.assigned_admin, handled: 0, replies: 0, resolved: 0, csat_up: 0, csat_down: 0 });
+      a.handled += 1;
+      if (c.resolved_by === c.assigned_admin) a.resolved += 1;
+      if (c.csat === 'up') a.csat_up += 1;
+      if (c.csat === 'down') a.csat_down += 1;
+    });
+    (store.support_events || []).filter((e) => e.action === 'replied').forEach((e) => { if (byAdmin[e.admin_email]) byAdmin[e.admin_email].replies += 1; });
+    return { data: Object.values(byAdmin).sort((a, b) => b.handled - a.handled), error: null };
+  }
+  if (name === 'support_aging') {
+    return { data: convos
+      .filter((c) => ['new', 'open'].includes(c.status) && !c.first_response_at)
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+      .slice(0, 20)
+      .map((c) => ({ conversation_id: c.id, subject: c.subject, type: c.type, status: c.status, assigned_admin: c.assigned_admin, waiting_since: c.created_at })), error: null };
+  }
+  if (name === 'support_volume_by_type') {
+    const byType = {};
+    convos.forEach((c) => {
+      const t = byType[c.type] || (byType[c.type] = { type: c.type, total: 0, resolved: 0 });
+      t.total += 1; if (c.resolved_at) t.resolved += 1;
+    });
+    return { data: Object.values(byType).sort((a, b) => b.total - a.total), error: null };
+  }
+  if (name === 'support_daily_volume') {
+    const byDay = {};
+    convos.forEach((c) => {
+      const d = new Date(c.created_at);
+      const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      byDay[key] = (byDay[key] || 0) + 1;
+    });
+    return { data: Object.entries(byDay).map(([day, total]) => ({ day, total })).sort((a, b) => a.day.localeCompare(b.day)), error: null };
+  }
+  if (name === 'support_csat_summary') {
+    return { data: [{ up_count: convos.filter((c) => c.csat === 'up').length, down_count: convos.filter((c) => c.csat === 'down').length }], error: null };
+  }
   if (name === 'support_rate_conversation') {
     const convo = convos.find((c) => c.id === params?.p_conversation_id && c.user_id === MOCK_USER_ID);
     if (convo && ['resolved', 'archived'].includes(convo.status) && ['up', 'down'].includes(params?.p_csat)) {
