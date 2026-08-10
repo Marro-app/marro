@@ -53,7 +53,13 @@
 > `feat/support-slice-12-metrics`: `supabase/support_metrics.sql` (**run in Studio** — 6 is_admin()-
 > gated aggregate RPCs, percentiles in SQL), Metrics view in the console (tiles, 14-day sparkline,
 > per-admin share bars, by-type, live aging watchlist), pure display math in
-> `src/lib/supportMetrics.js` (Vitest). **▶ NEXT: Slice 13** (proactive nudges).
+> `src/lib/supportMetrics.js` (Vitest). · ✅ Slice 13 (nudges) — branch
+> `feat/support-slice-13-nudges`: `supabase/support_nudges.sql` (**run in Studio** — service-role-only
+> table), pure gate `src/lib/nudgeGate.js` (Vitest ×9: due/cancel/frequency-cap/fail-safe), admin
+> Nudges view (composer w/ live "still relevant?" warning + list + cancel), lazy evaluation in
+> `api/support.js` (deliver via user_notifications or auto-cancel w/ reason; `nudge_sent`/
+> `nudge_cancelled` events). Detector-triggered nudges deferred — manual only for now.
+> **▶ NEXT: Slice 14** (polish: rate limiting, canned replies, Slack; Web Push last).
 >
 > **Per-slice template:** Goal · Depends on · Backend/DB · API · Frontend · Tests · **Done when** · Risk.
 > **Workflow (every slice):** branch → push → Vercel preview → optional `/code-review` → self-merge

@@ -371,6 +371,38 @@ function mockApi(kind, action, params, store) {
     emitRealtime('support_conversations', 'UPDATE', convo);
     return { ok: true, conversation: { ...convo, user_email: MOCK_EMAIL, user_name: 'Test Student' } };
   }
+  if (action === 'nudge_create' || action === 'nudge_list' || action === 'nudge_cancel' || action === 'nudge_context') {
+    const nudges = store.support_nudges || (store.support_nudges = []);
+    const ctxFor = () => ({
+      userActiveThread: convos.some((c) => ['new', 'open', 'waiting_user'].includes(c.status)),
+      userMessagedSince: false,
+      sentToTargetInWindow: nudges.filter((n) => n.state === 'sent').length,
+    });
+    if (action === 'nudge_create') {
+      const n = { id: mockId(), created_by: MOCK_EMAIL, target_email: (params?.target_email || '').toLowerCase(), body: (params?.body || '').slice(0, 500), trigger_kind: 'manual', state: 'scheduled', recheck_condition: { type: 'no_open_support_thread' }, send_after: new Date(Date.now() + (params?.delay_hours || 0) * 3600000).toISOString(), created_at: now(), sent_at: null, cancelled_reason: null };
+      nudges.unshift(n);
+      return { ok: true, nudge: n };
+    }
+    if (action === 'nudge_cancel') {
+      const n = nudges.find((x) => x.id === params?.nudge_id && x.state === 'scheduled');
+      if (n) { n.state = 'cancelled'; n.cancelled_reason = 'admin_cancelled'; }
+      return { ok: true, cancelled: !!n };
+    }
+    if (action === 'nudge_context') return { ok: true, context: ctxFor() };
+    // nudge_list: lazily evaluate due ones with the REAL pure gate.
+    return import('./nudgeGate.js').then(({ evaluateNudge }) => {
+      nudges.filter((n) => n.state === 'scheduled').forEach((n) => {
+        const verdict = evaluateNudge(n, ctxFor());
+        if (verdict.action === 'send') {
+          n.state = 'sent'; n.sent_at = now();
+          (store.user_notifications || (store.user_notifications = [])).push({ id: Date.now(), email: n.target_email, kind: 'nudge', message: n.body, metadata: { nudge_id: n.id }, created_at: now(), dismissed_at: null });
+        } else if (verdict.action === 'cancel') {
+          n.state = 'cancelled'; n.cancelled_reason = verdict.reason;
+        }
+      });
+      return { ok: true, nudges: [...nudges] };
+    });
+  }
   if (action === 'settings' || action === 'heartbeat' || action === 'set_availability') {
     const rows = store.support_settings || (store.support_settings = []);
     const st = rows[0] || (rows[0] = { id: 1, online_override: 'auto', business_hours: { tz: 'America/New_York', start: 9, end: 21 }, available_until: null, last_admin_heartbeat: null });

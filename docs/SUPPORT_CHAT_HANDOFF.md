@@ -106,7 +106,17 @@
   14-day sparkline (inline SVG, `role="img"` with a text alternative), per-admin share-of-load
   bars (largest-remainder rounding — always sums to 100), by-type volume, live "waiting on us"
   watchlist. Pure math in `src/lib/supportMetrics.js` (Vitest ×5). Mock stub emulates all six RPCs.
-- **Next: Slice 13** (proactive nudges) → then 14.
+- **Slice 13** (proactive nudges + still-relevant gate) — ✅ built on branch
+  `feat/support-slice-13-nudges`. **Prod SQL to run: `supabase/support_nudges.sql`** (service-role
+  only, deny-all RLS). Manual nudges only for now (admin composer: target email, message, send
+  now/24h/3d); detector-triggered proposals are deferred until real usage signals exist. The gate
+  (`src/lib/nudgeGate.js`, pure + shared with the backend AND the mock): a due nudge auto-cancels
+  if the user already messaged us since, already has an open thread, was already nudged inside the
+  7-day frequency window, or carries a condition the evaluator doesn't recognize (fail-safe: never
+  auto-send unverifiable conditions). Evaluation is lazy on `nudge_list` (no cron); delivery =
+  `user_notifications` (kind `nudge`); `nudge_sent`/`nudge_cancelled` support_events feed the §13.5
+  F metrics later. Composer shows a live "still relevant?" warning (600ms-debounced context check).
+- **Next: Slice 14** (polish) — remaining: rate limiting, canned replies, Slack channel, Web Push.
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file
 is idempotent — re-running it is safe.

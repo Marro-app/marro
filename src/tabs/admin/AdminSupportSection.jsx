@@ -10,6 +10,7 @@ import { canTransition, waitingLabel } from '../../lib/supportLifecycle.js';
 import { joinSupportPresence, presenceLabel } from '../../lib/supportPresence.js';
 import AttachmentImg from '../../components/support/AttachmentImg.jsx';
 import SupportMetricsView from './SupportMetricsView.jsx';
+import SupportNudgesView from './SupportNudgesView.jsx';
 
 // How often the open console re-affirms "an admin is actually here" — well
 // inside the resolver's 20-minute staleness window.
@@ -94,6 +95,7 @@ export default function AdminSupportSection() {
 
   const [settings, setSettings] = useState(null);
   const [showMetrics, setShowMetrics] = useState(false); // Metrics view (Slice 12)
+  const [showNudges, setShowNudges] = useState(false);   // Nudges view (Slice 13)
 
   // Availability (Slice 6): heartbeat while the console is open (this is the
   // "an admin is actually here" signal the resolver requires), plus the
@@ -291,6 +293,9 @@ export default function AdminSupportSection() {
 
   if (showMetrics && !openConvo) {
     return <SupportMetricsView onBack={() => setShowMetrics(false)} />;
+  }
+  if (showNudges && !openConvo) {
+    return <SupportNudgesView onBack={() => setShowNudges(false)} />;
   }
 
   // ── Thread view ────────────────────────────────────────────────────────────
@@ -491,6 +496,10 @@ export default function AdminSupportSection() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <SectionTitle sub="Questions, bug reports, and ideas from users. First reply claims the thread.">Support inbox</SectionTitle>
         </div>
+        <button type="button" onClick={() => setShowNudges(true)} className="hit-slop"
+          style={{ flexShrink: 0, minHeight: 36, padding: '8px 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+          Nudges
+        </button>
         <button type="button" onClick={() => setShowMetrics(true)} className="hit-slop"
           style={{ flexShrink: 0, minHeight: 36, padding: '8px 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
           Metrics
