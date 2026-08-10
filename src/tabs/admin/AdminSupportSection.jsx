@@ -9,6 +9,7 @@ import { resolveAvailability } from '../../lib/supportAvailability.js';
 import { canTransition, waitingLabel } from '../../lib/supportLifecycle.js';
 import { joinSupportPresence, presenceLabel } from '../../lib/supportPresence.js';
 import AttachmentImg from '../../components/support/AttachmentImg.jsx';
+import SupportMetricsView from './SupportMetricsView.jsx';
 
 // How often the open console re-affirms "an admin is actually here" — well
 // inside the resolver's 20-minute staleness window.
@@ -92,6 +93,7 @@ export default function AdminSupportSection() {
   const fieldId = useId();
 
   const [settings, setSettings] = useState(null);
+  const [showMetrics, setShowMetrics] = useState(false); // Metrics view (Slice 12)
 
   // Availability (Slice 6): heartbeat while the console is open (this is the
   // "an admin is actually here" signal the resolver requires), plus the
@@ -286,6 +288,10 @@ export default function AdminSupportSection() {
   }, [openConvo, actionBusy, applyConvo]);
 
   const visible = filterInbox(conversations, filter, callerEmail);
+
+  if (showMetrics && !openConvo) {
+    return <SupportMetricsView onBack={() => setShowMetrics(false)} />;
+  }
 
   // ── Thread view ────────────────────────────────────────────────────────────
   if (openConvo) {
@@ -485,6 +491,10 @@ export default function AdminSupportSection() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <SectionTitle sub="Questions, bug reports, and ideas from users. First reply claims the thread.">Support inbox</SectionTitle>
         </div>
+        <button type="button" onClick={() => setShowMetrics(true)} className="hit-slop"
+          style={{ flexShrink: 0, minHeight: 36, padding: '8px 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+          Metrics
+        </button>
         <button type="button" onClick={() => { setLoading(true); load(); }} aria-label="Refresh inbox" className="hit-slop"
           style={{ flexShrink: 0, minHeight: 36, padding: '8px 12px', borderRadius: 9, border: `1px solid ${C.border}`, background: 'transparent', color: C.text, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
           Refresh

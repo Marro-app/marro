@@ -2,6 +2,10 @@
 
 Newest first. One line per finding: severity · what · fix.
 
+## 2026-08-07 — Support chat: metrics dashboard (Slice 12, branch `feat/support-slice-12-metrics`)
+
+- Read-only reporting view: range chips + back button follow the section's existing `aria-pressed`/`.hit-slop` idioms; the sparkline SVG is `role="img"` with a descriptive `aria-label` (peak included) and share-of-load bars are `aria-hidden` decoration beside full text equivalents ("67% · 3 handled · …") — no data conveyed by graphics alone. Aging rows repeat "waiting Xh" as text (`C.danger` on card bg ≥4.5:1 both themes). No motion, no new tokens. Verified render + numbers against the seeded store on `?mock=1`.
+
 ## 2026-08-07 — Support chat: CSAT (Slice 11, branch `feat/support-slice-11-csat`)
 
 - Thumbs are 44×44 real `<button>`s with `aria-pressed` + explicit `aria-label`s ("Helpful"/"Not helpful") in a `role="group"` labeled "How did we do?" — new `thumbup`/`thumbdown` line icons (decision 10: no emoji). Optional comment input has a visually-hidden `<label>`; "Send rating" is outlined (Done stays the screen's one filled action, rule 9). Never blocking: Done works at every stage; confirmation is `role="status"`.

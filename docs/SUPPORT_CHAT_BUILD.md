@@ -49,7 +49,11 @@
 > branch `feat/support-slice-11-csat`: `supabase/support_csat.sql` (**run in Studio** — owner-scoped
 > rating RPC), thumbs (new Marro line icons, no emoji) + optional comment on the "Chat ended" slot,
 > reply-when-gone email in `api/support.js` (user's last message >15 min old → email via
-> `api/_email.js`, debounced 6h/convo via `reply_emailed` events). **▶ NEXT: Slice 12** (metrics).
+> `api/_email.js`, debounced 6h/convo via `reply_emailed` events). · ✅ Slice 12 (metrics) — branch
+> `feat/support-slice-12-metrics`: `supabase/support_metrics.sql` (**run in Studio** — 6 is_admin()-
+> gated aggregate RPCs, percentiles in SQL), Metrics view in the console (tiles, 14-day sparkline,
+> per-admin share bars, by-type, live aging watchlist), pure display math in
+> `src/lib/supportMetrics.js` (Vitest). **▶ NEXT: Slice 13** (proactive nudges).
 >
 > **Per-slice template:** Goal · Depends on · Backend/DB · API · Frontend · Tests · **Done when** · Risk.
 > **Workflow (every slice):** branch → push → Vercel preview → optional `/code-review` → self-merge
