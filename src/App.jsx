@@ -154,6 +154,11 @@ export function App() {
   const [session, setSession] = useState(undefined); // undefined=restoring, null=logged out, obj=logged in
   const [accessDenied, setAccessDenied] = useState(false); // closed-beta gate: signed in but not on allowed_emails
   const [admin, setAdmin] = useState(false); // is_admin() → shows the Admin tab (server re-checks every action)
+  // Deep-link support: a Discord alert links to ?support_convo=<id> so
+  // claiming/replying can jump straight to that thread instead of the admin
+  // hunting for it in the inbox. Cleared once AdminSupportSection consumes it
+  // so navigating away and back to the Admin tab doesn't reopen it forever.
+  const [adminDeepLinkConvo, setAdminDeepLinkConvo] = useState(null);
   const [gateNonce, setGateNonce] = useState(0); // bumped after a successful invite redemption to re-run the boot/load effect
   const [inviteOpen, setInviteOpen] = useState(false); // "Invite friends" referral modal
   const [profile, setProfile] = useState(null);      // {school} | null (no row yet → ProfileModal)
@@ -295,7 +300,21 @@ export function App() {
         setAccessDenied(false);
         // Resolve admin status (drives Admin-tab visibility only; api/admin.js
         // re-verifies on every request, so this flag is never a security border).
-        isAdmin().then(setAdmin);
+        isAdmin().then((isAdm) => {
+          setAdmin(isAdm);
+          if (isAdm) {
+            const params = new URLSearchParams(window.location.search);
+            const convoId = params.get('support_convo');
+            if (convoId) {
+              setTab('admin');
+              setAdminDeepLinkConvo(convoId);
+              // Strip the param so a refresh or browser-back doesn't re-trigger it.
+              params.delete('support_convo');
+              const rest = params.toString();
+              window.history.replaceState({}, '', window.location.pathname + (rest ? `?${rest}` : ''));
+            }
+          }
+        });
 
         const uid = session.user.id;
         // Shared-device guard: if a different user's data is cached locally, drop it
@@ -1788,7 +1807,7 @@ export function App() {
         {tab==="customize" && <CustomizeTab/>}
 
         {/* ══════════════ ADMIN (admins only; tab hidden otherwise) ══════════════ */}
-        {tab==="admin" && admin && <AdminTab callerEmail={session?.user?.email}/>}
+        {tab==="admin" && admin && <AdminTab callerEmail={session?.user?.email} initialSupportConvo={adminDeepLinkConvo} onSupportConvoConsumed={()=>setAdminDeepLinkConvo(null)}/>}
       </React.Suspense>
     </div>
     </AppContext.Provider>

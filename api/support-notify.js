@@ -26,6 +26,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './_config.js';
 // exists to avoid) — the SAME resolver the panel's status line uses, so the
 // reassurance gate and the "We're online" line can never disagree.
 import { resolveAvailability } from '../src/lib/supportAvailability.js';
+import { buildSupportAlertContent, postDiscordAlert } from './_discord.js';
 
 // One Discord ping per conversation per window — a burst of follow-up
 // messages shouldn't buzz the founders repeatedly.
@@ -59,6 +60,8 @@ export default async function handler(req, res) {
   }
   const callerId = userData.user.id;
   const callerEmail = (userData.user.email || '').toLowerCase();
+  const callerMeta = userData.user.user_metadata || {};
+  const callerName = callerMeta.full_name || callerMeta.name || callerEmail;
 
   const admin = createClient(SUPABASE_URL, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -127,22 +130,40 @@ export default async function handler(req, res) {
       if (!recentPing || recentPing.length === 0) {
         const typeLabel = convo.type === 'feedback' ? 'idea' : convo.type;
         const subject = (convo.subject || '').replace(/\s+/g, ' ').slice(0, 120);
-        const routing = convo.assigned_admin
-          ? `→ ${convo.assigned_admin} (their thread)`
-          : '→ unassigned — first reply claims it';
-        const content = `🆘 Support · new ${typeLabel} from ${callerEmail}\n> ${subject}\n${routing} · reply at https://joinmarro.com (Admin → Support)`;
+        // Rare path: a follow-up message on a thread that's ALREADY claimed
+        // (the claim-moment edit in api/support.js already announced the
+        // name once) — resolve it here too so a re-ping never regresses to
+        // showing a bare email.
+        let claimedByName = null;
+        if (convo.assigned_admin) {
+          try {
+            const { data: usersPage } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+            const match = (usersPage?.users || []).find(
+              (u) => (u.email || '').toLowerCase() === convo.assigned_admin,
+            );
+            const meta = match?.user_metadata || {};
+            claimedByName = meta.full_name || meta.name || convo.assigned_admin;
+          } catch (e) {
+            console.error('support-notify: claimer name lookup failed', e?.message);
+            claimedByName = convo.assigned_admin;
+          }
+        }
+        const content = buildSupportAlertContent({
+          typeLabel, subject, submitter: callerName, claimedBy: claimedByName, conversationId,
+        });
         const channels = [];
         // Never fail the request over a webhook hiccup — the message itself
         // is already stored; the in-app inbox badge still works.
         if (webhook) {
-          try {
-            const resp = await fetch(webhook, {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ content }),
-            });
-            if (resp.ok) channels.push('discord');
-            else console.error('support-notify: Discord webhook returned', resp.status);
-          } catch (e) { console.error('support-notify: Discord webhook failed', e?.message); }
+          const messageId = await postDiscordAlert(webhook, content);
+          if (messageId) {
+            channels.push('discord');
+            // Stored so api/support.js can edit this same message in place
+            // when the thread gets claimed, instead of posting a second one.
+            const { error: idErr } = await admin
+              .from('support_conversations').update({ discord_message_id: messageId }).eq('id', conversationId);
+            if (idErr) console.error('support-notify: storing discord_message_id failed', idErr.message);
+          }
         }
         if (slackWebhook) {
           try {

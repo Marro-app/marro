@@ -419,7 +419,7 @@ function mockApi(kind, action, params, store) {
       return { ok: true, nudges: [...nudges] };
     });
   }
-  if (action === 'settings' || action === 'heartbeat' || action === 'set_availability') {
+  if (action === 'heartbeat' || action === 'set_availability') {
     const rows = store.support_settings || (store.support_settings = []);
     const st = rows[0] || (rows[0] = { id: 1, online_override: 'auto', business_hours: { tz: 'America/New_York', start: 9, end: 21 }, available_until: null, last_admin_heartbeat: null });
     if (action === 'heartbeat') st.last_admin_heartbeat = now();
@@ -428,6 +428,7 @@ function mockApi(kind, action, params, store) {
       if (st.online_override === 'on') { st.available_until = new Date(Date.now() + 3600000).toISOString(); st.last_admin_heartbeat = now(); }
     }
     st.updated_at = now();
+    if (action === 'heartbeat' || action === 'set_availability') emitRealtime('support_settings', 'UPDATE', st);
     return { ok: true, settings: { ...st } };
   }
   if (action === 'reply') {

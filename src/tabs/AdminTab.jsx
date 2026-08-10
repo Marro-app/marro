@@ -123,7 +123,7 @@ function Avatar({avatar, name, email, size=36, decorative=true}) {
   );
 }
 
-export default function AdminTab({callerEmail}){
+export default function AdminTab({callerEmail, initialSupportConvo, onSupportConvoConsumed}){
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [overview, setOverview] = useState({codes:[], waitlist:[], roles:[], admins:[], ambassadors:[], members:[]});
@@ -150,7 +150,9 @@ export default function AdminTab({callerEmail}){
   // extra round-trip), whereas Insights/Usage each fire their own admin RPCs on
   // mount — so we only pay for those when a founder actually opens that tab.
   // Support is the new home for the in-app support inbox (docs/SUPPORT_CHAT_*).
-  const [subTab, setSubTab] = useState("users");
+  // A Discord-alert deep link (?support_convo=<id>, see App.jsx) lands here
+  // already knowing it wants Support open, regardless of the usual default.
+  const [subTab, setSubTab] = useState(initialSupportConvo ? "support" : "users");
   const SUBTABS = [
     { id:"users",   label:"Users & Invites" },
     { id:"usage",   label:"Insights & Usage" },
@@ -182,7 +184,7 @@ export default function AdminTab({callerEmail}){
                 <InsightsSection/>
                 <UsageSection/>
               </>}
-              {subTab==="support" && <AdminSupportSection/>}
+              {subTab==="support" && <AdminSupportSection initialConversationId={initialSupportConvo} onInitialConversationConsumed={onSupportConvoConsumed}/>}
             </div>
           </>
       }
