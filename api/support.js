@@ -23,10 +23,11 @@ import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './_config.js';
 // Pure, side-effect-free (same rationale as the resolver import in
 // api/support-notify.js) — the ONE definition of which status moves are legal.
-import { canTransition, eventForTransition, sweep, resolveSnoozeUntil } from '../src/lib/supportLifecycle.js';
+import { canTransition, eventForTransition, resolveSnoozeUntil } from '../src/lib/supportLifecycle.js';
 import { sendEmail } from './_email.js';
 import { evaluateNudge, NUDGE_FREQUENCY_WINDOW_DAYS } from '../src/lib/nudgeGate.js';
-import { buildSupportAlertContent, editDiscordAlert } from './_discord.js';
+import { buildSupportAlertContent, editDiscordAlert, mentionOrName } from './_discord.js';
+import { runSweep } from './_supportSweep.js';
 
 // Reply-when-gone email (Slice 11): only when the user looks gone (their last
 // message is older than this), and at most once per conversation per window.
@@ -96,21 +97,14 @@ export default async function handler(req, res) {
           .limit(LIST_LIMIT);
         if (error) throw error;
 
-        // Lazy maintenance sweep (Slice 7 — no cron infra yet): wake due
-        // snoozes, auto-archive stale resolved threads. Applied before the
-        // payload is shaped so the console always shows post-sweep truth.
+        // Lazy maintenance sweep: wake due snoozes, auto-archive stale
+        // resolved threads. Applied before the payload is shaped so the
+        // console always shows post-sweep truth. This is a FALLBACK — the
+        // real timing comes from api/support-cron.js's scheduled sweep
+        // (api/_supportSweep.js is the shared logic both call, so a snooze
+        // that wakes here vs. via cron behaves identically either way).
         try {
-          const due = sweep(convos || [], Date.now());
-          for (const { id, patch, event } of due) {
-            const { error: swErr } = await admin.from('support_conversations').update(patch).eq('id', id);
-            if (swErr) { console.error('support: sweep update failed', id, swErr.message); continue; }
-            const row = (convos || []).find((c) => c.id === id);
-            if (row) Object.assign(row, patch);
-            const { error: evSwErr } = await admin.from('support_events').insert({
-              conversation_id: id, admin_email: 'system', action: event, meta: { via: 'sweep' },
-            });
-            if (evSwErr) console.error('support: sweep event failed', id, evSwErr.message);
-          }
+          await runSweep(admin, convos || []);
         } catch (e) {
           console.error('support: sweep failed', e?.message);
         }
@@ -515,12 +509,14 @@ export default async function handler(req, res) {
         const conversationId = String(body.conversation_id || '');
         if (!conversationId) return res.status(400).json({ error: 'Missing conversation_id' });
         const toEmail = action === 'reassign' ? String(body.admin_email || '').toLowerCase().trim() : null;
+        let targetDiscordId = null;
         if (action === 'reassign') {
           if (!toEmail) return res.status(400).json({ error: 'Missing admin_email' });
           const { data: targetAdmin, error: taErr } = await admin
-            .from('admins').select('email').eq('email', toEmail).maybeSingle();
+            .from('admins').select('email, discord_user_id').eq('email', toEmail).maybeSingle();
           if (taErr) throw taErr;
           if (!targetAdmin) return res.status(400).json({ error: `${toEmail} isn't an admin.` });
+          targetDiscordId = targetAdmin.discord_user_id || null;
         }
         const patch = action === 'reassign'
           ? { assigned_admin: toEmail, claimed_at: new Date().toISOString() }
@@ -529,13 +525,44 @@ export default async function handler(req, res) {
           .from('support_conversations').update(patch).eq('id', conversationId).select('*');
         if (updErr) throw updErr;
         if (!updated || !updated[0]) return res.status(404).json({ error: 'Conversation not found' });
+        const convo = updated[0];
         const { error: evErr } = await admin.from('support_events').insert({
           conversation_id: conversationId, admin_email: callerEmail,
           action: action === 'reassign' ? 'reassigned' : 'released',
           meta: action === 'reassign' ? { to: toEmail } : null,
         });
         if (evErr) console.error('support: ownership event log failed', conversationId, evErr.message);
-        return res.status(200).json({ ok: true, conversation: updated[0] });
+
+        // Discord: reassign pings the new owner specifically; release re-opens
+        // the alert to @here so it's visible again, same as a fresh unclaimed
+        // thread. Both edit the ORIGINAL alert in place (same reasoning as the
+        // claim edit above) rather than posting a new message. Best-effort —
+        // never blocks the ownership move itself.
+        if (convo.discord_message_id) {
+          const webhook = process.env.DISCORD_SUPPORT_WEBHOOK_URL;
+          if (webhook) {
+            try {
+              const { data: ownerUser } = await admin.auth.admin.getUserById(convo.user_id);
+              const ownerMeta = ownerUser?.user?.user_metadata || {};
+              const ownerName = ownerMeta.full_name || ownerMeta.name
+                || (ownerUser?.user?.email || '').toLowerCase() || 'a user';
+              const typeLabel = convo.type === 'feedback' ? 'idea' : convo.type;
+              const subject = (convo.subject || '').replace(/\s+/g, ' ').slice(0, 120);
+              const content = buildSupportAlertContent({
+                typeLabel, subject, submitter: ownerName, conversationId,
+                ...(action === 'reassign'
+                  ? { reassignedTo: mentionOrName(targetDiscordId, toEmail) }
+                  : { released: true }),
+              });
+              const edited = await editDiscordAlert(webhook, convo.discord_message_id, content);
+              if (!edited) console.error('support: discord ownership-move edit failed', conversationId);
+            } catch (e) {
+              console.error('support: discord ownership-move edit threw', conversationId, e?.message);
+            }
+          }
+        }
+
+        return res.status(200).json({ ok: true, conversation: convo });
       }
 
       case 'canned_list': {

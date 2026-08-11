@@ -1,0 +1,57 @@
+# ───────────────────────────────────────────────────────────────────────────
+# Support lifecycle sweep — snooze-wake + auto-archive timing
+# ───────────────────────────────────────────────────────────────────────────
+# WHY THIS EXISTS
+#   api/support.js already runs the sweep (src/lib/supportLifecycle.js) LAZILY
+#   whenever an admin opens the Support inbox — that's enough for correctness
+#   (a snoozed thread is never stuck forever), but useless for a TIMELY
+#   snooze-wake Discord ping: a 15-minute snooze should notify close to when
+#   it's actually due, not "whenever someone next opens the app."
+#
+#   Vercel's own cron would be the obvious fix, but the project is on the
+#   Hobby plan, which caps native Vercel cron at once/day — far too coarse
+#   for a 15-30 minute snooze. GitHub Actions scheduled workflows are free
+#   with no such cap, so this hits api/support-cron.js on a real interval
+#   instead.
+#
+# CAVEATS (same category as supabase-keepalive.yml — read that file too)
+#   - GitHub's scheduled triggers are best-effort and can be delayed under
+#     load, especially right at common cron minutes (:00, :05, etc.) — treat
+#     "every 5 min" as "close to every 5 min," not exact.
+#   - GitHub disables scheduled workflows after 60 days of zero repo activity.
+#     An idle repo can silently un-arm this.
+#
+# SECRET
+#   SUPPORT_CRON_SECRET must be set as a GitHub Actions repo secret (Settings
+#   → Secrets and variables → Actions) with the SAME value as the CRON_SECRET
+#   env var in Vercel. This one IS a real secret (unlike the anon key in
+#   supabase-keepalive.yml) — it's what stops anyone on the internet from
+#   triggering the sweep endpoint. Never hardcode it here.
+
+name: Support Cron
+
+on:
+  schedule:
+    # Every 5 minutes.
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit the support sweep endpoint
+        run: |
+          status=$(curl -s -o /tmp/support_cron_response.json -w "%{http_code}" \
+            -X POST "https://joinmarro.com/api/support-cron" \
+            -H "Authorization: Bearer ${{ secrets.SUPPORT_CRON_SECRET }}")
+
+          echo "HTTP status: $status"
+          cat /tmp/support_cron_response.json
+
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "::error::Support cron sweep failed with HTTP $status."
+            exit 1
+          fi
+
+          echo "Support cron sweep succeeded (HTTP $status)."
