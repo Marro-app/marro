@@ -223,6 +223,12 @@ function mockApi(kind, action, params, store) {
     return { ok: true, reassured, pinged: false };
   }
   // kind === 'support'
+  if (action === 'list_admins') {
+    return { ok: true, admins: [
+      { email: MOCK_EMAIL, name: 'Test Admin' },
+      { email: 'cofounder@localhost', name: 'Co-founder' },
+    ] };
+  }
   if (action === 'list') {
     const conversations = [...convos]
       .sort((a, b) => new Date(b.last_message_at) - new Date(a.last_message_at))

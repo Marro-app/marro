@@ -64,10 +64,15 @@ describe('timeAgo', () => {
 });
 
 describe('handledByLabel', () => {
-  it('unassigned → null; self → "you"; other admin → their email', () => {
-    expect(handledByLabel(null, ME)).toBe(null);
-    expect(handledByLabel(ME, ME)).toBe('you');
-    expect(handledByLabel('ETHAN@JOINMARRO.COM', ME)).toBe('you');
-    expect(handledByLabel(CO, ME)).toBe(CO);
+  it('unassigned → null; known admin → their name; unknown → their email', () => {
+    const names = { [ME]: 'Ethan Nguyen', [CO]: 'Mo Hijazi' };
+    expect(handledByLabel(null, names)).toBe(null);
+    expect(handledByLabel(ME, names)).toBe('Ethan Nguyen');
+    expect(handledByLabel('ETHAN@JOINMARRO.COM', names)).toBe('Ethan Nguyen');
+    expect(handledByLabel(CO, names)).toBe('Mo Hijazi');
+  });
+  it('falls back to the raw email when no name is on file', () => {
+    expect(handledByLabel(CO, {})).toBe(CO);
+    expect(handledByLabel(CO)).toBe(CO);
   });
 });

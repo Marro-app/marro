@@ -205,6 +205,21 @@ export default function AdminSupportSection() {
   const [actionBusy, setActionBusy] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [reassignTo, setReassignTo] = useState('');
+  const [admins, setAdmins] = useState([]); // {email, name}[] — Reassign quick-pick roster
+
+  // Fetched once on mount, not re-fetched per-open — the admin roster
+  // changes rarely enough that staleness for the session isn't a concern,
+  // and it keeps clicking Reassign instant rather than a network round trip.
+  useEffect(() => {
+    let alive = true;
+    supportAdminCall('list_admins').then((res) => { if (alive && res?.ok) setAdmins(res.admins || []); });
+    return () => { alive = false; };
+  }, []);
+  // Lowercase-email → display-name, for handledByLabel — always shows a
+  // name, never a "you"/"me" special case (reads the same for whichever
+  // founder is looking).
+  const adminNameByEmail = {};
+  for (const a of admins) adminNameByEmail[a.email] = a.name || a.email;
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [snoozeCustom, setSnoozeCustom] = useState(''); // datetime-local value, '' = presets only
 
@@ -237,7 +252,7 @@ export default function AdminSupportSection() {
   // ── Thread view ────────────────────────────────────────────────────────────
   if (openConvo) {
     const cat = categoryForType(openConvo.type);
-    const handledBy = handledByLabel(openConvo.assigned_admin, callerEmail);
+    const handledBy = handledByLabel(openConvo.assigned_admin, adminNameByEmail);
     return (
       <Card>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
@@ -272,7 +287,10 @@ export default function AdminSupportSection() {
             ['resolved', 'archived', 'snoozed'].includes(openConvo.status) && { label: 'Reopen', onClick: () => doAction('set_status', { status: 'open' }) },
             openConvo.status === 'resolved' && { label: 'Archive', onClick: () => doAction('set_status', { status: 'archived' }) },
             !!openConvo.assigned_admin && { label: 'Release', onClick: () => doAction('release') },
-            !!openConvo.assigned_admin && { label: reassignOpen ? 'Cancel reassign' : 'Reassign', onClick: () => { setReassignOpen((v) => !v); setReassignTo(''); } },
+            // Available whenever it's not already yours — covers claiming an
+            // unassigned thread this way too, not just handing off an
+            // already-claimed one.
+            openConvo.assigned_admin !== callerEmail && { label: reassignOpen ? 'Cancel reassign' : 'Reassign', onClick: () => { setReassignOpen((v) => !v); setReassignTo(''); } },
           ].filter(Boolean).map((b) => (
             <button key={b.label} type="button" onClick={b.onClick} disabled={actionBusy} className="btn-pop hit-slop"
               style={{ minHeight: 32, padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text, opacity: actionBusy ? 0.6 : 1 }}>
@@ -312,25 +330,46 @@ export default function AdminSupportSection() {
             </button>
           </div>
         )}
-        {reassignOpen && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-            <label htmlFor={`${fieldId}-reassign`} style={{ fontSize: 12, fontWeight: 600, color: C.text }}>Hand to</label>
-            <input
-              id={`${fieldId}-reassign`}
-              type="email"
-              value={reassignTo}
-              onChange={(e) => setReassignTo(e.target.value)}
-              placeholder="other admin's email"
-              style={{ flex: 1, minHeight: 36, padding: '7px 11px', fontSize: 12.5, borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface, color: C.text, boxSizing: 'border-box', outline: 'none' }}
-            />
-            <button type="button" disabled={!reassignTo.trim() || actionBusy}
-              onClick={() => doAction('reassign', { admin_email: reassignTo.trim() })}
-              className="btn-pop"
-              style={{ minHeight: 36, padding: '7px 14px', borderRadius: 9, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text, opacity: (!reassignTo.trim() || actionBusy) ? 0.5 : 1 }}>
-              Hand off
-            </button>
-          </div>
-        )}
+        {reassignOpen && (() => {
+          // Quick-pick roster: every admin except whoever already has it
+          // (reassigning to the current owner is a no-op) — includes
+          // yourself, since claiming an unassigned/someone-else's thread
+          // this way is faster than replying just to trigger auto-claim.
+          const others = admins.filter((a) => a.email !== openConvo.assigned_admin);
+          return (
+            <div role="group" aria-label="Hand to" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 10 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>Hand to</span>
+              {others.length > 0 ? others.map((a) => (
+                <button key={a.email} type="button" disabled={actionBusy}
+                  onClick={() => doAction('reassign', { admin_email: a.email })}
+                  className="btn-pop hit-slop"
+                  style={{ minHeight: 32, padding: '6px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text, opacity: actionBusy ? 0.6 : 1 }}>
+                  {a.name || a.email}
+                </button>
+              )) : (
+                // Roster still loading, failed to load, or there's genuinely
+                // no one else — an email fallback so this never dead-ends.
+                <>
+                  <input
+                    id={`${fieldId}-reassign`}
+                    type="email"
+                    value={reassignTo}
+                    onChange={(e) => setReassignTo(e.target.value)}
+                    placeholder="other admin's email"
+                    aria-label="Other admin's email"
+                    style={{ minHeight: 32, padding: '6px 10px', fontSize: 12.5, borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface, color: C.text, boxSizing: 'border-box', outline: 'none' }}
+                  />
+                  <button type="button" disabled={!reassignTo.trim() || actionBusy}
+                    onClick={() => doAction('reassign', { admin_email: reassignTo.trim() })}
+                    className="btn-pop"
+                    style={{ minHeight: 32, padding: '6px 12px', borderRadius: 9, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text, opacity: (!reassignTo.trim() || actionBusy) ? 0.5 : 1 }}>
+                    Hand off
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         <div ref={listRef} className="themed-scroll"
           style={{ maxHeight: 420, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 2px 10px' }}>
@@ -442,7 +481,7 @@ export default function AdminSupportSection() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {visible.map((c) => {
             const cat = categoryForType(c.type);
-            const handledBy = handledByLabel(c.assigned_admin, callerEmail);
+            const handledBy = handledByLabel(c.assigned_admin, adminNameByEmail);
             const who = c.user_name || c.user_email || c.user_id;
             return (
               <button key={c.id} type="button" onClick={() => openThread(c)}

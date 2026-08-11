@@ -249,6 +249,29 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, message, claimed, assigned_admin: convo.assigned_admin || callerEmail });
       }
 
+      case 'list_admins': {
+        // Powers the Reassign quick-pick (Users & Invites has the FULL admin
+        // management UI — add/remove — this is read-only, just for handing a
+        // thread to someone by name instead of typing their email). Name
+        // comes from their own Google profile when available.
+        const { data: admins, error } = await admin
+          .from('admins').select('email').order('email', { ascending: true });
+        if (error) throw error;
+        let byEmail = {};
+        try {
+          const { data: usersPage } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+          for (const u of usersPage?.users || []) {
+            const meta = u.user_metadata || {};
+            const email = (u.email || '').toLowerCase();
+            if (email) byEmail[email] = meta.full_name || meta.name || null;
+          }
+        } catch (e) {
+          console.error('support: list_admins name enrichment failed', e?.message);
+        }
+        const enriched = (admins || []).map((a) => ({ email: a.email, name: byEmail[a.email] || null }));
+        return res.status(200).json({ ok: true, admins: enriched });
+      }
+
       case 'heartbeat': {
         // Bumped while an admin has the Support console open — the availability
         // resolver treats a stale heartbeat as "not really here" (plan §3).
