@@ -62,7 +62,12 @@ export default function ScreenshotStudio({ onDone, onCancel }) {
   const captureScreen = useCallback(async () => {
     setError(null); setBusy(true);
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      // preferCurrentTab (Chrome-only, silently ignored elsewhere) swaps the
+      // full "pick any tab/window/screen" picker for a much shorter "share
+      // this tab?" confirmation — still one required browser-mediated click
+      // (no site can skip or auto-answer this prompt), just far less
+      // alarming than scrolling through a list of the user's other open tabs.
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, preferCurrentTab: true });
       const video = document.createElement('video');
       video.srcObject = stream;
       await video.play();
@@ -284,18 +289,39 @@ export default function ScreenshotStudio({ onDone, onCancel }) {
                 onTouchStart={onPointerDown} onTouchMove={onPointerMove} onTouchEnd={onPointerUp}
                 style={{ display: 'block', width: '100%', height: 'auto', touchAction: 'none', cursor: 'crosshair' }}
               />
-              {textEntry && (
-                <input
-                  autoFocus
-                  aria-label="Annotation text"
-                  value={textEntry.value}
-                  onChange={(e) => setTextEntry((t) => ({ ...t, value: e.target.value }))}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitText(); } }}
-                  onBlur={commitText}
-                  placeholder="Type, then Enter"
-                  style={{ position: 'absolute', left: 12, top: 12, minHeight: 36, padding: '7px 11px', fontSize: 13, borderRadius: 9, border: `2px solid ${C.danger}`, background: C.bg, color: C.text, outline: 'none', width: 'min(280px, 80%)' }}
-                />
-              )}
+              {textEntry && (() => {
+                // textEntry.{x,y} are in CANVAS pixel space (canvasPoint()'s
+                // scale-corrected coords, used later to draw the real text in
+                // commitText()) — this overlay input needs the same point in
+                // CSS/display space instead. Both the canvas and this input
+                // share the same positioned ancestor (the wrapping div), so
+                // the canvas's own offset within it (normally just its
+                // border) plus the canvas→display scale gets the input to
+                // sit exactly where the user clicked, not a fixed corner.
+                const canvas = canvasRef.current;
+                const container = canvas?.parentElement;
+                let left = textEntry.x, top = textEntry.y;
+                if (canvas && container) {
+                  const canvasRect = canvas.getBoundingClientRect();
+                  const containerRect = container.getBoundingClientRect();
+                  const scaleX = canvasRect.width / canvas.width;
+                  const scaleY = canvasRect.height / canvas.height;
+                  left = (canvasRect.left - containerRect.left) + textEntry.x * scaleX;
+                  top = (canvasRect.top - containerRect.top) + textEntry.y * scaleY;
+                }
+                return (
+                  <input
+                    autoFocus
+                    aria-label="Annotation text"
+                    value={textEntry.value}
+                    onChange={(e) => setTextEntry((t) => ({ ...t, value: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitText(); } }}
+                    onBlur={commitText}
+                    placeholder="Type, then Enter"
+                    style={{ position: 'absolute', left, top, minHeight: 36, padding: '7px 11px', fontSize: 13, borderRadius: 9, border: `2px solid ${C.danger}`, background: C.bg, color: C.text, outline: 'none', width: 'min(280px, 80%)' }}
+                  />
+                );
+              })()}
             </div>
             <div style={{ fontSize: 11.5, color: C.textMid }}>
               Tip: the <strong>Blur / redact</strong> tool hides anything you don&apos;t want us to see — drag it over private numbers before attaching.
