@@ -440,7 +440,7 @@ export default function AdminSupportSection({ initialConversationId, onInitialCo
           {[
             canTransition(openConvo.status, 'resolved') && { label: 'Resolve', onClick: () => doAction('set_status', { status: 'resolved' }) },
             canTransition(openConvo.status, 'snoozed') && { label: 'Snooze 1d', onClick: () => doAction('set_status', { status: 'snoozed', snooze_hours: 24 }) },
-            (openConvo.status === 'resolved' || openConvo.status === 'archived') && { label: 'Reopen', onClick: () => doAction('set_status', { status: 'open' }) },
+            ['resolved', 'archived', 'snoozed'].includes(openConvo.status) && { label: 'Reopen', onClick: () => doAction('set_status', { status: 'open' }) },
             openConvo.status === 'resolved' && { label: 'Archive', onClick: () => doAction('set_status', { status: 'archived' }) },
             !!openConvo.assigned_admin && { label: 'Release', onClick: () => doAction('release') },
             !!openConvo.assigned_admin && { label: reassignOpen ? 'Cancel reassign' : 'Reassign', onClick: () => { setReassignOpen((v) => !v); setReassignTo(''); } },
