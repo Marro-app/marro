@@ -287,7 +287,10 @@ function mockApi(kind, action, params, store) {
       convo.claimed_at = now();
       events.push({ conversation_id: convo.id, admin_email: MOCK_EMAIL, action: 'claimed', meta: { via: 'auto_claim_on_reply' }, at: now() });
     }
-    if (convo.status === 'new' || convo.status === 'open') convo.status = 'waiting_user';
+    if (['new', 'open', 'snoozed'].includes(convo.status)) {
+      if (convo.status === 'snoozed') convo.snooze_until = null;
+      convo.status = 'waiting_user';
+    }
     convo.first_response_at = convo.first_response_at || now();
     convo.last_message_at = now();
     convo.unread_user += 1;

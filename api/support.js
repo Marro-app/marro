@@ -199,7 +199,13 @@ export default async function handler(req, res) {
         }
         // We replied → the ball is in the user's court (Slice 7). Their next
         // message flips it back to 'open' server-side (see the user RPC).
-        if (['new', 'open'].includes(convo.status)) patch.status = 'waiting_user';
+        // Includes 'snoozed': replying is itself a decision to act on the
+        // thread now, so it should wake it the same way the console's Reopen
+        // button would — a reply shouldn't silently leave it parked.
+        if (['new', 'open', 'snoozed'].includes(convo.status)) {
+          patch.status = 'waiting_user';
+          if (convo.status === 'snoozed') patch.snooze_until = null;
+        }
         const { data: unreadRow, error: unreadReadErr } = await admin
           .from('support_conversations').select('unread_user').eq('id', conversationId).maybeSingle();
         if (unreadReadErr) throw unreadReadErr;
