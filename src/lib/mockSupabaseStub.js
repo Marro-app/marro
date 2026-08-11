@@ -84,6 +84,12 @@ function makeChannel() {
     on(_type, spec, cb) { ch._handlers.push({ spec, cb }); return ch; },
     subscribe(cb) { rtChannels.add(ch); if (cb) cb('SUBSCRIBED'); return ch; },
     unsubscribe() { rtChannels.delete(ch); },
+    // Presence (Slice 8) is not emulated — joinSupportPresence() detects the
+    // missing methods... except they exist here as inert stubs so any direct
+    // caller degrades gracefully. presenceState() is always empty: a one-tab
+    // harness has no second admin to show anyway.
+    track() {},
+    presenceState() { return {}; },
     _dispatch(table, eventType, row) {
       ch._handlers.forEach(({ spec, cb }) => {
         if (spec.table !== table) return;

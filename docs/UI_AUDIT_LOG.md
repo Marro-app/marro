@@ -2,6 +2,11 @@
 
 Newest first. One line per finding: severity · what · fix.
 
+## 2026-08-07 — Support chat: presence soft-lock (Slice 8, branch `feat/support-slice-8-presence`)
+
+- Presence chips ("{name} viewing / typing…") on inbox rows and the in-thread banner are `role="status"` informational surfaces — text labels, never color-alone (blue `C.blue`-on-`C.blueLight` with the existing `live` line icon, no emoji per decision 10). Not focusable (not interactive), so no keyboard impact; screen readers get them as polite status text.
+- No motion added; nothing to freeze for reduced-motion. Verified the console runs clean with presence active in the harness (no-second-admin = silent no-op).
+
 ## 2026-08-07 — Support chat: lifecycle + queues (Slice 7, branch `feat/support-slice-7-lifecycle`)
 
 - **Thread action row** (Resolve / Snooze 1d / Reopen / Archive / Release / Reassign): all outlined `.btn-pop` ghosts — no second filled primary competes with Send (rule 9); `role="group"` + `aria-label="Conversation actions"`; `.hit-slop` to ≥44pt; buttons appear only when the pure state machine allows the move, so no dead/disabled-mystery controls. Reassign opens a labeled email `<input>` (real `<label htmlFor>`) + "Hand off".

@@ -56,7 +56,14 @@
   (due snoozes wake; resolved >30 days auto-archive, `admin_email='system'`, `via:'sweep'`).
   Archived threads are read-only until reopened. User side: admin-RESOLVED questions now count as
   "ended" for the hub's Recent-chats list (reopenable 7 days, `resolved_at`-based).
-- **Next: Slice 8** (presence soft-lock) → then 9…14.
+- **Slice 8** (presence soft-lock) — ✅ built on branch `feat/support-slice-8-presence`. One shared
+  Realtime Presence channel (`support-admin-presence`, keyed by admin email) broadcasting
+  `{viewing: convoId, typing}`; inbox rows show a "{name} viewing/typing…" chip and an open thread
+  shows a banner ("first reply claims it"). Typing signal debounces off after 2.5s idle; leaving
+  the console leaves the channel. Awareness only — auto-claim still settles ownership. No SQL.
+  **Verify with two admin browsers on the Vercel preview** (the one-tab mock harness has no second
+  admin; presence is a silent no-op there).
+- **Next: Slice 9** (triage depth) → then 10…14.
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file
 is idempotent — re-running it is safe.
