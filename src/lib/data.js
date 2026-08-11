@@ -563,14 +563,27 @@ export const dismissNotification = async (id) => {
 // as-is in the JSON body; the server re-validates admin status itself, so
 // this is just transport — never trust the client's isAdmin() as a gate.
 // → parsed JSON {ok, ...} on any response, or {ok:false, error} on failure.
-export const adminCall = async (action, params = {}) => {
+export const adminCall = async (action, params = {}) => adminApiCall("/api/admin", "admin", action, params);
+
+// Same transport for the support-inbox backend (api/support.js) — identical
+// trust boundary (bearer token in, server-side admins re-check), separate
+// endpoint so the two consoles' payloads stay independent.
+export const supportAdminCall = async (action, params = {}) => adminApiCall("/api/support", "support", action, params);
+
+async function adminApiCall(endpoint, mockKind, action, params) {
   try {
     const sb = await getSupabase();
+    // Dev-only test harness: the mock stub exposes an in-memory stand-in for
+    // the admin backends (there are no Vercel functions on the Vite dev
+    // server). Only the mock stub ever defines __mockApi, and the whole branch
+    // is DEV-gated so it's dead-stripped from production builds (the
+    // prod-safety grep checks __mockApi too).
+    if (import.meta.env.DEV && sb.__mockApi) return sb.__mockApi(mockKind, action, params);
     const {data:{session}} = await sb.auth.getSession();
     const token = session?.access_token;
     if (!token) return {ok:false, error:"Not signed in."};
 
-    const res = await fetch("/api/admin", {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: {Authorization: `Bearer ${token}`, "Content-Type": "application/json"},
       body: JSON.stringify({action, ...params}),
@@ -582,7 +595,7 @@ export const adminCall = async (action, params = {}) => {
   } catch {
     return {ok:false, error:"Network error — please check your connection and try again."};
   }
-};
+}
 
 // ── 3-way merge engine ─────────────────────────────────────────────────────────
 export const SYNC_BASE_KEY = "marro_v8_base";

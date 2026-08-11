@@ -4,6 +4,10 @@ import { C, CHART_COLORS, tipProps } from '../lib/theme.js';
 import { Card, SectionTitle, EmptyState, Divider, Modal, ChoiceGroup, ProgressBar, usePagination, Paginator, Banner } from '../components/primitives.jsx';
 import { radioProps, tabProps } from '../lib/ui-helpers.js';
 import { adminCall, adminUsageMetrics, adminClickByElement, adminDailyEventCounts, adminEventsLast30Days } from '../lib/data.js';
+// The Support inbox (Slice 3) lives in its own file per the support-chat build
+// conventions (docs/SUPPORT_CHAT_BUILD.md) — new admin sections go under
+// src/tabs/admin/ rather than growing this already-large file further.
+import AdminSupportSection from './admin/AdminSupportSection.jsx';
 
 // Admin console — invite codes, waitlist, ambassador roster, members, and the
 // admin list itself. Visibility is gated by App.jsx (is_admin() client check);
@@ -200,23 +204,6 @@ function AdminSubTab({id, label, active, onSelect}) {
         transition:"all 220ms cubic-bezier(0.23,1,0.32,1)",
         boxShadow: active ? "0 1px 8px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.35)" : "none",
       }}>{label}</button>
-  );
-}
-
-// ── Support (placeholder) ─────────────────────────────────────────────────────
-// Home for the in-app support inbox. Built incrementally — this placeholder
-// ships in Slice 0 (admin-panel tabs) so the tab exists; the real inbox,
-// triage, and reply tools land from Slice 3 onward. See docs/SUPPORT_CHAT_BUILD.md.
-function AdminSupportSection() {
-  return (
-    <Card>
-      <SectionTitle sub="Live chat, feedback, and bug reports from users will land here.">Support</SectionTitle>
-      <Banner type="info">
-        The support inbox is being built in small slices (see <code>docs/SUPPORT_CHAT_BUILD.md</code>).
-        This tab is its home — conversations, triage filters, and reply tools will appear here starting
-        with Slice&nbsp;3.
-      </Banner>
-    </Card>
   );
 }
 

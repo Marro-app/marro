@@ -7,7 +7,7 @@
 // never opens a network connection, never imports @supabase/supabase-js,
 // and never sees a real credential. All "tables" are plain in-memory arrays
 // that live for the lifetime of the tab and reset on reload.
-import { MOCK_SESSION, MOCK_PROFILE, MOCK_USER_ID, buildMockState, buildMockSupport } from './mockSessionData.js';
+import { MOCK_SESSION, MOCK_PROFILE, MOCK_USER_ID, MOCK_EMAIL, buildMockState, buildMockSupport } from './mockSessionData.js';
 
 function makeQueryBuilder(table, store) {
   let op = { kind: 'select' };
@@ -140,6 +140,64 @@ function supportRpc(name, params, store) {
   return null; // not a support RPC
 }
 
+// In-memory stand-in for the admin backends (api/admin.js + api/support.js) —
+// there are no Vercel functions on the Vite dev server, so admin UI would be
+// untestable in the harness without this. Reached only via the __mockApi hook
+// that adminApiCall() in data.js checks for (the real supabase-js client never
+// has that property). Support ops mirror api/support.js semantics: list
+// enriches with the mock identity, thread zeroes unread_admin, reply inserts
+// an admin message + auto-claims an unassigned thread + logs support_events.
+function mockApi(kind, action, params, store) {
+  const now = () => new Date().toISOString();
+  if (kind === 'admin') {
+    // Just enough for the Users/Insights tabs to render their empty states
+    // instead of a network error; mutations are not simulated.
+    if (action === 'list_overview') return { ok: true, codes: [], waitlist: [], roles: [], admins: [], ambassadors: [], members: [] };
+    if (action === 'email_usage') return { ok: true, available: false };
+    return { ok: false, error: 'Not available in the dev harness.' };
+  }
+  // kind === 'support'
+  const convos = store.support_conversations || (store.support_conversations = []);
+  const msgs = store.support_messages || (store.support_messages = []);
+  const events = store.support_events || (store.support_events = []);
+  if (action === 'list') {
+    const conversations = [...convos]
+      .sort((a, b) => new Date(b.last_message_at) - new Date(a.last_message_at))
+      .map((c) => ({ ...c, user_email: MOCK_EMAIL, user_name: 'Test Student', user_avatar: null }));
+    return { ok: true, conversations, caller_email: MOCK_EMAIL };
+  }
+  if (action === 'thread') {
+    const convo = convos.find((c) => c.id === params?.conversation_id);
+    if (!convo) return { ok: false, error: 'Conversation not found' };
+    convo.unread_admin = 0;
+    const messages = msgs
+      .filter((m) => m.conversation_id === convo.id)
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    return { ok: true, messages };
+  }
+  if (action === 'reply') {
+    const convo = convos.find((c) => c.id === params?.conversation_id);
+    if (!convo) return { ok: false, error: 'Conversation not found' };
+    const text = (params?.body || '').trim();
+    if (!text) return { ok: false, error: 'Reply text required' };
+    const message = { id: mockId(), conversation_id: convo.id, sender: 'admin', sender_email: MOCK_EMAIL, body: text, attachments: null, is_internal_note: false, created_at: now(), read_at: null };
+    msgs.push(message);
+    const claimed = !convo.assigned_admin;
+    if (claimed) {
+      convo.assigned_admin = MOCK_EMAIL;
+      convo.claimed_at = now();
+      if (convo.status === 'new') convo.status = 'open';
+      events.push({ conversation_id: convo.id, admin_email: MOCK_EMAIL, action: 'claimed', meta: { via: 'auto_claim_on_reply' }, at: now() });
+    }
+    convo.first_response_at = convo.first_response_at || now();
+    convo.last_message_at = now();
+    convo.unread_user += 1;
+    events.push({ conversation_id: convo.id, admin_email: MOCK_EMAIL, action: 'replied', meta: { message_id: message.id }, at: now() });
+    return { ok: true, message, claimed, assigned_admin: convo.assigned_admin };
+  }
+  return { ok: false, error: 'Unknown action' };
+}
+
 export function createMockSupabaseStub() {
   const seed = buildMockSupport();
   const store = {
@@ -171,9 +229,15 @@ export function createMockSupabaseStub() {
       signInWithPassword: async () => ({ data: null, error: { message: 'mock mode: sign-in is disabled' } }),
     },
     from: (table) => makeQueryBuilder(table, store),
+    // Dev-harness stand-in for the admin backends — see adminApiCall() in
+    // data.js, which routes here instead of fetch() when this hook exists.
+    __mockApi: (kind, action, params) => mockApi(kind, action, params, store),
     rpc: async (name, params) => {
       if (name === 'is_email_allowed') return { data: true, error: null }; // dev-harness user always passes the invite gate, localhost-only
-      if (name === 'is_admin') return { data: false, error: null }; // mock user is never an admin
+      // Admin-flagged since Slice 3 so the Admin tab (and its Support inbox)
+      // is click-testable in the harness — the client is_admin() only shows
+      // UI; every real admin action still 403s server-side for non-admins.
+      if (name === 'is_admin') return { data: true, error: null };
       const support = supportRpc(name, params, store);
       if (support) return support;
       return { data: null, error: null };
