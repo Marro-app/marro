@@ -252,10 +252,13 @@ begin
   update public.support_conversations
      set last_message_at = now(),
          unread_admin    = unread_admin + 1,
-         -- auto-reopen a closed thread on a new user message
-         status       = case when status in ('resolved','archived') then 'open' else status end,
+         -- auto-reopen a closed thread on a new user message; a reply while
+         -- we're waiting on them (or the thread is snoozed) also wakes it to
+         -- 'open' so it lands back in the admin's needs-reply queue (Slice 7)
+         status       = case when status in ('resolved','archived','waiting_user','snoozed') then 'open' else status end,
          reopen_count = case when status in ('resolved','archived') then reopen_count + 1 else reopen_count end,
-         archived_at  = case when status = 'archived' then null else archived_at end
+         archived_at  = case when status = 'archived' then null else archived_at end,
+         snooze_until = case when status = 'snoozed' then null else snooze_until end
    where id = p_conversation_id;
 
   return v_msg;

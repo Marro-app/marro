@@ -27,7 +27,12 @@
 > `supabase/support_settings.sql` (**run in Studio**), pure resolver `src/lib/supportAvailability.js`
 > (Vitest ×10; shared by the panel status line AND the server reassurance gate), heartbeat +
 > Auto/Available/Away override in the admin console, honest status line in the panel, admin reply →
-> `user_notifications` banner. **▶ NEXT: Slice 7** (lifecycle + queues + archive).
+> `user_notifications` banner. · ✅ Slice 7 (lifecycle) — branch `feat/support-slice-7-lifecycle`: pure state machine
+> `src/lib/supportLifecycle.js` (Vitest ×12; shared by API + UI), `set_status`/`reassign`/`release`
+> actions, admin reply → `waiting_user`, user reply wakes waiting/snoozed threads (**⚠️ re-run
+> `supabase/support_chat.sql`** — the user RPC changed), lazy sweep on list (due snoozes wake,
+> resolved >30d auto-archives), full queue chips + "unanswered Xh" badges, archived = read-only.
+> **▶ NEXT: Slice 8** (presence soft-lock).
 >
 > **Per-slice template:** Goal · Depends on · Backend/DB · API · Frontend · Tests · **Done when** · Risk.
 > **Workflow (every slice):** branch → push → Vercel preview → optional `/code-review` → self-merge

@@ -15,15 +15,23 @@ const convos = [
 const ids = (rows) => rows.map((r) => r.id);
 
 describe('filterInbox', () => {
-  it('active hides resolved/archived but keeps every open state', () => {
+  it('active = needs attention now (not snoozed, not closed)', () => {
     expect(ids(filterInbox(convos, 'active', ME))).toEqual(['a', 'b', 'c', 'f']);
+    const withSnooze = [...convos, { id: 'g', status: 'snoozed', assigned_admin: ME, unread_admin: 0 }];
+    expect(ids(filterInbox(withSnooze, 'active', ME))).toEqual(['a', 'b', 'c', 'f']);
   });
-  it('unassigned = no owner and not closed', () => {
+  it('unassigned = no owner, not parked', () => {
     expect(ids(filterInbox(convos, 'unassigned', ME))).toEqual(['a']);
   });
   it('mine = owned by the caller (case-insensitive) and not closed', () => {
     expect(ids(filterInbox(convos, 'mine', ME))).toEqual(['b']);
     expect(ids(filterInbox(convos, 'mine', 'mo@joinmarro.com'))).toEqual(['c', 'f']);
+  });
+  it('status queues slice by exact status', () => {
+    expect(ids(filterInbox(convos, 'waiting', ME))).toEqual(['f']);
+    expect(ids(filterInbox(convos, 'resolved', ME))).toEqual(['d']);
+    expect(ids(filterInbox(convos, 'archived', ME))).toEqual(['e']);
+    expect(ids(filterInbox([{ id: 'g', status: 'snoozed' }], 'snoozed', ME))).toEqual(['g']);
   });
   it('all returns everything including history, order preserved', () => {
     expect(ids(filterInbox(convos, 'all', ME))).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
