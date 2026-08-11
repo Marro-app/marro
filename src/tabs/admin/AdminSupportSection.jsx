@@ -7,6 +7,7 @@ import { categoryForType, subscribeToMessages, subscribeToConversations } from '
 import { INBOX_FILTERS, filterInbox, agoLabel, handledByLabel } from '../../lib/supportAdmin.js';
 import { resolveAvailability } from '../../lib/supportAvailability.js';
 import { canTransition, waitingLabel, SNOOZE_PRESETS } from '../../lib/supportLifecycle.js';
+import { joinSupportPresence, presenceLabel } from '../../lib/supportPresence.js';
 
 // How often the open console re-affirms "an admin is actually here" — well
 // inside the resolver's 20-minute staleness window.
@@ -201,6 +202,34 @@ export default function AdminSupportSection() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(); }
   };
 
+  // ── Presence soft-lock (Slice 8) ──────────────────────────────────────────
+  // One shared presence channel: broadcast what I'm viewing/typing, render
+  // what the other admin is up to. Awareness only — auto-claim still settles
+  // ownership; this just stops the split-second double-reply.
+  const [peers, setPeers] = useState([]);
+  const presenceRef = useRef(null);
+  const typingTimer = useRef(null);
+  useEffect(() => {
+    if (!callerEmail) return undefined;
+    let dead = false;
+    joinSupportPresence(callerEmail, setPeers).then((h) => {
+      if (dead) h.leave(); else presenceRef.current = h;
+    });
+    return () => { dead = true; presenceRef.current?.leave(); presenceRef.current = null; };
+  }, [callerEmail]);
+  useEffect(() => {
+    presenceRef.current?.update({ viewing: openConvo?.id || null, typing: false });
+  }, [openConvo?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Composer keystrokes broadcast "typing" (debounced off after 2.5s idle).
+  const onDraftChange = useCallback((value) => {
+    setDraft(value);
+    presenceRef.current?.update({ typing: true });
+    if (typingTimer.current) clearTimeout(typingTimer.current);
+    typingTimer.current = setTimeout(() => presenceRef.current?.update({ typing: false }), 2500);
+  }, []);
+  useEffect(() => () => { if (typingTimer.current) clearTimeout(typingTimer.current); }, []);
+
   // ── Lifecycle + ownership actions (Slice 7) ────────────────────────────────
   const [actionBusy, setActionBusy] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
@@ -275,6 +304,19 @@ export default function AdminSupportSection() {
             {handledBy ? `Handled by ${handledBy}` : 'Unassigned'}
           </span>
         </div>
+
+        {(() => {
+          const here = presenceLabel(peers, openConvo.id);
+          if (!here) return null;
+          return (
+            <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10, padding: '8px 11px', borderRadius: 10, background: C.blueLight, border: `1px solid ${C.border}`, fontSize: 12, color: C.text }}>
+              <Icon name="live" size={13} color={C.blue} />
+              <span>
+                <strong>{adminNameByEmail[here.email] || here.email}</strong> is {here.kind === 'typing' ? 'typing in' : 'viewing'} this thread — first reply claims it.
+              </span>
+            </div>
+          );
+        })()}
 
         {/* Lifecycle + ownership controls (Slice 7). Which buttons show is
             driven by the same pure state machine the backend enforces, so the
@@ -394,7 +436,7 @@ export default function AdminSupportSection() {
             <textarea
               id={fieldId}
               value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => onDraftChange(e.target.value)}
               onKeyDown={onComposerKeyDown}
               placeholder={openConvo.assigned_admin ? 'Reply…' : 'Reply (this claims the thread for you)…'}
               rows={1}
@@ -502,6 +544,17 @@ export default function AdminSupportSection() {
                     {(c.status === 'resolved' || c.status === 'archived') ? ` · ${c.status === 'archived' ? 'Archived' : 'Resolved'}` : ''}
                   </span>
                 </span>
+                {(() => {
+                  const here = presenceLabel(peers, c.id);
+                  if (!here) return null;
+                  const name = adminNameByEmail[here.email];
+                  const compact = name ? name.split(' ')[0] : here.email.split('@')[0];
+                  return (
+                    <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: C.blue, background: C.blueLight, border: `1px solid ${C.border}`, borderRadius: 999, padding: '3px 8px' }}>
+                      {compact} {here.kind === 'typing' ? 'typing…' : 'viewing'}
+                    </span>
+                  );
+                })()}
                 {waitingLabel(c) && (
                   <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: C.danger, background: C.dangerLight, border: `1px solid ${C.border}`, borderRadius: 999, padding: '3px 8px' }}>
                     {waitingLabel(c)}
