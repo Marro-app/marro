@@ -210,6 +210,11 @@ export default function SupportPanel({ onClose }) {
   const [studioOpen, setStudioOpen] = useState(false);     // screenshot studio (Slice 10)
   const [attachment, setAttachment] = useState(null);      // pending uploaded ref, rides on the next send
   const [attachBusy, setAttachBusy] = useState(false);
+  // While a real screen capture is in flight, this panel's own scrim + card
+  // are exactly what's covering the app content the user is trying to
+  // capture -- hide (not unmount, so ScreenshotStudio's async capture flow
+  // isn't disrupted) rather than fight over what to leave visible.
+  const [capturing, setCapturing] = useState(false);
 
   // Honest status line (Slice 6): resolved from support_settings on open, then
   // kept live — an admin's heartbeat going stale or an override flip should
@@ -497,7 +502,10 @@ export default function SupportPanel({ onClose }) {
   return createPortal((
     <div
       onClick={onClose}
-      style={{ position: 'fixed', inset: 0, zIndex: 1000, background: C.scrim, display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', padding: 16, boxSizing: 'border-box' }}
+      style={{ position: 'fixed', inset: 0, zIndex: 1000, background: C.scrim, display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', padding: 16, boxSizing: 'border-box',
+        // See `capturing` above -- hidden, not unmounted, so it doesn't
+        // disturb ScreenshotStudio's separately-portaled capture flow.
+        opacity: capturing ? 0 : 1, pointerEvents: capturing ? 'none' : undefined }}
     >
       <style>{`
         @keyframes supSheetIn { from { opacity: 0; transform: translateY(16px) scale(0.98); } to { opacity: 1; transform: none; } }
@@ -810,7 +818,8 @@ export default function SupportPanel({ onClose }) {
       </div>
       {studioOpen && (
         <React.Suspense fallback={null}>
-          <ScreenshotStudio onDone={onStudioDone} onCancel={() => setStudioOpen(false)} />
+          <ScreenshotStudio onDone={onStudioDone} onCancel={() => setStudioOpen(false)}
+            onCaptureStart={() => setCapturing(true)} onCaptureEnd={() => setCapturing(false)} />
         </React.Suspense>
       )}
     </div>

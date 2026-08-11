@@ -28,11 +28,15 @@ const TOOLS = [
 const MAX_DIM = 1600;   // downscale captures so uploads stay small
 const UNDO_DEPTH = 12;
 
-export default function ScreenshotStudio({ onDone, onCancel }) {
+export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onCaptureEnd }) {
   const [stage, setStage] = useState('pick'); // 'pick' | 'edit'
   const [error, setError] = useState(null);
   const [tool, setTool] = useState('box');
   const [busy, setBusy] = useState(false);
+  // Hidden (not unmounted -- capture keeps running) for the capture window
+  // itself, so this studio's own "Add a screenshot" dialog isn't what ends
+  // up in the shot, same reasoning as the parent's `capturing` state.
+  const [hiddenForCapture, setHiddenForCapture] = useState(false);
   const [textEntry, setTextEntry] = useState(null); // {x, y, value} while typing
   const canvasRef = useRef(null);
   const undoStack = useRef([]);
@@ -68,6 +72,12 @@ export default function ScreenshotStudio({ onDone, onCancel }) {
       // (no site can skip or auto-answer this prompt), just far less
       // alarming than scrolling through a list of the user's other open tabs.
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, preferCurrentTab: true });
+      // Permission granted, capture about to actually happen — hide our own
+      // UI (this dialog + the parent panel behind it) so the settle wait
+      // below gives the browser time to repaint WITHOUT us in the shot,
+      // rather than capturing our own "Capturing…" dialog.
+      onCaptureStart?.();
+      setHiddenForCapture(true);
       const video = document.createElement('video');
       video.srcObject = stream;
       await video.play();
@@ -82,6 +92,8 @@ export default function ScreenshotStudio({ onDone, onCancel }) {
       setError('Screen capture was cancelled. You can upload an image instead.');
     } finally {
       setBusy(false);
+      setHiddenForCapture(false);
+      onCaptureEnd?.();
     }
   }, [loadImage]);
 
@@ -232,6 +244,13 @@ export default function ScreenshotStudio({ onDone, onCancel }) {
     cursor: 'pointer', border: `1px solid ${active ? C.sel : C.border}`,
     background: active ? C.selBg : 'transparent', color: C.text,
   });
+
+  // Rendering nothing here does NOT unmount this component (React keeps the
+  // instance alive across a null render), so captureScreen()'s in-flight
+  // async work — refs, undo stack, the whole capture promise chain —
+  // continues untouched. It just means nothing of ours is on screen for the
+  // moment the browser actually captures the tab.
+  if (hiddenForCapture) return null;
 
   return createPortal((
     <div role="dialog" aria-modal="true" aria-label="Screenshot and annotation"
