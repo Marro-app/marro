@@ -10,6 +10,12 @@ import {
 } from '../../lib/support.js';
 import { availabilityLine } from '../../lib/supportAvailability.js';
 import { buildTechContext } from '../../lib/consoleBuffer.js';
+import { uploadAttachment } from '../../lib/supportAttachments.js';
+import AttachmentImg from './AttachmentImg.jsx';
+
+// Heavy + rarely used → its own lazy chunk (verified absent from the main
+// bundle by the slice-10 build check).
+const ScreenshotStudio = React.lazy(() => import('./ScreenshotStudio.jsx'));
 
 // ── Category-themed background (plan §6) ─────────────────────────────────────
 // Decorative, aria-hidden motif that changes with the conversation type:
@@ -174,6 +180,9 @@ function Bubble({ msg }) {
       }}>
         {msg.body}
       </div>
+      {Array.isArray(msg.attachments) && msg.attachments.map((a) => (
+        <AttachmentImg key={a.path} refObj={a} />
+      ))}
     </div>
   );
 }
@@ -198,6 +207,9 @@ export default function SupportPanel({ onClose }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
   const [availability, setAvailability] = useState(null); // resolved {online, reason} | null
+  const [studioOpen, setStudioOpen] = useState(false);     // screenshot studio (Slice 10)
+  const [attachment, setAttachment] = useState(null);      // pending uploaded ref, rides on the next send
+  const [attachBusy, setAttachBusy] = useState(false);
 
   // Honest status line (Slice 6): resolved from support_settings on open, then
   // kept live — an admin's heartbeat going stale or an override flip should
@@ -329,7 +341,7 @@ export default function SupportPanel({ onClose }) {
     setSending(true); setError(null);
     try {
       if (view === 'ask') {
-        const id = await startConversation({ type: 'question', body });
+        const id = await startConversation({ type: 'question', body, attachments: attachment ? [attachment] : null });
         notifySupport(id); // fire-and-forget: Discord ping + auto-reassurance (slice 5)
         const convos = await fetchConversations();
         setConversations(convos);
@@ -338,7 +350,7 @@ export default function SupportPanel({ onClose }) {
         setMessages(target ? await fetchMessages(id) : []);
         setView('thread');
       } else {
-        await postMessage({ conversationId: convo.id, body });
+        await postMessage({ conversationId: convo.id, body, attachments: attachment ? [attachment] : null });
         notifySupport(convo.id); // fire-and-forget (slice 5)
         setMessages(await fetchMessages(convo.id));
         setConversations((cs) => cs.map((c) => (c.id === convo.id
@@ -346,12 +358,13 @@ export default function SupportPanel({ onClose }) {
           : c)));
       }
       setDraft('');
+      setAttachment(null);
     } catch {
       setError("Couldn't send your message. Please try again.");
     } finally {
       setSending(false);
     }
-  }, [draft, sending, view, convo]);
+  }, [draft, sending, view, convo, attachment]);
 
   // Submit the bug/idea form → creates a conversation from the composed fields,
   // then shows a confirmation (not a chat). One-off; doesn't touch the active chat.
@@ -366,13 +379,14 @@ export default function SupportPanel({ onClose }) {
       // Bug reports auto-attach technical context (plan §7): environment +
       // recent console errors. Technical ONLY — never financial data (§4).
       const techContext = cat.type === 'bug' ? buildTechContext() : null;
-      const id = await startConversation({ type: cat.type, body, techContext });
+      const id = await startConversation({ type: cat.type, body, techContext, attachments: attachment ? [attachment] : null });
       notifySupport(id); // fire-and-forget: Discord ping (slice 5)
       const convos = await fetchConversations();
       setConversations(convos);
       setConvo(convos.find((c) => c.id === id) || null);
       setMessages([]);
       setForm({});
+      setAttachment(null);
       setSentKind(activeForm.sentLabel);
       setView('sent');
     } catch {
@@ -380,7 +394,7 @@ export default function SupportPanel({ onClose }) {
     } finally {
       setSending(false);
     }
-  }, [sending, activeForm, form, formKey]);
+  }, [sending, activeForm, form, formKey, attachment]);
 
   // End (archive) the open chat — reached via the header + an inline confirm.
   const endChat = useCallback(async () => {
@@ -437,6 +451,43 @@ export default function SupportPanel({ onClose }) {
       setSending(false);
     }
   }, [activeQuestion, sending]);
+
+  // Screenshot studio result → upload now, attach ref to the next send.
+  const onStudioDone = useCallback(async ({ blob, width, height }) => {
+    setStudioOpen(false);
+    setAttachBusy(true);
+    setError(null);
+    try {
+      const ref = await uploadAttachment(blob, { width, height });
+      setAttachment(ref);
+    } catch (e) {
+      setError(e?.message || "Couldn't attach the image.");
+    } finally {
+      setAttachBusy(false);
+    }
+  }, []);
+
+  // The "Add screenshot" affordance + pending-attachment chip, shared by the
+  // bug form and the chat composer.
+  const attachRow = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      {attachment ? (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: C.text, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 999, padding: '5px 6px 5px 11px' }}>
+          Screenshot attached
+          <button type="button" aria-label="Remove attached screenshot" onClick={() => setAttachment(null)} className="xbtn"
+            style={{ width: 20, height: 20, borderRadius: 10, border: 'none', background: 'transparent', color: C.textMid, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, lineHeight: 1 }}>
+            <span aria-hidden="true">✕</span>
+          </button>
+        </span>
+      ) : (
+        <button type="button" onClick={() => setStudioOpen(true)} disabled={attachBusy}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 34, padding: '6px 12px', borderRadius: 999, fontSize: 11.5, fontWeight: 600, cursor: 'pointer', border: `1px dashed ${C.border}`, background: 'transparent', color: C.textMid, opacity: attachBusy ? 0.6 : 1 }}
+          className="hit-slop">
+          {attachBusy ? 'Uploading…' : '+ Add screenshot'}
+        </button>
+      )}
+    </div>
+  );
 
   const onKeyDownField = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
@@ -669,6 +720,7 @@ export default function SupportPanel({ onClose }) {
                   />
                 </div>
               ))}
+              <div style={{ flexShrink: 0 }}>{attachRow}</div>
               {error && <div id={errId} role="alert" style={{ flexShrink: 0, fontSize: 12, color: C.danger }}>{error}</div>}
               <button
                 type="button"
@@ -726,6 +778,7 @@ export default function SupportPanel({ onClose }) {
             {error && (
               <div id={errId} role="alert" style={{ fontSize: 12, color: C.danger, marginBottom: 8 }}>{error}</div>
             )}
+            <div style={{ marginBottom: 8 }}>{attachRow}</div>
             <label htmlFor={fieldId} className="sr-only" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>
               Your message
             </label>
@@ -755,6 +808,11 @@ export default function SupportPanel({ onClose }) {
           </div>
         )}
       </div>
+      {studioOpen && (
+        <React.Suspense fallback={null}>
+          <ScreenshotStudio onDone={onStudioDone} onCancel={() => setStudioOpen(false)} />
+        </React.Suspense>
+      )}
     </div>
   ), document.body);
 }

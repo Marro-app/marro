@@ -8,6 +8,7 @@ import { INBOX_FILTERS, filterInbox, agoLabel, handledByLabel } from '../../lib/
 import { resolveAvailability } from '../../lib/supportAvailability.js';
 import { canTransition, waitingLabel, SNOOZE_PRESETS } from '../../lib/supportLifecycle.js';
 import { joinSupportPresence, presenceLabel } from '../../lib/supportPresence.js';
+import AttachmentImg from '../../components/support/AttachmentImg.jsx';
 
 // How often the open console re-affirms "an admin is actually here" — well
 // inside the resolver's 20-minute staleness window.
@@ -58,6 +59,9 @@ function AdminBubble({ msg }) {
       }}>
         {msg.body}
       </div>
+      {Array.isArray(msg.attachments) && msg.attachments.map((a) => (
+        <AttachmentImg key={a.path} refObj={a} />
+      ))}
       <div style={{ fontSize: 10.5, color: C.textMid, alignSelf: mine ? 'flex-end' : 'flex-start', padding: '0 2px' }}>
         {note ? `Internal note — user never sees this · ${msg.sender_email || 'admin'} · ${agoLabel(msg.created_at)}`
           : mine ? `${msg.sender_email || 'admin'} · ${agoLabel(msg.created_at)}` : agoLabel(msg.created_at)}
