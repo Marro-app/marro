@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo, useId } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { C, CHART_COLORS, tipProps } from '../lib/theme.js';
 import { Card, SectionTitle, EmptyState, Divider, Modal, ChoiceGroup, ProgressBar, usePagination, Paginator, Banner } from '../components/primitives.jsx';
@@ -1015,7 +1015,8 @@ function cmpMembers(a, b, sortBy, dir) {
 // email). Reuses the exact set_role/add_admin actions those sections already
 // call, so it's the same server-side path (and now the same congrats email —
 // see api/admin.js) as adding someone from those forms directly.
-function PromoteMemberModal({email, name, isAmbassador, isAdmin, onClose, onDone}) {
+function PromoteMemberModal({email, name, isAmbassador, isAdmin, discordUserId, onClose, onDone}) {
+  const discordFieldId = useId();
   const [choice, setChoice] = useState(isAdmin ? 'admin' : 'ambassador');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -1034,6 +1035,26 @@ function PromoteMemberModal({email, name, isAmbassador, isAdmin, onClose, onDone
   };
 
   const canConfirm = !busy && ((choice === 'ambassador' && !isAmbassador) || (choice === 'admin' && !isAdmin));
+
+  // Discord ID (only meaningful once they're an admin): powers @-mentions in
+  // support-notification pings (reassign, snooze-wake). Stored in-app rather
+  // than hardcoded so a Discord account switch or a new moderator is a UI
+  // edit, not a code change — see supabase/admins_discord.sql.
+  const [discordId, setDiscordId] = useState(discordUserId || '');
+  const [discordBusy, setDiscordBusy] = useState(false);
+  const [discordMsg, setDiscordMsg] = useState(null);
+  const discordDirty = discordId.trim() !== (discordUserId || '');
+
+  const saveDiscordId = async () => {
+    setDiscordBusy(true); setDiscordMsg(null);
+    const res = await adminCall('set_discord_id', {email, discord_user_id: discordId.trim()});
+    if (!res || res.ok === false || res.error) {
+      setDiscordMsg({text: res?.error || "Couldn't save that. Please try again.", tone:"error"});
+    } else {
+      setDiscordMsg({text: "Saved.", tone:"success"});
+    }
+    setDiscordBusy(false);
+  };
 
   return (
     <Modal title={`Promote ${name || email}`} onClose={()=>{ if(!busy) onClose(); }} width={440}>
@@ -1063,6 +1084,26 @@ function PromoteMemberModal({email, name, isAmbassador, isAdmin, onClose, onDone
       </ChoiceGroup>
 
       <InlineMsg text={err} tone="error"/>
+
+      {isAdmin && (
+        <>
+          <Divider/>
+          <label htmlFor={discordFieldId} style={{display:"block", fontSize:11, color:C.gray, marginBottom:4, fontWeight:500}}>
+            Discord ID <span style={{fontWeight:400}}>(for @-mentions in support pings)</span>
+          </label>
+          <div style={{display:"flex", gap:8, alignItems:"center"}}>
+            <input id={discordFieldId} type="text" inputMode="numeric" placeholder="Right-click their name in Discord → Copy User ID"
+              value={discordId} onChange={e=>{ setDiscordId(e.target.value); setDiscordMsg(null); }}
+              style={{flex:1, fontSize:13, border:`1px solid ${C.border}`, borderRadius:8, padding:"8px 10px", background:C.bg, color:C.text, boxSizing:"border-box", minHeight:44}}/>
+            <button type="button" className="btn-pop" disabled={discordBusy || !discordDirty} onClick={saveDiscordId}
+              style={{padding:"10px 16px", fontSize:13, fontWeight:600, border:`1px solid ${C.border}`, borderRadius:8, minHeight:44,
+                background:"transparent", color:C.text, cursor:(discordBusy||!discordDirty)?"default":"pointer", opacity:(discordBusy||!discordDirty)?0.5:1, flexShrink:0}}>
+              {discordBusy ? "Saving…" : "Save"}
+            </button>
+          </div>
+          <InlineMsg text={discordMsg?.text} tone={discordMsg?.tone}/>
+        </>
+      )}
 
       <div style={{display:"flex", gap:8, marginTop:16}}>
         <button type="button" className="btn-pop" disabled={busy} onClick={onClose}
@@ -1226,7 +1267,7 @@ function MembersSection({members, callerEmail, onChanged}) {
         if (!m) return null;
         return (
           <PromoteMemberModal key={promoteEmail} email={m.email} name={m.name}
-            isAmbassador={m.is_ambassador} isAdmin={m.is_admin}
+            isAmbassador={m.is_ambassador} isAdmin={m.is_admin} discordUserId={m.discord_user_id}
             onClose={()=>setPromoteEmail(null)}
             onDone={()=>{ setPromoteEmail(null); onChanged(); }}/>
         );

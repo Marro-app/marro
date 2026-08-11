@@ -94,7 +94,7 @@ export default async function handler(req, res) {
             .select('email, is_ambassador, quota_override, note, school, updated_by, updated_at')
             .order('updated_at', { ascending: false }).limit(LIST_LIMIT),
           admin.from('admins')
-            .select('email, added_by, created_at')
+            .select('email, added_by, created_at, discord_user_id')
             .order('created_at', { ascending: true }).limit(LIST_LIMIT),
           admin.from('allowed_emails')
             .select('email, note, invited_by, created_at')
@@ -203,6 +203,8 @@ export default async function handler(req, res) {
         const adminEmails = new Set(
           (admins.data || []).map(a => (a.email || '').toLowerCase())
         );
+        const adminByEmail = {};
+        for (const a of admins.data || []) adminByEmail[(a.email || '').toLowerCase()] = a;
         const members = (allowed.data || []).map(m => {
           const u = byEmail[m.email];
           const inviter = m.invited_by ? byId[m.invited_by] : null;
@@ -215,6 +217,9 @@ export default async function handler(req, res) {
             note: m.note || null,
             is_ambassador: ambassadorEmails.has(emailLc),
             is_admin: adminEmails.has(emailLc),
+            // Discord mention target for support-notification pings — only
+            // meaningful for admins, editable from their profile modal.
+            discord_user_id: adminByEmail[emailLc]?.discord_user_id || null,
             invited_by_email: inviter?.email || null,
             created_at: m.created_at,
           };
@@ -584,6 +589,30 @@ export default async function handler(req, res) {
           type: 'congrats',
         });
         if (!emailed) console.error('admin add_admin: congrats email failed', email, sendErr);
+        return res.status(200).json({ ok: true });
+      }
+
+      case 'set_discord_id': {
+        // Powers the @-mention in support-notification pings (reassign,
+        // snooze-wake) — set from the admin's profile modal (Users & Invites
+        // → click a member) rather than hardcoded, so a Discord account
+        // switch or a new moderator is a UI edit, not a code change.
+        const email = String(body.email || '').toLowerCase().trim();
+        if (!email) return res.status(400).json({ error: 'Missing email' });
+        const raw = String(body.discord_user_id ?? '').trim();
+        // Empty clears it (falls back to plain-text naming in pings).
+        // Non-empty must look like a real Discord snowflake — digits only,
+        // 15-25 long covers every ID format Discord has used.
+        if (raw && !/^\d{15,25}$/.test(raw)) {
+          return res.status(400).json({ error: 'That doesn\'t look like a Discord user ID — right-click their name in Discord (Developer Mode on) → Copy User ID.' });
+        }
+        const { data: existing, error: findErr } = await admin
+          .from('admins').select('email').eq('email', email).maybeSingle();
+        if (findErr) throw findErr;
+        if (!existing) return res.status(400).json({ error: `${email} isn't an admin.` });
+        const { error } = await admin.from('admins')
+          .update({ discord_user_id: raw || null }).eq('email', email);
+        if (error) throw error;
         return res.status(200).json({ ok: true });
       }
 
