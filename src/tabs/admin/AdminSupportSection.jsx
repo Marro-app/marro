@@ -322,7 +322,8 @@ export default function AdminSupportSection() {
             <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10, padding: '8px 11px', borderRadius: 10, background: C.blueLight, border: `1px solid ${C.border}`, fontSize: 12, color: C.text }}>
               <Icon name="live" size={13} color={C.blue} />
               <span>
-                <strong>{adminNameByEmail[here.email] || here.email}</strong> is {here.kind === 'typing' ? 'typing in' : 'viewing'} this thread — first reply claims it.
+                <strong>{adminNameByEmail[here.email] || here.email}</strong> is {here.kind === 'typing' ? 'typing in' : 'viewing'} this thread
+                {openConvo.assigned_admin ? '.' : ' — first reply claims it.'}
               </span>
             </div>
           );
