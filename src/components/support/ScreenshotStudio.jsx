@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { C } from '../../lib/theme.js';
 import { XBtn } from '../primitives.jsx';
+import { Icon } from '../icons.jsx';
 
 // ── Screenshot + annotate studio (Slice 10, plan §8) ────────────────────────
 // LAZY-LOADED (React.lazy in SupportPanel) — none of this ships in the main
@@ -19,19 +20,43 @@ import { XBtn } from '../primitives.jsx';
 // Returns via onDone({ blob, width, height }) — the caller uploads.
 
 const TOOLS = [
-  { key: 'box', label: 'Highlight box' },
-  { key: 'arrow', label: 'Arrow' },
-  { key: 'draw', label: 'Draw' },
-  { key: 'text', label: 'Text' },
-  { key: 'blur', label: 'Blur / redact' },
+  { key: 'box', label: 'Highlight box', icon: 'toolBox' },
+  { key: 'arrow', label: 'Arrow', icon: 'toolArrow' },
+  { key: 'draw', label: 'Draw', icon: 'toolDraw' },
+  { key: 'text', label: 'Text', icon: 'toolText' },
+  { key: 'blur', label: 'Blur / redact', icon: 'toolBlur' },
+];
+// Swatches only set the color for what's drawn NEXT — recoloring something
+// already on the canvas needs the same per-shape object model as drag/delete
+// (deferred, see FUTURE_WORK.md), since strokes are raster pixels, not
+// editable objects.
+const COLORS = [
+  { key: 'red', hex: '#E5484D' },
+  { key: 'blue', hex: '#3B82F6' },
+  { key: 'green', hex: '#22C55E' },
+  { key: 'amber', hex: '#F59E0B' },
+  { key: 'white', hex: '#F6EFDD' },
 ];
 const MAX_DIM = 1600;   // downscale captures so uploads stay small
 const UNDO_DEPTH = 12;
+const TEXT_INPUT_FONT = '13px system-ui, sans-serif';
+const TEXT_INPUT_MIN = 44, TEXT_INPUT_MAX = 280;
+let measureCtx = null;
+// Input starts pill-small and grows with what's typed, rather than a fixed
+// wide box sitting mostly empty — measured against the same font the input
+// renders in, so the box always just barely fits the text plus padding.
+function measureTextInputWidth(text) {
+  if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+  measureCtx.font = TEXT_INPUT_FONT;
+  const textWidth = measureCtx.measureText(text || 'Type…').width;
+  return Math.min(TEXT_INPUT_MAX, Math.max(TEXT_INPUT_MIN, textWidth + 32));
+}
 
 export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onCaptureEnd }) {
   const [stage, setStage] = useState('pick'); // 'pick' | 'edit'
   const [error, setError] = useState(null);
   const [tool, setTool] = useState('box');
+  const [color, setColor] = useState(COLORS[0].hex);
   const [busy, setBusy] = useState(false);
   // Hidden (not unmounted -- capture keeps running) for the capture window
   // itself, so this studio's own "Add a screenshot" dialog isn't what ends
@@ -125,8 +150,8 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
 
   const strokeStyle = () => {
     const ctx = canvasRef.current.getContext('2d');
-    ctx.strokeStyle = '#E5484D';
-    ctx.fillStyle = '#E5484D';
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
     ctx.lineWidth = Math.max(3, canvasRef.current.width / 400);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -259,7 +284,7 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
       // close-on-scrim handler and closes the whole panel underneath.
       onClick={(e) => e.stopPropagation()}
       style={{ position: 'fixed', inset: 0, zIndex: 1100, background: C.scrim, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, boxSizing: 'border-box' }}>
-      <div className="mm" style={{ position: 'relative', width: 'min(720px, 100%)', maxHeight: '90vh', display: 'flex', flexDirection: 'column', gap: 12, padding: 16, overflow: 'hidden' }}>
+      <div className="mm" style={{ position: 'relative', width: stage === 'edit' ? 'min(720px, 100%)' : 'min(360px, 100%)', maxHeight: '90vh', display: 'flex', flexDirection: 'column', gap: 12, padding: 16, overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ flex: 1, fontSize: 15, fontWeight: 700, color: C.text }}>
             {stage === 'pick' ? 'Add a screenshot' : 'Annotate — draw on the image'}
@@ -293,13 +318,27 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
             must exist while the picker is still showing. */}
         <div style={{ display: stage === 'edit' ? 'contents' : 'none' }}>
           <>
-            <div role="group" aria-label="Annotation tools" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <div role="group" aria-label="Annotation tools" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
               {TOOLS.map((t) => (
-                <button key={t.key} type="button" aria-pressed={tool === t.key} onClick={() => setTool(t.key)} className="hit-slop" style={btnStyle(tool === t.key)}>
+                <button key={t.key} type="button" aria-pressed={tool === t.key} onClick={() => setTool(t.key)} className="hit-slop"
+                  style={{ ...btnStyle(tool === t.key), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Icon name={t.icon} size={15} />
                   {t.label}
                 </button>
               ))}
-              <button type="button" onClick={undo} className="btn-pop hit-slop" style={btnStyle(false)}>Undo</button>
+              <button type="button" onClick={undo} className="btn-pop hit-slop"
+                style={{ ...btnStyle(false), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Icon name="toolUndo" size={15} />
+                Undo
+              </button>
+              <div role="group" aria-label="Annotation color" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 4 }}>
+                {COLORS.map((c) => (
+                  <button key={c.key} type="button" aria-label={`Color: ${c.key}`} aria-pressed={color === c.hex} onClick={() => setColor(c.hex)}
+                    className="hit-slop"
+                    style={{ width: 22, height: 22, borderRadius: '50%', cursor: 'pointer', background: c.hex,
+                      border: color === c.hex ? `2px solid ${C.text}` : `1px solid ${C.border}`, padding: 0 }} />
+                ))}
+              </div>
             </div>
             <div style={{ position: 'relative', overflow: 'auto', borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, maxHeight: '55vh' }} className="themed-scroll">
               <canvas
@@ -336,8 +375,8 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
                     onChange={(e) => setTextEntry((t) => ({ ...t, value: e.target.value }))}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitText(); } }}
                     onBlur={commitText}
-                    placeholder="Type, then Enter"
-                    style={{ position: 'absolute', left, top, minHeight: 36, padding: '7px 11px', fontSize: 13, borderRadius: 9, border: `2px solid ${C.danger}`, background: C.bg, color: C.text, outline: 'none', width: 'min(280px, 80%)' }}
+                    placeholder="Type…"
+                    style={{ position: 'absolute', left, top, minHeight: 36, padding: '7px 11px', font: TEXT_INPUT_FONT, borderRadius: 9, border: `2px solid ${color}`, background: C.bg, color: C.text, outline: 'none', width: measureTextInputWidth(textEntry.value) }}
                   />
                 );
               })()}
