@@ -237,7 +237,7 @@ export default function AdminSupportSection() {
   // ── Thread view ────────────────────────────────────────────────────────────
   if (openConvo) {
     const cat = categoryForType(openConvo.type);
-    const handledBy = handledByLabel(openConvo.assigned_admin, callerEmail);
+    const handledBy = handledByLabel(openConvo.assigned_admin);
     return (
       <Card>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
@@ -442,7 +442,7 @@ export default function AdminSupportSection() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {visible.map((c) => {
             const cat = categoryForType(c.type);
-            const handledBy = handledByLabel(c.assigned_admin, callerEmail);
+            const handledBy = handledByLabel(c.assigned_admin);
             const who = c.user_name || c.user_email || c.user_id;
             return (
               <button key={c.id} type="button" onClick={() => openThread(c)}

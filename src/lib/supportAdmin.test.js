@@ -64,10 +64,9 @@ describe('timeAgo', () => {
 });
 
 describe('handledByLabel', () => {
-  it('unassigned → null; self → "you"; other admin → their email', () => {
-    expect(handledByLabel(null, ME)).toBe(null);
-    expect(handledByLabel(ME, ME)).toBe('you');
-    expect(handledByLabel('ETHAN@JOINMARRO.COM', ME)).toBe('you');
-    expect(handledByLabel(CO, ME)).toBe(CO);
+  it('unassigned → null; assigned → their email, no "you" special-case', () => {
+    expect(handledByLabel(null)).toBe(null);
+    expect(handledByLabel(ME)).toBe(ME);
+    expect(handledByLabel(CO)).toBe(CO);
   });
 });

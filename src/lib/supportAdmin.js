@@ -71,9 +71,8 @@ export function agoLabel(iso, nowMs = Date.now()) {
   return t === 'just now' || t === '' ? t : `${t} ago`;
 }
 
-// Who a thread is "Handled by" — the caller sees "you" instead of their own
-// email so the inbox reads naturally with two founders sharing it.
-export function handledByLabel(assignedAdmin, callerEmail) {
-  if (!assignedAdmin) return null;
-  return assignedAdmin.toLowerCase() === (callerEmail || '').toLowerCase() ? 'you' : assignedAdmin;
+// Who a thread is "Handled by" — always the admin's email, never a "you"/"me"
+// special case, so it reads the same regardless of which founder is looking.
+export function handledByLabel(assignedAdmin) {
+  return assignedAdmin || null;
 }
