@@ -209,15 +209,25 @@ export default function AdminSupportSection() {
   const [peers, setPeers] = useState([]);
   const presenceRef = useRef(null);
   const typingTimer = useRef(null);
+  // Tracks the latest openConvo id independent of the join below — the join
+  // is async (channel create → subscribe → SUBSCRIBED), so if an admin opens
+  // a thread before it resolves, the viewing-broadcast effect below would
+  // fire against a still-null presenceRef and silently do nothing, with no
+  // later trigger to retry it. Reading this ref once the handle is ready
+  // covers that race.
+  const openConvoIdRef = useRef(null);
   useEffect(() => {
     if (!callerEmail) return undefined;
     let dead = false;
     joinSupportPresence(callerEmail, setPeers).then((h) => {
-      if (dead) h.leave(); else presenceRef.current = h;
+      if (dead) { h.leave(); return; }
+      presenceRef.current = h;
+      h.update({ viewing: openConvoIdRef.current, typing: false });
     });
     return () => { dead = true; presenceRef.current?.leave(); presenceRef.current = null; };
   }, [callerEmail]);
   useEffect(() => {
+    openConvoIdRef.current = openConvo?.id || null;
     presenceRef.current?.update({ viewing: openConvo?.id || null, typing: false });
   }, [openConvo?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
