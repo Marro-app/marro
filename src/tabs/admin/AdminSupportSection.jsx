@@ -6,7 +6,7 @@ import { supportAdminCall } from '../../lib/data.js';
 import { categoryForType, subscribeToMessages, subscribeToConversations } from '../../lib/support.js';
 import { INBOX_FILTERS, filterInbox, agoLabel, handledByLabel } from '../../lib/supportAdmin.js';
 import { resolveAvailability, DEFAULT_BUSINESS_HOURS } from '../../lib/supportAvailability.js';
-import { canTransition, waitingLabel } from '../../lib/supportLifecycle.js';
+import { canTransition, waitingLabel, SNOOZE_PRESETS } from '../../lib/supportLifecycle.js';
 import { joinSupportPresence, presenceLabel } from '../../lib/supportPresence.js';
 import AttachmentImg from '../../components/support/AttachmentImg.jsx';
 import SupportMetricsView from './SupportMetricsView.jsx';
@@ -358,6 +358,8 @@ export default function AdminSupportSection({ initialConversationId, onInitialCo
   const [actionBusy, setActionBusy] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [reassignTo, setReassignTo] = useState('');
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [snoozeCustom, setSnoozeCustom] = useState(''); // datetime-local value, '' = presets only
 
   // Patch the acted-on conversation everywhere it lives (thread + list).
   const applyConvo = useCallback((row) => {
@@ -377,6 +379,8 @@ export default function AdminSupportSection({ initialConversationId, onInitialCo
       applyConvo(res.conversation);
       setReassignOpen(false);
       setReassignTo('');
+      setSnoozeOpen(false);
+      setSnoozeCustom('');
     }
     setActionBusy(false);
   }, [openConvo, actionBusy, applyConvo]);
@@ -439,7 +443,7 @@ export default function AdminSupportSection({ initialConversationId, onInitialCo
         <div role="group" aria-label="Conversation actions" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
           {[
             canTransition(openConvo.status, 'resolved') && { label: 'Resolve', onClick: () => doAction('set_status', { status: 'resolved' }) },
-            canTransition(openConvo.status, 'snoozed') && { label: 'Snooze 1d', onClick: () => doAction('set_status', { status: 'snoozed', snooze_hours: 24 }) },
+            canTransition(openConvo.status, 'snoozed') && { label: snoozeOpen ? 'Cancel snooze' : 'Snooze', onClick: () => { setSnoozeOpen((v) => !v); setSnoozeCustom(''); } },
             ['resolved', 'archived', 'snoozed'].includes(openConvo.status) && { label: 'Reopen', onClick: () => doAction('set_status', { status: 'open' }) },
             openConvo.status === 'resolved' && { label: 'Archive', onClick: () => doAction('set_status', { status: 'archived' }) },
             !!openConvo.assigned_admin && { label: 'Release', onClick: () => doAction('release') },
@@ -456,6 +460,33 @@ export default function AdminSupportSection({ initialConversationId, onInitialCo
             </span>
           )}
         </div>
+        {snoozeOpen && (
+          <div role="group" aria-label="Snooze duration" style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+            {SNOOZE_PRESETS.map((p) => (
+              <button key={p.minutes} type="button" disabled={actionBusy}
+                onClick={() => doAction('set_status', { status: 'snoozed', snooze_minutes: p.minutes })}
+                className="btn-pop hit-slop"
+                style={{ minHeight: 32, padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text, opacity: actionBusy ? 0.6 : 1 }}>
+                {p.label}
+              </button>
+            ))}
+            <label htmlFor={`${fieldId}-snooze-until`} style={{ fontSize: 12, fontWeight: 600, color: C.text, marginLeft: 4 }}>or until</label>
+            <input
+              id={`${fieldId}-snooze-until`}
+              type="datetime-local"
+              value={snoozeCustom}
+              onChange={(e) => setSnoozeCustom(e.target.value)}
+              min={new Date(Date.now() + 5 * 60000).toISOString().slice(0, 16)}
+              style={{ minHeight: 32, padding: '5px 9px', fontSize: 12, borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.text, boxSizing: 'border-box', outline: 'none' }}
+            />
+            <button type="button" disabled={!snoozeCustom || actionBusy}
+              onClick={() => doAction('set_status', { status: 'snoozed', snooze_until: new Date(snoozeCustom).toISOString() })}
+              className="btn-pop"
+              style={{ minHeight: 32, padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text, opacity: (!snoozeCustom || actionBusy) ? 0.5 : 1 }}>
+              Set
+            </button>
+          </div>
+        )}
         {/* Triage (Slice 9): priority + tags. Priority is a small aria-pressed
             chip trio; tags are whole-array edits via a labeled input. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
