@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { C } from '../../lib/theme.js';
 import { Icon } from '../icons.jsx';
-import { fetchConversations, totalUnread } from '../../lib/support.js';
+import { fetchConversations, totalUnread, subscribeToConversations } from '../../lib/support.js';
 
 // The panel is heavy-ish (transcript, composer, motif) and only needed once a
 // user actually opens support — lazy-load it so it stays out of the initial
@@ -25,6 +25,15 @@ export default function SupportLauncher() {
   // Prime the badge on mount; refresh whenever the panel closes (reading a
   // thread zeroes its unread count server-side).
   useEffect(() => { refreshUnread(); }, [refreshUnread]);
+
+  // Live badge (Slice 4): any change to the user's conversations (an admin
+  // reply bumps unread_user) re-derives the count — no polling. RLS means the
+  // subscription only ever sees this user's own rows.
+  useEffect(() => {
+    let dead = false, unsub = null;
+    subscribeToConversations(() => refreshUnread()).then((u) => { if (dead) u(); else unsub = u; });
+    return () => { dead = true; if (unsub) unsub(); };
+  }, [refreshUnread]);
 
   const close = useCallback(() => {
     setOpen(false);

@@ -6,8 +6,9 @@ import { Icon } from '../icons.jsx';
 import {
   SUPPORT_CATEGORIES, categoryForType, fetchConversations, fetchMessages,
   startConversation, postMessage, markRead, archiveConversation, reopenConversation,
-  findActiveQuestion, findReopenableChats, ACTIVE_STATUSES,
+  subscribeToMessages, notifySupport, fetchAvailability, subscribeToAvailability, findActiveQuestion, findReopenableChats, ACTIVE_STATUSES,
 } from '../../lib/support.js';
+import { availabilityLine } from '../../lib/supportAvailability.js';
 
 // ── Category-themed background (plan §6) ─────────────────────────────────────
 // Decorative, aria-hidden motif that changes with the conversation type:
@@ -195,6 +196,21 @@ export default function SupportPanel({ onClose }) {
   const [confirmingEnd, setConfirmingEnd] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
+  const [availability, setAvailability] = useState(null); // resolved {online, reason} | null
+
+  // Honest status line (Slice 6): resolved from support_settings on open, then
+  // kept live — an admin's heartbeat going stale or an override flip should
+  // update the line while the panel is sitting open, not just on next mount
+  // (the resolver's whole point is to never advertise stale presence).
+  useEffect(() => {
+    let alive = true;
+    let unsubscribe = () => {};
+    fetchAvailability().then((a) => { if (alive) setAvailability(a); });
+    subscribeToAvailability((a) => { if (alive) setAvailability(a); }).then((unsub) => {
+      if (alive) unsubscribe = unsub; else unsub();
+    });
+    return () => { alive = false; unsubscribe(); };
+  }, []);
 
   // The one open Question (if any) and every chat ended within the reopen window —
   // drive the hub's "Continue your chat" card and "Recent chats" list.
@@ -251,6 +267,24 @@ export default function SupportPanel({ onClose }) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, loading, view]);
 
+  // Live delivery (Slice 4): while a thread is open, new messages stream in
+  // over Realtime (RLS-scoped to this user's own rows). Admin replies arriving
+  // while we're looking are marked read immediately, so no stale badge. Dedup
+  // by id — our own sends also come back through the channel after the refetch.
+  useEffect(() => {
+    if (view !== 'thread' || !convo?.id) return undefined;
+    const convoId = convo.id;
+    let dead = false, unsub = null;
+    subscribeToMessages(convoId, (m) => {
+      setMessages((ms) => (ms.some((x) => x.id === m.id) ? ms : [...ms, m]));
+      if (m.sender === 'admin') {
+        markRead(convoId).catch(() => {});
+        setConversations((cs) => cs.map((c) => (c.id === convoId ? { ...c, unread_user: 0 } : c)));
+      }
+    }).then((u) => { if (dead) u(); else unsub = u; });
+    return () => { dead = true; if (unsub) unsub(); };
+  }, [view, convo?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Focus trap + Esc + focus restore (mirrors the Modal primitive's contract).
   useEffect(() => {
     const panel = panelRef.current;
@@ -295,6 +329,7 @@ export default function SupportPanel({ onClose }) {
     try {
       if (view === 'ask') {
         const id = await startConversation({ type: 'question', body });
+        notifySupport(id); // fire-and-forget: Discord ping + auto-reassurance (slice 5)
         const convos = await fetchConversations();
         setConversations(convos);
         const target = convos.find((c) => c.id === id) || null;
@@ -303,6 +338,7 @@ export default function SupportPanel({ onClose }) {
         setView('thread');
       } else {
         await postMessage({ conversationId: convo.id, body });
+        notifySupport(convo.id); // fire-and-forget (slice 5)
         setMessages(await fetchMessages(convo.id));
         setConversations((cs) => cs.map((c) => (c.id === convo.id
           ? { ...c, last_message_at: new Date().toISOString(), status: (c.status === 'resolved' || c.status === 'archived') ? 'open' : c.status }
@@ -327,6 +363,7 @@ export default function SupportPanel({ onClose }) {
       const cat = SUPPORT_CATEGORIES.find((c) => c.key === formKey) || SUPPORT_CATEGORIES[0];
       const body = activeForm.compose(form);
       const id = await startConversation({ type: cat.type, body });
+      notifySupport(id); // fire-and-forget: Discord ping (slice 5)
       const convos = await fetchConversations();
       setConversations(convos);
       setConvo(convos.find((c) => c.id === id) || null);
@@ -456,7 +493,7 @@ export default function SupportPanel({ onClose }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>Support &amp; feedback</div>
             <div style={{ fontSize: 11.5, color: C.textMid, marginTop: 1, display: 'flex', alignItems: 'center', gap: 5 }}>
-              {view === 'hub' ? 'We usually reply within a day'
+              {view === 'hub' ? availabilityLine(availability)
                 : (view === 'ask' || view === 'askChoice') ? 'Ask a question'
                 : (<>
                     <Icon name={screenCat.icon} size={13} color={C.textMid} />

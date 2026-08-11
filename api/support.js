@@ -21,6 +21,9 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './_config.js';
+// Pure, side-effect-free (same rationale as the resolver import in
+// api/support-notify.js) — the ONE definition of which status moves are legal.
+import { canTransition, eventForTransition, sweep, resolveSnoozeUntil } from '../src/lib/supportLifecycle.js';
 
 // Bounded list read so the inbox payload can't blow up as the beta grows.
 const LIST_LIMIT = 200;
@@ -74,15 +77,33 @@ export default async function handler(req, res) {
       case 'list': {
         // Every conversation, most recently active first, enriched with the
         // user's name/email/avatar (identity + technical context only — a
-        // thread never carries financial data, plan §4). Filtering by queue
-        // (unassigned/mine/…) happens client-side for now; the Slice-7 queues
-        // can push it into the query when the volume warrants it.
+        // thread never carries financial data, plan §4). Queue filtering
+        // happens client-side (filterInbox) — volumes are small.
         const { data: convos, error } = await admin
           .from('support_conversations')
           .select('*')
           .order('last_message_at', { ascending: false })
           .limit(LIST_LIMIT);
         if (error) throw error;
+
+        // Lazy maintenance sweep (Slice 7 — no cron infra yet): wake due
+        // snoozes, auto-archive stale resolved threads. Applied before the
+        // payload is shaped so the console always shows post-sweep truth.
+        try {
+          const due = sweep(convos || [], Date.now());
+          for (const { id, patch, event } of due) {
+            const { error: swErr } = await admin.from('support_conversations').update(patch).eq('id', id);
+            if (swErr) { console.error('support: sweep update failed', id, swErr.message); continue; }
+            const row = (convos || []).find((c) => c.id === id);
+            if (row) Object.assign(row, patch);
+            const { error: evSwErr } = await admin.from('support_events').insert({
+              conversation_id: id, admin_email: 'system', action: event, meta: { via: 'sweep' },
+            });
+            if (evSwErr) console.error('support: sweep event failed', id, evSwErr.message);
+          }
+        } catch (e) {
+          console.error('support: sweep failed', e?.message);
+        }
 
         // Resolve user_id → {email, name, avatar} once (best-effort — on
         // failure the client falls back to showing a truncated user id).
@@ -175,7 +196,15 @@ export default async function handler(req, res) {
         if (claimed) {
           patch.assigned_admin = callerEmail;
           patch.claimed_at = nowIso;
-          if (convo.status === 'new') patch.status = 'open';
+        }
+        // We replied → the ball is in the user's court (Slice 7). Their next
+        // message flips it back to 'open' server-side (see the user RPC).
+        // Includes 'snoozed': replying is itself a decision to act on the
+        // thread now, so it should wake it the same way the console's Reopen
+        // button would — a reply shouldn't silently leave it parked.
+        if (['new', 'open', 'snoozed'].includes(convo.status)) {
+          patch.status = 'waiting_user';
+          if (convo.status === 'snoozed') patch.snooze_until = null;
         }
         const { data: unreadRow, error: unreadReadErr } = await admin
           .from('support_conversations').select('unread_user').eq('id', conversationId).maybeSingle();
@@ -194,7 +223,138 @@ export default async function handler(req, res) {
         const { error: evErr } = await admin.from('support_events').insert(events);
         if (evErr) console.error('support: events insert failed', conversationId, evErr.message);
 
+        // Inbound "we replied" (Slice 6): reuse the existing in-app
+        // notification pipeline (user_notifications → NotificationBanner) so
+        // the user hears about the reply even with the panel closed. Best-
+        // effort — the reply itself is already stored either way.
+        try {
+          const { data: ownerRow } = await admin
+            .from('support_conversations').select('user_id').eq('id', conversationId).maybeSingle();
+          if (ownerRow?.user_id) {
+            const { data: ownerUser } = await admin.auth.admin.getUserById(ownerRow.user_id);
+            const ownerEmail = (ownerUser?.user?.email || '').toLowerCase();
+            if (ownerEmail) {
+              const { error: notifErr } = await admin.from('user_notifications').insert({
+                email: ownerEmail, kind: 'support',
+                message: 'Marro replied to your support message — open Support to read it.',
+                metadata: { conversation_id: conversationId },
+              });
+              if (notifErr) console.error('support: reply notification failed', conversationId, notifErr.message);
+            }
+          }
+        } catch (e) {
+          console.error('support: reply notification failed', conversationId, e?.message);
+        }
+
         return res.status(200).json({ ok: true, message, claimed, assigned_admin: convo.assigned_admin || callerEmail });
+      }
+
+      case 'heartbeat': {
+        // Bumped while an admin has the Support console open — the availability
+        // resolver treats a stale heartbeat as "not really here" (plan §3).
+        const { data: settings, error } = await admin
+          .from('support_settings')
+          .upsert({ id: 1, last_admin_heartbeat: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict: 'id' })
+          .select('*');
+        if (error) throw error;
+        return res.status(200).json({ ok: true, settings: settings?.[0] || null });
+      }
+
+      case 'set_availability': {
+        // The in-app manual toggle: 'auto' | 'on' | 'off'. Going 'on' also
+        // stamps available_until (the §3 timeout window) and refreshes the
+        // heartbeat so the flip is immediately honest.
+        const override = String(body.override || '');
+        if (!['auto', 'on', 'off'].includes(override)) {
+          return res.status(400).json({ error: 'Invalid override' });
+        }
+        const nowIso = new Date().toISOString();
+        const patch = { id: 1, online_override: override, updated_at: nowIso };
+        if (override === 'on') {
+          patch.available_until = new Date(Date.now() + 60 * 60000).toISOString(); // 1h window
+          patch.last_admin_heartbeat = nowIso;
+        }
+        const { data: settings, error } = await admin
+          .from('support_settings').upsert(patch, { onConflict: 'id' }).select('*');
+        if (error) throw error;
+        const { error: evErr } = await admin.from('support_events').insert({
+          conversation_id: null, admin_email: callerEmail, action: 'availability_changed', meta: { override },
+        });
+        if (evErr) console.error('support: availability event log failed', evErr.message);
+        return res.status(200).json({ ok: true, settings: settings?.[0] || null });
+      }
+
+      case 'set_status': {
+        // Admin status moves (Slice 7): resolve / archive / snooze / reopen.
+        // Legality comes from the shared pure state machine; every transition
+        // stamps its lifecycle timestamp and logs a support_events row.
+        const conversationId = String(body.conversation_id || '');
+        const target = String(body.status || '');
+        if (!conversationId) return res.status(400).json({ error: 'Missing conversation_id' });
+        const { data: convo, error: convoErr } = await admin
+          .from('support_conversations')
+          .select('id, status, reopen_count')
+          .eq('id', conversationId)
+          .maybeSingle();
+        if (convoErr) throw convoErr;
+        if (!convo) return res.status(404).json({ error: 'Conversation not found' });
+        if (!canTransition(convo.status, target)) {
+          return res.status(400).json({ error: `Can't move a ${convo.status.replace('_', ' ')} thread to ${target.replace('_', ' ')}.` });
+        }
+        const nowIso = new Date().toISOString();
+        const patch = { status: target };
+        if (target === 'resolved') { patch.resolved_at = nowIso; patch.resolved_by = callerEmail; }
+        if (target === 'archived') { patch.archived_at = nowIso; }
+        // Either a quick preset (snooze_minutes) or a picked date/time
+        // (snooze_until, an ISO string from the console's datetime-local
+        // input) — resolveSnoozeUntil validates/clamps either shape.
+        if (target === 'snoozed') {
+          patch.snooze_until = resolveSnoozeUntil(Date.now(), { minutes: body.snooze_minutes, until: body.snooze_until });
+        }
+        if (target === 'open') {
+          patch.archived_at = null;
+          patch.snooze_until = null;
+          if (['resolved', 'archived'].includes(convo.status)) patch.reopen_count = (convo.reopen_count || 0) + 1;
+        }
+        const { data: updated, error: updErr } = await admin
+          .from('support_conversations').update(patch).eq('id', conversationId).select('*');
+        if (updErr) throw updErr;
+        const { error: evErr } = await admin.from('support_events').insert({
+          conversation_id: conversationId, admin_email: callerEmail,
+          action: eventForTransition(target, convo.status), meta: { from: convo.status, to: target },
+        });
+        if (evErr) console.error('support: status event log failed', conversationId, evErr.message);
+        return res.status(200).json({ ok: true, conversation: updated?.[0] || null });
+      }
+
+      case 'reassign':
+      case 'release': {
+        // Ownership moves (§9.5): hand a thread to the other founder, or put
+        // it back in the shared pool. Reassigning to yourself = a claim.
+        const conversationId = String(body.conversation_id || '');
+        if (!conversationId) return res.status(400).json({ error: 'Missing conversation_id' });
+        const toEmail = action === 'reassign' ? String(body.admin_email || '').toLowerCase().trim() : null;
+        if (action === 'reassign') {
+          if (!toEmail) return res.status(400).json({ error: 'Missing admin_email' });
+          const { data: targetAdmin, error: taErr } = await admin
+            .from('admins').select('email').eq('email', toEmail).maybeSingle();
+          if (taErr) throw taErr;
+          if (!targetAdmin) return res.status(400).json({ error: `${toEmail} isn't an admin.` });
+        }
+        const patch = action === 'reassign'
+          ? { assigned_admin: toEmail, claimed_at: new Date().toISOString() }
+          : { assigned_admin: null };
+        const { data: updated, error: updErr } = await admin
+          .from('support_conversations').update(patch).eq('id', conversationId).select('*');
+        if (updErr) throw updErr;
+        if (!updated || !updated[0]) return res.status(404).json({ error: 'Conversation not found' });
+        const { error: evErr } = await admin.from('support_events').insert({
+          conversation_id: conversationId, admin_email: callerEmail,
+          action: action === 'reassign' ? 'reassigned' : 'released',
+          meta: action === 'reassign' ? { to: toEmail } : null,
+        });
+        if (evErr) console.error('support: ownership event log failed', conversationId, evErr.message);
+        return res.status(200).json({ ok: true, conversation: updated[0] });
       }
 
       default:

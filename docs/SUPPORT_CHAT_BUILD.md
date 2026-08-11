@@ -14,7 +14,25 @@
 > pure inbox logic in `src/lib/supportAdmin.js` (Vitest), and the `?mock=1` harness now covers the
 > admin side (mock user is admin-flagged; in-memory `__mockApi` stands in for the admin backends).
 > No new SQL — Slice 1's tables/RLS already cover it. Full detail + locked decisions in
-> `docs/SUPPORT_CHAT_HANDOFF.md` §1–3. **▶ NEXT: Slice 4** (Realtime).
+> `docs/SUPPORT_CHAT_HANDOFF.md` §1–3. · ✅ Slice 4 (Realtime) — branch
+> `feat/support-slice-4-realtime` (stacked on slice 3): subscribe helpers in `src/lib/support.js`,
+> live thread/badge/inbox in SupportPanel + SupportLauncher + AdminSupportSection, in-memory
+> channel emulation in the mock stub. **⚠️ RUN `supabase/support_realtime.sql` in Studio** (adds the
+> two support tables to the `supabase_realtime` publication) or delivery stays fetch-only.
+> · ✅ Slice 5 (alerts) — branch `feat/support-slice-5-alerts`: `api/support-notify.js` (Discord
+> webhook ping, 10-min debounce per convo via `support_events`, owner named once claimed;
+> one-time system reassurance on unattended **questions**), fired client-side after each user
+> send. **⚠️ Discord needs the `DISCORD_SUPPORT_WEBHOOK_URL` Vercel env var** — absent = pings
+> silently off, everything else works. · ✅ Slice 6 (availability) — branch `feat/support-slice-6-availability`:
+> `supabase/support_settings.sql` (**run in Studio**), pure resolver `src/lib/supportAvailability.js`
+> (Vitest ×10; shared by the panel status line AND the server reassurance gate), heartbeat +
+> Auto/Available/Away override in the admin console, honest status line in the panel, admin reply →
+> `user_notifications` banner. · ✅ Slice 7 (lifecycle) — branch `feat/support-slice-7-lifecycle`: pure state machine
+> `src/lib/supportLifecycle.js` (Vitest ×12; shared by API + UI), `set_status`/`reassign`/`release`
+> actions, admin reply → `waiting_user`, user reply wakes waiting/snoozed threads (**⚠️ re-run
+> `supabase/support_chat.sql`** — the user RPC changed), lazy sweep on list (due snoozes wake,
+> resolved >30d auto-archives), full queue chips + "unanswered Xh" badges, archived = read-only.
+> **▶ NEXT: Slice 8** (presence soft-lock).
 >
 > **Per-slice template:** Goal · Depends on · Backend/DB · API · Frontend · Tests · **Done when** · Risk.
 > **Workflow (every slice):** branch → push → Vercel preview → optional `/code-review` → self-merge

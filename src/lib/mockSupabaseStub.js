@@ -8,6 +8,7 @@
 // and never sees a real credential. All "tables" are plain in-memory arrays
 // that live for the lifetime of the tab and reset on reload.
 import { MOCK_SESSION, MOCK_PROFILE, MOCK_USER_ID, MOCK_EMAIL, buildMockState, buildMockSupport } from './mockSessionData.js';
+import { resolveSnoozeUntil } from './supportLifecycle.js';
 
 function makeQueryBuilder(table, store) {
   let op = { kind: 'select' };
@@ -67,6 +68,38 @@ function mockId() {
   try { return crypto.randomUUID(); } catch { return 'mock-' + Math.random().toString(16).slice(2) + Date.now().toString(16); }
 }
 
+// ── In-memory Realtime emulation (Slice 4) ──────────────────────────────────
+// Just enough of supabase-js's channel API (channel().on('postgres_changes',
+// spec, cb).subscribe() / removeChannel()) that the real subscribe helpers in
+// src/lib/support.js run unmodified. Mutations in supportRpc/mockApi call
+// emitRealtime() so a user message lights up the admin inbox live (and vice
+// versa) with zero backend. Registry is module-scope: one page = one bus.
+const rtChannels = new Set();
+function emitRealtime(table, eventType, row) {
+  // Async like the real thing — never re-enters React mid-update.
+  setTimeout(() => { rtChannels.forEach((ch) => ch._dispatch(table, eventType, row)); }, 0);
+}
+function makeChannel() {
+  const ch = {
+    _handlers: [],
+    on(_type, spec, cb) { ch._handlers.push({ spec, cb }); return ch; },
+    subscribe(cb) { rtChannels.add(ch); if (cb) cb('SUBSCRIBED'); return ch; },
+    unsubscribe() { rtChannels.delete(ch); },
+    _dispatch(table, eventType, row) {
+      ch._handlers.forEach(({ spec, cb }) => {
+        if (spec.table !== table) return;
+        if (spec.event !== '*' && spec.event !== eventType) return;
+        if (spec.filter) {
+          const m = /^(\w+)=eq\.(.+)$/.exec(spec.filter);
+          if (m && String(row[m[1]]) !== m[2]) return;
+        }
+        cb({ eventType, new: { ...row } });
+      });
+    },
+  };
+  return ch;
+}
+
 // In-memory implementation of the Slice-1 support RPCs, mirroring the SQL
 // semantics in supabase/support_chat.sql closely enough that the real
 // src/lib/support.js code paths behave identically against the harness:
@@ -88,9 +121,12 @@ function supportRpc(name, params, store) {
         .filter((c) => c.user_id === MOCK_USER_ID && c.type === 'question' && ['new', 'open', 'waiting_user'].includes(c.status))
         .sort((a, b) => new Date(b.last_message_at) - new Date(a.last_message_at))[0];
       if (active) {
-        msgs.push({ id: mockId(), conversation_id: active.id, sender: 'user', sender_email: null, body, attachments: null, is_internal_note: false, created_at: now(), read_at: null });
+        const m = { id: mockId(), conversation_id: active.id, sender: 'user', sender_email: null, body, attachments: null, is_internal_note: false, created_at: now(), read_at: null };
+        msgs.push(m);
         active.last_message_at = now();
         active.unread_admin += 1;
+        emitRealtime('support_messages', 'INSERT', m);
+        emitRealtime('support_conversations', 'UPDATE', active);
         return { data: active.id, error: null };
       }
     }
@@ -103,7 +139,10 @@ function supportRpc(name, params, store) {
       created_at: now(), last_message_at: now(), claimed_at: null, first_response_at: null,
       resolved_at: null, resolved_by: null, archived_at: null, snooze_until: null,
     });
-    msgs.push({ id: mockId(), conversation_id: id, sender: 'user', sender_email: null, body, attachments: null, is_internal_note: false, created_at: now(), read_at: null });
+    const first = { id: mockId(), conversation_id: id, sender: 'user', sender_email: null, body, attachments: null, is_internal_note: false, created_at: now(), read_at: null };
+    msgs.push(first);
+    emitRealtime('support_conversations', 'INSERT', convos[convos.length - 1]);
+    emitRealtime('support_messages', 'INSERT', first);
     return { data: id, error: null };
   }
   if (name === 'support_post_user_message') {
@@ -112,28 +151,37 @@ function supportRpc(name, params, store) {
     const body = (params?.p_body || '').trim();
     if (!body) return { data: null, error: { message: 'message body required' } };
     const mid = mockId();
-    msgs.push({ id: mid, conversation_id: convo.id, sender: 'user', sender_email: null, body, attachments: params?.p_attachments ?? null, is_internal_note: false, created_at: now(), read_at: null });
+    const m = { id: mid, conversation_id: convo.id, sender: 'user', sender_email: null, body, attachments: params?.p_attachments ?? null, is_internal_note: false, created_at: now(), read_at: null };
+    msgs.push(m);
     convo.last_message_at = now();
     convo.unread_admin += 1;
     if (convo.status === 'resolved' || convo.status === 'archived') {
       convo.status = 'open'; convo.reopen_count += 1; convo.archived_at = null;
+    } else if (convo.status === 'waiting_user' || convo.status === 'snoozed') {
+      convo.status = 'open'; convo.snooze_until = null;
     }
+    emitRealtime('support_messages', 'INSERT', m);
+    emitRealtime('support_conversations', 'UPDATE', convo);
     return { data: mid, error: null };
   }
   if (name === 'support_mark_read') {
     const convo = convos.find((c) => c.id === params?.p_conversation_id && c.user_id === MOCK_USER_ID);
-    if (convo) convo.unread_user = 0;
+    if (convo) { convo.unread_user = 0; emitRealtime('support_conversations', 'UPDATE', convo); }
     return { data: null, error: null };
   }
   if (name === 'support_archive_conversation') {
     const convo = convos.find((c) => c.id === params?.p_conversation_id && c.user_id === MOCK_USER_ID);
-    if (convo) { convo.status = 'archived'; convo.archived_at = now(); convo.resolved_at = convo.resolved_at || now(); }
+    if (convo) {
+      convo.status = 'archived'; convo.archived_at = now(); convo.resolved_at = convo.resolved_at || now();
+      emitRealtime('support_conversations', 'UPDATE', convo);
+    }
     return { data: null, error: null };
   }
   if (name === 'support_reopen_conversation') {
     const convo = convos.find((c) => c.id === params?.p_conversation_id && c.user_id === MOCK_USER_ID);
     if (convo && (convo.status === 'resolved' || convo.status === 'archived')) {
       convo.status = 'open'; convo.archived_at = null; convo.reopen_count += 1;
+      emitRealtime('support_conversations', 'UPDATE', convo);
     }
     return { data: null, error: null };
   }
@@ -156,10 +204,25 @@ function mockApi(kind, action, params, store) {
     if (action === 'email_usage') return { ok: true, available: false };
     return { ok: false, error: 'Not available in the dev harness.' };
   }
-  // kind === 'support'
   const convos = store.support_conversations || (store.support_conversations = []);
   const msgs = store.support_messages || (store.support_messages = []);
   const events = store.support_events || (store.support_events = []);
+  if (kind === 'notify') {
+    // Slice 5 stand-in for api/support-notify.js: reassure an unattended
+    // question once (no Discord in the harness — logged as skipped).
+    const convo = convos.find((c) => c.id === params?.conversation_id);
+    if (!convo) return { ok: false, error: 'Conversation not found' };
+    let reassured = false;
+    if (convo.type === 'question' && !convo.assigned_admin
+        && !msgs.some((m) => m.conversation_id === convo.id && m.sender === 'system')) {
+      const m = { id: mockId(), conversation_id: convo.id, sender: 'system', sender_email: null, body: "Thanks for reaching out — we're not at the desk right now, but we'll get back to you soon.", attachments: null, is_internal_note: false, created_at: now(), read_at: null };
+      msgs.push(m);
+      emitRealtime('support_messages', 'INSERT', m);
+      reassured = true;
+    }
+    return { ok: true, reassured, pinged: false };
+  }
+  // kind === 'support'
   if (action === 'list') {
     const conversations = [...convos]
       .sort((a, b) => new Date(b.last_message_at) - new Date(a.last_message_at))
@@ -170,10 +233,48 @@ function mockApi(kind, action, params, store) {
     const convo = convos.find((c) => c.id === params?.conversation_id);
     if (!convo) return { ok: false, error: 'Conversation not found' };
     convo.unread_admin = 0;
+    emitRealtime('support_conversations', 'UPDATE', convo);
     const messages = msgs
       .filter((m) => m.conversation_id === convo.id)
       .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     return { ok: true, messages };
+  }
+  if (action === 'set_status') {
+    const convo = convos.find((c) => c.id === params?.conversation_id);
+    if (!convo) return { ok: false, error: 'Conversation not found' };
+    const target = params?.status;
+    if (target === 'resolved') { convo.resolved_at = now(); convo.resolved_by = MOCK_EMAIL; }
+    if (target === 'archived') { convo.archived_at = now(); }
+    if (target === 'snoozed') { convo.snooze_until = resolveSnoozeUntil(Date.now(), { minutes: params?.snooze_minutes, until: params?.snooze_until }); }
+    if (target === 'open') {
+      convo.archived_at = null; convo.snooze_until = null;
+      if (['resolved', 'archived'].includes(convo.status)) convo.reopen_count += 1;
+    }
+    convo.status = target;
+    events.push({ conversation_id: convo.id, admin_email: MOCK_EMAIL, action: 'status_changed', meta: { to: target }, at: now() });
+    emitRealtime('support_conversations', 'UPDATE', convo);
+    return { ok: true, conversation: { ...convo, user_email: MOCK_EMAIL, user_name: 'Test Student' } };
+  }
+  if (action === 'reassign' || action === 'release') {
+    const convo = convos.find((c) => c.id === params?.conversation_id);
+    if (!convo) return { ok: false, error: 'Conversation not found' };
+    if (action === 'reassign') { convo.assigned_admin = (params?.admin_email || '').toLowerCase(); convo.claimed_at = now(); }
+    else convo.assigned_admin = null;
+    events.push({ conversation_id: convo.id, admin_email: MOCK_EMAIL, action: action === 'reassign' ? 'reassigned' : 'released', meta: null, at: now() });
+    emitRealtime('support_conversations', 'UPDATE', convo);
+    return { ok: true, conversation: { ...convo, user_email: MOCK_EMAIL, user_name: 'Test Student' } };
+  }
+  if (action === 'heartbeat' || action === 'set_availability') {
+    const rows = store.support_settings || (store.support_settings = []);
+    const st = rows[0] || (rows[0] = { id: 1, online_override: 'auto', business_hours: { tz: 'America/New_York', start: 9, end: 21 }, available_until: null, last_admin_heartbeat: null });
+    if (action === 'heartbeat') st.last_admin_heartbeat = now();
+    if (action === 'set_availability') {
+      st.online_override = ['auto', 'on', 'off'].includes(params?.override) ? params.override : 'auto';
+      if (st.online_override === 'on') { st.available_until = new Date(Date.now() + 3600000).toISOString(); st.last_admin_heartbeat = now(); }
+    }
+    st.updated_at = now();
+    if (action === 'heartbeat' || action === 'set_availability') emitRealtime('support_settings', 'UPDATE', st);
+    return { ok: true, settings: { ...st } };
   }
   if (action === 'reply') {
     const convo = convos.find((c) => c.id === params?.conversation_id);
@@ -186,13 +287,23 @@ function mockApi(kind, action, params, store) {
     if (claimed) {
       convo.assigned_admin = MOCK_EMAIL;
       convo.claimed_at = now();
-      if (convo.status === 'new') convo.status = 'open';
       events.push({ conversation_id: convo.id, admin_email: MOCK_EMAIL, action: 'claimed', meta: { via: 'auto_claim_on_reply' }, at: now() });
+    }
+    if (['new', 'open', 'snoozed'].includes(convo.status)) {
+      if (convo.status === 'snoozed') convo.snooze_until = null;
+      convo.status = 'waiting_user';
     }
     convo.first_response_at = convo.first_response_at || now();
     convo.last_message_at = now();
     convo.unread_user += 1;
     events.push({ conversation_id: convo.id, admin_email: MOCK_EMAIL, action: 'replied', meta: { message_id: message.id }, at: now() });
+    emitRealtime('support_messages', 'INSERT', message);
+    emitRealtime('support_conversations', 'UPDATE', convo);
+    (store.user_notifications || (store.user_notifications = [])).push({
+      id: Date.now(), email: MOCK_EMAIL, kind: 'support',
+      message: 'Marro replied to your support message — open Support to read it.',
+      metadata: { conversation_id: convo.id }, created_at: now(), dismissed_at: null,
+    });
     return { ok: true, message, claimed, assigned_admin: convo.assigned_admin };
   }
   return { ok: false, error: 'Unknown action' };
@@ -207,6 +318,8 @@ export function createMockSupabaseStub() {
     support_conversations: seed.conversations,
     support_messages: seed.messages,
     support_events: [],
+    support_settings: [{ id: 1, online_override: 'auto', business_hours: { tz: 'America/New_York', start: 9, end: 21 }, available_until: null, last_admin_heartbeat: null, updated_at: new Date().toISOString() }],
+    user_notifications: [],
   };
   const subscribers = new Set();
 
@@ -232,6 +345,9 @@ export function createMockSupabaseStub() {
     // Dev-harness stand-in for the admin backends — see adminApiCall() in
     // data.js, which routes here instead of fetch() when this hook exists.
     __mockApi: (kind, action, params) => mockApi(kind, action, params, store),
+    // Realtime emulation (Slice 4): same channel API shape as supabase-js.
+    channel: () => makeChannel(),
+    removeChannel: (ch) => { rtChannels.delete(ch); },
     rpc: async (name, params) => {
       if (name === 'is_email_allowed') return { data: true, error: null }; // dev-harness user always passes the invite gate, localhost-only
       // Admin-flagged since Slice 3 so the Admin tab (and its Support inbox)

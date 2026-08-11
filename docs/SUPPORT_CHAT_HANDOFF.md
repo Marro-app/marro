@@ -21,7 +21,42 @@
   `src/lib/supportAdmin.js` (pure filter/label logic, Vitest-covered). The `?mock=1` harness now
   admin-flags the mock user and stands in for the admin backends (`__mockApi` in
   `mockSupabaseStub.js`), so the full user→admin→user loop is click-testable locally with no backend.
-- **Next: Slice 4** (Realtime) → then 5…14. One branch + PR per slice.
+- **Slice 4** (Realtime) — ✅ built on branch `feat/support-slice-4-realtime` (stacked on slice 3).
+  `subscribeToMessages`/`subscribeToConversations` in `src/lib/support.js` (postgres_changes,
+  RLS-scoped both lanes); SupportPanel thread + SupportLauncher badge + AdminSupportSection
+  inbox/thread all update live (refetch paths kept as fallback — Refresh button stays). The mock
+  stub emulates channels in-memory and emits on every mutation, so the live loop is testable on
+  `?mock=1`. **Prod SQL to run: `supabase/support_realtime.sql`** (idempotent; adds both tables to
+  the `supabase_realtime` publication — RLS already scopes events, no new policies).
+- **Slice 5** (alerts) — ✅ built on branch `feat/support-slice-5-alerts`. `api/support-notify.js`
+  is called fire-and-forget by the client after every user send (`notifySupport()` in
+  `src/lib/support.js`): verifies the caller owns the conversation, then (a) inserts a one-time
+  `system` reassurance into an **unclaimed question** ("we'll get back to you soon" — questions
+  only; bug/idea flows end on their own confirmation screen), and (b) posts a Discord ping
+  (debounced 10 min/conversation via a `discord_ping` row in `support_events`; names the owner once
+  claimed). **Ethan action: add `DISCORD_SUPPORT_WEBHOOK_URL` to Vercel env** (server-side only —
+  never in the client); until then pings are silently skipped and everything else works.
+- **Slice 6** (availability + "we replied") — ✅ built on branch `feat/support-slice-6-availability`.
+  Single-row `support_settings` (**prod SQL to run: `supabase/support_settings.sql`** — readable by
+  any signed-in user, written only via the backend). Pure `resolveAvailability()` in
+  `src/lib/supportAvailability.js` — model: `off`→offline; `on`→online only while the signal is
+  fresh (heartbeat <20 min or `available_until` future); `auto`→in-hours (9–21 ET) AND fresh
+  signal — hours alone never claim online. The SAME resolver runs client-side (status line) and in
+  `api/support-notify.js` (reassurance now keys off `online=false`, not "unclaimed"). Console
+  heartbeats every 5 min while open; Auto/Available/Away override in the inbox header ('on' stamps
+  a 1h `available_until`). Admin reply inserts a `user_notifications` row → existing
+  NotificationBanner ("Marro replied…").
+- **Slice 7** (lifecycle + queues + archive) — ✅ built on branch `feat/support-slice-7-lifecycle`.
+  Pure `src/lib/supportLifecycle.js` (transition matrix, event verbs, sweep, waiting labels —
+  Vitest) imported by BOTH `api/support.js` and the console UI, so the buttons offered are exactly
+  the moves the backend allows. Semantics: admin reply flips new/open → `waiting_user`; a user
+  reply wakes waiting/snoozed → `open` (**prod SQL: re-run `supabase/support_chat.sql`** — the
+  `support_post_user_message` RPC changed; idempotent). `set_status` (resolve/archive/snooze N h/
+  reopen) + `reassign`/`release` all log `support_events`. No cron yet: `list` runs a lazy sweep
+  (due snoozes wake; resolved >30 days auto-archive, `admin_email='system'`, `via:'sweep'`).
+  Archived threads are read-only until reopened. User side: admin-RESOLVED questions now count as
+  "ended" for the hub's Recent-chats list (reopenable 7 days, `resolved_at`-based).
+- **Next: Slice 8** (presence soft-lock) → then 9…14.
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file
 is idempotent — re-running it is safe.
