@@ -2,6 +2,14 @@
 
 Newest first. One line per finding: severity · what · fix.
 
+## 2026-08-07 — Support chat: triage depth (Slice 9, branch `feat/support-slice-9-triage`)
+
+- **Priority chips**: `role="group"` labeled "Priority", `aria-pressed` states, `.hit-slop` ≥44pt; Urgent's active state is `C.danger`-on-`C.dangerLight` (~5:1 both themes) AND the word "Urgent" appears in row meta — never color alone.
+- **Tags**: labeled `<input>` (`<label htmlFor>`), Enter adds; each tag chip's remove is a real `<button>` with `aria-label="Remove tag …"` using the audited `.xbtn` hit-slop idiom.
+- **Internal notes**: checkbox (labeled, `accentColor` amber) flips the composer; note bubbles are amber + dashed with the caption "Internal note — user never sees this" (redundant text signal, not just color). Verified through the user read lane that notes never surface user-side.
+- **Debug info**: native `<details>/<summary>` (keyboard + SR for free), `<pre>` scrolls in its own container.
+- Verified full flow on `?mock=1`: bug submission attaches viewport/UA/console-error tail; urgent + tag + note round-trip.
+
 ## 2026-08-07 — Support chat: presence soft-lock (Slice 8, branch `feat/support-slice-8-presence`)
 
 - Presence chips ("{name} viewing / typing…") on inbox rows and the in-thread banner are `role="status"` informational surfaces — text labels, never color-alone (blue `C.blue`-on-`C.blueLight` with the existing `live` line icon, no emoji per decision 10). Not focusable (not interactive), so no keyboard impact; screen readers get them as polite status text.

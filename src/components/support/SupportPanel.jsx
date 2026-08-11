@@ -9,6 +9,7 @@ import {
   subscribeToMessages, notifySupport, fetchAvailability, subscribeToAvailability, findActiveQuestion, findReopenableChats, ACTIVE_STATUSES,
 } from '../../lib/support.js';
 import { availabilityLine } from '../../lib/supportAvailability.js';
+import { buildTechContext } from '../../lib/consoleBuffer.js';
 
 // ── Category-themed background (plan §6) ─────────────────────────────────────
 // Decorative, aria-hidden motif that changes with the conversation type:
@@ -362,7 +363,10 @@ export default function SupportPanel({ onClose }) {
     try {
       const cat = SUPPORT_CATEGORIES.find((c) => c.key === formKey) || SUPPORT_CATEGORIES[0];
       const body = activeForm.compose(form);
-      const id = await startConversation({ type: cat.type, body });
+      // Bug reports auto-attach technical context (plan §7): environment +
+      // recent console errors. Technical ONLY — never financial data (§4).
+      const techContext = cat.type === 'bug' ? buildTechContext() : null;
+      const id = await startConversation({ type: cat.type, body, techContext });
       notifySupport(id); // fire-and-forget: Discord ping (slice 5)
       const convos = await fetchConversations();
       setConversations(convos);

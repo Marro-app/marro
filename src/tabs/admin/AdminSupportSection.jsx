@@ -43,12 +43,15 @@ function AdminBubble({ msg }) {
   }
   // Admin console perspective: admin messages on the right, the user's on the left.
   const mine = msg.sender === 'admin';
+  const note = !!msg.is_internal_note;
   return (
     <div style={{ alignSelf: mine ? 'flex-end' : 'flex-start', maxWidth: '82%', display: 'flex', flexDirection: 'column', gap: 2 }}>
       <div style={{
         padding: '9px 12px', borderRadius: 14, fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-        background: mine ? C.selBg : C.surface,
-        border: `1px solid ${mine ? C.sel : C.border}`,
+        // Internal notes are visually unmistakable (amber + dashed) — they
+        // exist only in the admin lane; the user RLS lane excludes them.
+        background: note ? C.amberLight : mine ? C.selBg : C.surface,
+        border: note ? `1px dashed ${C.amber}` : `1px solid ${mine ? C.sel : C.border}`,
         color: C.text,
         borderBottomRightRadius: mine ? 4 : 14,
         borderBottomLeftRadius: mine ? 14 : 4,
@@ -56,7 +59,8 @@ function AdminBubble({ msg }) {
         {msg.body}
       </div>
       <div style={{ fontSize: 10.5, color: C.textMid, alignSelf: mine ? 'flex-end' : 'flex-start', padding: '0 2px' }}>
-        {mine ? `${msg.sender_email || 'admin'} · ${agoLabel(msg.created_at)}` : agoLabel(msg.created_at)}
+        {note ? `Internal note — user never sees this · ${msg.sender_email || 'admin'} · ${agoLabel(msg.created_at)}`
+          : mine ? `${msg.sender_email || 'admin'} · ${agoLabel(msg.created_at)}` : agoLabel(msg.created_at)}
       </div>
     </div>
   );
@@ -75,6 +79,9 @@ export default function AdminSupportSection() {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [replyError, setReplyError] = useState('');
+  const [profile, setProfile] = useState(null);   // identity summary (Slice 9)
+  const [noteMode, setNoteMode] = useState(false); // composer sends an internal note
+  const [tagInput, setTagInput] = useState('');
 
   const listRef = useRef(null);
   const errId = useId();
@@ -156,12 +163,16 @@ export default function AdminSupportSection() {
     setMessages([]);
     setReplyError('');
     setDraft('');
+    setProfile(null);
+    setNoteMode(false);
+    setTagInput('');
     setThreadLoading(true);
     const res = await supportAdminCall('thread', { conversation_id: convo.id });
     if (!res || res.ok === false || res.error) {
       setReplyError(res?.error || "Couldn't load this thread. Please try again.");
     } else {
       setMessages(res.messages || []);
+      setProfile(res.profile || null);
       // Opening zeroed unread_admin server-side — mirror it locally.
       setConversations((cs) => cs.map((c) => (c.id === convo.id ? { ...c, unread_admin: 0 } : c)));
     }
@@ -180,6 +191,19 @@ export default function AdminSupportSection() {
     if (!text || sending || !openConvo) return;
     setSending(true);
     setReplyError('');
+    // Note mode (Slice 9): the composer writes an internal note instead of a
+    // user-visible reply — no claim, no unread bump, user never sees it.
+    if (noteMode) {
+      const res = await supportAdminCall('add_note', { conversation_id: openConvo.id, body: text });
+      if (!res || res.ok === false || res.error) {
+        setReplyError(res?.error || "Couldn't save the note. Please try again.");
+      } else {
+        setDraft('');
+        if (res.message) setMessages((ms) => (ms.some((x) => x.id === res.message.id) ? ms : [...ms, res.message]));
+      }
+      setSending(false);
+      return;
+    }
     const res = await supportAdminCall('reply', { conversation_id: openConvo.id, body: text });
     if (!res || res.ok === false || res.error) {
       setReplyError(res?.error || "Couldn't send the reply. Please try again.");
@@ -196,7 +220,7 @@ export default function AdminSupportSection() {
         : c)));
     }
     setSending(false);
-  }, [draft, sending, openConvo, callerEmail]);
+  }, [draft, sending, openConvo, callerEmail, noteMode]);
 
   const onComposerKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReply(); }
@@ -308,6 +332,8 @@ export default function AdminSupportSection() {
               {openConvo.user_name || openConvo.user_email || openConvo.user_id}
               {openConvo.user_name && openConvo.user_email ? ` · ${openConvo.user_email}` : ''}
               {' · '}{cat.label}
+              {profile?.school ? ` · ${profile.school}` : ''}
+              {profile?.joined ? ` · joined ${new Date(profile.joined).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}` : ''}
             </div>
           </div>
           <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 600, color: handledBy ? C.teal : C.textMid, background: handledBy ? C.tealLight : C.surface, border: `1px solid ${handledBy ? C.tealMid : C.border}`, borderRadius: 999, padding: '4px 10px' }}>
@@ -383,6 +409,65 @@ export default function AdminSupportSection() {
             </button>
           </div>
         )}
+        {/* Triage (Slice 9): priority + tags. Priority is a small aria-pressed
+            chip trio; tags are whole-array edits via a labeled input. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+          <span id={`${fieldId}-prio-label`} style={{ fontSize: 11.5, fontWeight: 600, color: C.textMid }}>Priority</span>
+          <div role="group" aria-labelledby={`${fieldId}-prio-label`} style={{ display: 'flex', gap: 4 }}>
+            {['low', 'normal', 'urgent'].map((p) => {
+              const active = (openConvo.priority || 'normal') === p;
+              return (
+                <button key={p} type="button" aria-pressed={active} disabled={actionBusy}
+                  onClick={() => doAction('set_priority', { priority: p })}
+                  className="hit-slop"
+                  style={{ minHeight: 28, padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: active ? 700 : 500, cursor: 'pointer',
+                    border: `1px solid ${active ? (p === 'urgent' ? C.danger : C.sel) : C.border}`,
+                    background: active ? (p === 'urgent' ? C.dangerLight : C.selBg) : 'transparent',
+                    color: active && p === 'urgent' ? C.danger : C.text }}>
+                  {p === 'urgent' ? 'Urgent' : p === 'low' ? 'Low' : 'Normal'}
+                </button>
+              );
+            })}
+          </div>
+          <label htmlFor={`${fieldId}-tags`} style={{ fontSize: 11.5, fontWeight: 600, color: C.textMid, marginLeft: 4 }}>Tags</label>
+          <input
+            id={`${fieldId}-tags`}
+            value={tagInput}
+            onChange={(e) => setTagInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                const next = [...(openConvo.tags || []), ...tagInput.split(',')].map((t) => t.trim()).filter(Boolean);
+                if (next.length) doAction('set_tags', { tags: next });
+                setTagInput('');
+              }
+            }}
+            placeholder="add tag ⏎"
+            style={{ width: 110, minHeight: 30, padding: '5px 9px', fontSize: 11.5, borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface, color: C.text, boxSizing: 'border-box', outline: 'none' }}
+          />
+          {(openConvo.tags || []).map((t) => (
+            <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: C.text, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 999, padding: '3px 4px 3px 9px' }}>
+              {t}
+              <button type="button" aria-label={`Remove tag ${t}`} disabled={actionBusy}
+                onClick={() => doAction('set_tags', { tags: (openConvo.tags || []).filter((x) => x !== t) })}
+                className="xbtn"
+                style={{ width: 18, height: 18, borderRadius: 9, border: 'none', background: 'transparent', color: C.textMid, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, lineHeight: 1 }}>
+                <span aria-hidden="true">✕</span>
+              </button>
+            </span>
+          ))}
+        </div>
+
+        {/* Debug info (bug reports, plan §7): collapsible, technical-only. */}
+        {openConvo.tech_context && (
+          <details style={{ marginBottom: 10, border: `1px solid ${C.border}`, borderRadius: 10, padding: '8px 12px', background: C.surface }}>
+            <summary style={{ fontSize: 12, fontWeight: 600, color: C.text, cursor: 'pointer' }}>Debug info</summary>
+            <pre className="themed-scroll" style={{ margin: '8px 0 2px', fontSize: 11, lineHeight: 1.5, color: C.textMid, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 180, overflowY: 'auto' }}>
+              {JSON.stringify(openConvo.tech_context, null, 2)}
+            </pre>
+          </details>
+        )}
+
         {reassignOpen && (() => {
           // Quick-pick roster: every admin except whoever already has it
           // (reassigning to the current owner is a no-op) — includes
@@ -440,8 +525,12 @@ export default function AdminSupportSection() {
         ) : (
         <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
           {replyError && <div id={errId} role="alert" style={{ fontSize: 12, color: C.danger, marginBottom: 8 }}>{replyError}</div>}
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: noteMode ? C.amber : C.textMid, fontWeight: 600, marginBottom: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={noteMode} onChange={(e) => setNoteMode(e.target.checked)} style={{ width: 15, height: 15, accentColor: C.amber }} />
+            Internal note — the user never sees this
+          </label>
           <label htmlFor={fieldId} style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>
-            Your reply
+            {noteMode ? 'Your internal note' : 'Your reply'}
           </label>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
             <textarea
@@ -449,7 +538,7 @@ export default function AdminSupportSection() {
               value={draft}
               onChange={(e) => onDraftChange(e.target.value)}
               onKeyDown={onComposerKeyDown}
-              placeholder={openConvo.assigned_admin ? 'Reply…' : 'Reply (this claims the thread for you)…'}
+              placeholder={noteMode ? 'Internal note…' : openConvo.assigned_admin ? 'Reply…' : 'Reply (this claims the thread for you)…'}
               rows={1}
               aria-invalid={replyError ? true : undefined}
               aria-describedby={replyError ? errId : undefined}
@@ -549,6 +638,7 @@ export default function AdminSupportSection() {
                   </span>
                   <span style={{ display: 'block', fontSize: 11.5, color: C.textMid, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {who} · {cat.label} · {agoLabel(c.last_message_at)}
+                    {c.priority === 'urgent' ? ' · Urgent' : ''}
                     {handledBy ? ` · Handled by ${handledBy}` : c.status !== 'resolved' && c.status !== 'archived' ? ' · Unassigned' : ''}
                     {c.status === 'waiting_user' ? ' · Waiting on user' : ''}
                     {c.status === 'snoozed' ? ' · Snoozed' : ''}
