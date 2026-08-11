@@ -23,7 +23,7 @@ import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './_config.js';
 // Pure, side-effect-free (same rationale as the resolver import in
 // api/support-notify.js) — the ONE definition of which status moves are legal.
-import { canTransition, eventForTransition, sweep } from '../src/lib/supportLifecycle.js';
+import { canTransition, eventForTransition, sweep, resolveSnoozeUntil } from '../src/lib/supportLifecycle.js';
 
 // Bounded list read so the inbox payload can't blow up as the beta grows.
 const LIST_LIMIT = 200;
@@ -313,9 +313,11 @@ export default async function handler(req, res) {
         const patch = { status: target };
         if (target === 'resolved') { patch.resolved_at = nowIso; patch.resolved_by = callerEmail; }
         if (target === 'archived') { patch.archived_at = nowIso; }
+        // Either a quick preset (snooze_minutes) or a picked date/time
+        // (snooze_until, an ISO string from the console's datetime-local
+        // input) — resolveSnoozeUntil validates/clamps either shape.
         if (target === 'snoozed') {
-          const hours = Math.max(1, Math.min(24 * 14, parseInt(body.snooze_hours, 10) || 24));
-          patch.snooze_until = new Date(Date.now() + hours * 3600000).toISOString();
+          patch.snooze_until = resolveSnoozeUntil(Date.now(), { minutes: body.snooze_minutes, until: body.snooze_until });
         }
         if (target === 'open') {
           patch.archived_at = null;

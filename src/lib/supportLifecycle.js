@@ -44,13 +44,45 @@ export function sweep(conversations, nowMs, { archiveAfterDays = AUTO_ARCHIVE_DA
   const out = [];
   for (const c of conversations || []) {
     if (c.status === 'snoozed' && c.snooze_until && new Date(c.snooze_until).getTime() <= nowMs) {
-      out.push({ id: c.id, patch: { status: 'open', snooze_until: null }, event: 'reopened' });
+      // assigned_admin rides along so a caller (the cron) can notify the
+      // right person on wake without a second lookup — sweep() over
+      // conversations already has it in hand.
+      out.push({ id: c.id, patch: { status: 'open', snooze_until: null }, event: 'reopened', assigned_admin: c.assigned_admin || null });
     } else if (c.status === 'resolved' && c.resolved_at
         && nowMs - new Date(c.resolved_at).getTime() > archiveAfterDays * 86400000) {
       out.push({ id: c.id, patch: { status: 'archived', archived_at: new Date(nowMs).toISOString() }, event: 'archived' });
     }
   }
   return out;
+}
+
+// ── Snooze duration (plan revision — quick presets + a custom date/time) ────
+// Quick-pick chips the console offers, plus a "custom" datetime-local escape
+// hatch. Kept as minutes (not hours) so the short presets are representable.
+export const SNOOZE_PRESETS = [
+  { minutes: 15, label: '15 min' },
+  { minutes: 30, label: '30 min' },
+  { minutes: 60, label: '1 hour' },
+  { minutes: 60 * 24, label: '1 day' },
+];
+export const SNOOZE_MIN_MINUTES = 5;
+export const SNOOZE_MAX_MINUTES = 90 * 24 * 60; // 90-day sanity cap on a custom date
+
+// Turns either a preset (`minutes`) or a custom target (`until`, any
+// Date-parseable value — the datetime-local input's value works directly)
+// into the snooze_until timestamp to store. `until` wins when it parses to a
+// real future time; otherwise falls back to `minutes` (defaulting to 1 day).
+// Never throws — a bad/past custom date silently falls back rather than
+// blocking the action.
+export function resolveSnoozeUntil(nowMs, { minutes, until } = {}) {
+  if (until) {
+    const t = new Date(until).getTime();
+    if (!Number.isNaN(t) && t > nowMs) {
+      return new Date(Math.min(t, nowMs + SNOOZE_MAX_MINUTES * 60000)).toISOString();
+    }
+  }
+  const m = Math.max(SNOOZE_MIN_MINUTES, Math.min(SNOOZE_MAX_MINUTES, parseInt(minutes, 10) || 60 * 24));
+  return new Date(nowMs + m * 60000).toISOString();
 }
 
 // "unanswered 3h" chip for inbox rows: an active thread no admin has ever

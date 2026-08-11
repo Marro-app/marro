@@ -8,6 +8,7 @@
 // and never sees a real credential. All "tables" are plain in-memory arrays
 // that live for the lifetime of the tab and reset on reload.
 import { MOCK_SESSION, MOCK_PROFILE, MOCK_USER_ID, MOCK_EMAIL, buildMockState, buildMockSupport } from './mockSessionData.js';
+import { resolveSnoozeUntil } from './supportLifecycle.js';
 
 function makeQueryBuilder(table, store) {
   let op = { kind: 'select' };
@@ -244,7 +245,7 @@ function mockApi(kind, action, params, store) {
     const target = params?.status;
     if (target === 'resolved') { convo.resolved_at = now(); convo.resolved_by = MOCK_EMAIL; }
     if (target === 'archived') { convo.archived_at = now(); }
-    if (target === 'snoozed') { convo.snooze_until = new Date(Date.now() + (params?.snooze_hours || 24) * 3600000).toISOString(); }
+    if (target === 'snoozed') { convo.snooze_until = resolveSnoozeUntil(Date.now(), { minutes: params?.snooze_minutes, until: params?.snooze_until }); }
     if (target === 'open') {
       convo.archived_at = null; convo.snooze_until = null;
       if (['resolved', 'archived'].includes(convo.status)) convo.reopen_count += 1;
