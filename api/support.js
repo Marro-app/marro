@@ -26,7 +26,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './_config.js';
 import { canTransition, eventForTransition, resolveSnoozeUntil } from '../src/lib/supportLifecycle.js';
 import { sendEmail } from './_email.js';
 import { evaluateNudge, NUDGE_FREQUENCY_WINDOW_DAYS } from '../src/lib/nudgeGate.js';
-import { buildSupportAlertContent, editDiscordAlert, mentionOrName } from './_discord.js';
+import { buildSupportAlertContent, editDiscordAlert, postDiscordAlert, mentionOrName } from './_discord.js';
 import { runSweep } from './_supportSweep.js';
 
 // Reply-when-gone email (Slice 11): only when the user looks gone (their last
@@ -533,12 +533,15 @@ export default async function handler(req, res) {
         });
         if (evErr) console.error('support: ownership event log failed', conversationId, evErr.message);
 
-        // Discord: reassign pings the new owner specifically; release re-opens
-        // the alert to @here so it's visible again, same as a fresh unclaimed
-        // thread. Both edit the ORIGINAL alert in place (same reasoning as the
-        // claim edit above) rather than posting a new message. Best-effort —
-        // never blocks the ownership move itself.
-        if (convo.discord_message_id) {
+        // Discord: reassign EDITS the alert in place (a <@user> mention
+        // reliably re-notifies on edit, and it's a lower-volume, tidier
+        // case — no need to reopen the whole channel's eyes on it). Release
+        // POSTS A FRESH MESSAGE instead: the entire point is to make sure
+        // people notice it's back in the pool, and it's not clear @here in
+        // an EDITED message reliably renotifies the way a freshly-sent one
+        // does — reliability wins over channel tidiness here. Best-effort
+        // either way, never blocks the ownership move itself.
+        if (convo.discord_message_id || action === 'release') {
           const webhook = process.env.DISCORD_SUPPORT_WEBHOOK_URL;
           if (webhook) {
             try {
@@ -554,10 +557,23 @@ export default async function handler(req, res) {
                   ? { reassignedTo: mentionOrName(targetDiscordId, toEmail) }
                   : { released: true }),
               });
-              const edited = await editDiscordAlert(webhook, convo.discord_message_id, content);
-              if (!edited) console.error('support: discord ownership-move edit failed', conversationId);
+              if (action === 'reassign') {
+                const edited = await editDiscordAlert(webhook, convo.discord_message_id, content);
+                if (!edited) console.error('support: discord reassign edit failed', conversationId);
+              } else {
+                const newMessageId = await postDiscordAlert(webhook, content);
+                if (newMessageId) {
+                  // Future edits (a later claim/reassign) should target THIS
+                  // message, not the now-stale original.
+                  const { error: msgIdErr } = await admin
+                    .from('support_conversations').update({ discord_message_id: newMessageId }).eq('id', conversationId);
+                  if (msgIdErr) console.error('support: discord_message_id update failed', conversationId, msgIdErr.message);
+                } else {
+                  console.error('support: discord release post failed', conversationId);
+                }
+              }
             } catch (e) {
-              console.error('support: discord ownership-move edit threw', conversationId, e?.message);
+              console.error('support: discord ownership-move alert threw', conversationId, e?.message);
             }
           }
         }
