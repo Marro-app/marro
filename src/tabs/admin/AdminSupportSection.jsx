@@ -368,6 +368,11 @@ export default function AdminSupportSection({ initialConversationId, onInitialCo
     supportAdminCall('list_admins').then((res) => { if (alive && res?.ok) setAdmins(res.admins || []); });
     return () => { alive = false; };
   }, []);
+  // Lowercase-email → display-name, for handledByLabel — always shows a
+  // name, never a "you"/"me" special case (reads the same for whichever
+  // founder is looking).
+  const adminNameByEmail = {};
+  for (const a of admins) adminNameByEmail[a.email] = a.name || a.email;
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [snoozeCustom, setSnoozeCustom] = useState(''); // datetime-local value, '' = presets only
 
@@ -407,7 +412,7 @@ export default function AdminSupportSection({ initialConversationId, onInitialCo
   // ── Thread view ────────────────────────────────────────────────────────────
   if (openConvo) {
     const cat = categoryForType(openConvo.type);
-    const handledBy = handledByLabel(openConvo.assigned_admin, callerEmail);
+    const handledBy = handledByLabel(openConvo.assigned_admin, adminNameByEmail);
     return (
       <Card>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
@@ -573,7 +578,7 @@ export default function AdminSupportSection({ initialConversationId, onInitialCo
                   onClick={() => doAction('reassign', { admin_email: a.email })}
                   className="btn-pop hit-slop"
                   style={{ minHeight: 32, padding: '6px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text, opacity: actionBusy ? 0.6 : 1 }}>
-                  {a.email === callerEmail ? 'You' : (a.name || a.email)}
+                  {a.name || a.email}
                 </button>
               )) : (
                 // Roster still loading, failed to load, or there's genuinely
@@ -851,7 +856,7 @@ export default function AdminSupportSection({ initialConversationId, onInitialCo
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {visible.map((c) => {
             const cat = categoryForType(c.type);
-            const handledBy = handledByLabel(c.assigned_admin, callerEmail);
+            const handledBy = handledByLabel(c.assigned_admin, adminNameByEmail);
             const who = c.user_name || c.user_email || c.user_id;
             return (
               <button key={c.id} type="button" onClick={() => openThread(c)}
