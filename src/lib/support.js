@@ -21,13 +21,19 @@ export function categoryForType(type) {
   return SUPPORT_CATEGORIES.find((c) => c.type === type) || SUPPORT_CATEGORIES[0];
 }
 
-// The caller's conversations, most-recently-active first. RLS returns only
-// rows where user_id = auth.uid().
+// The caller's conversations, most-recently-active first. RLS alone would let
+// this leak: admins have an is_admin() SELECT lane granting read-all (Slice 3
+// needs that for the inbox), so an unfiltered query from an admin's own panel
+// returns the system-wide most-recently-active conversation, not the admin's.
+// Scope explicitly to the caller's own rows.
 export async function fetchConversations() {
   const sb = await getSupabase();
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return [];
   const { data, error } = await sb
     .from('support_conversations')
     .select('*')
+    .eq('user_id', user.id)
     .order('last_message_at', { ascending: false });
   if (error) throw error;
   return data || [];
