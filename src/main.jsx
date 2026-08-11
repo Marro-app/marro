@@ -196,6 +196,14 @@ if (import.meta.env.PROD && import.meta.env.VITE_SENTRY_DSN) {
   }
 }
 
+// Console-error ring buffer (src/lib/consoleBuffer.js) — installed eagerly
+// (tiny, synchronous wrap of console.error) so errors from the very first
+// render are already in the buffer if the user later files a bug report.
+// Read only at bug-report time; sends nothing on its own.
+import('./lib/consoleBuffer.js').then(({ installConsoleBuffer }) => {
+  installConsoleBuffer();
+}).catch(() => { /* must never break boot */ });
+
 // Usage analytics — global delegated click listener (src/lib/analytics.js).
 // Deferred exactly like Sentry above: dynamically imported after window
 // 'load' + a short delay so it never sits on the critical path for the

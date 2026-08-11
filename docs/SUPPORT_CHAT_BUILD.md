@@ -36,7 +36,11 @@
 > `src/lib/supportPresence.js` (one shared Presence channel, `{viewing, typing}` keyed by admin
 > email; fail-soft no-op without channel support), "viewing/typing…" chips on inbox rows + a
 > soft-lock banner in the thread; typing debounces off after 2.5s. Needs two admin browsers to
-> see — test on the preview. **▶ NEXT: Slice 9** (triage depth).
+> see — test on the preview. · ✅ Slice 9 (triage) — branch `feat/support-slice-9-triage`:
+> priority chips + tags + internal notes (amber/dashed, excluded from the user RLS lane — verified)
+> + identity sidebar line (name/school/joined; the DEEPER profile drill-down stays deferred until the
+> §4 Terms language ships) + bug tech-context (`src/lib/consoleBuffer.js` ring buffer, installed in
+> main.jsx; technical-only, Vitest). No new SQL. **▶ NEXT: Slice 10** (screenshot + annotate).
 >
 > **Per-slice template:** Goal · Depends on · Backend/DB · API · Frontend · Tests · **Done when** · Risk.
 > **Workflow (every slice):** branch → push → Vercel preview → optional `/code-review` → self-merge

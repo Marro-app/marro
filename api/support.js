@@ -154,7 +154,32 @@ export default async function handler(req, res) {
           .eq('id', conversationId);
         if (readErr) console.error('support: unread_admin reset failed', conversationId, readErr.message);
 
-        return res.status(200).json({ ok: true, messages: messages || [] });
+        // Identity summary for the user-context sidebar (Slice 9) — name /
+        // email / school / joined. This is the identity context plan §4
+        // explicitly allows on a conversation; the DEEPER account drill-down
+        // stays unbuilt until the Terms/Privacy support-access language ships.
+        let profile = null;
+        try {
+          const { data: convoRow } = await admin
+            .from('support_conversations').select('user_id').eq('id', conversationId).maybeSingle();
+          if (convoRow?.user_id) {
+            const [{ data: userData }, { data: profRow }] = await Promise.all([
+              admin.auth.admin.getUserById(convoRow.user_id),
+              admin.from('profiles').select('school').eq('user_id', convoRow.user_id).maybeSingle(),
+            ]);
+            const u = userData?.user;
+            profile = {
+              name: u?.user_metadata?.full_name || u?.user_metadata?.name || null,
+              email: (u?.email || '').toLowerCase() || null,
+              school: profRow?.school || null,
+              joined: u?.created_at || null,
+            };
+          }
+        } catch (e) {
+          console.error('support: profile summary failed', conversationId, e?.message);
+        }
+
+        return res.status(200).json({ ok: true, messages: messages || [], profile });
       }
 
       case 'reply': {
@@ -348,6 +373,65 @@ export default async function handler(req, res) {
         });
         if (evErr) console.error('support: status event log failed', conversationId, evErr.message);
         return res.status(200).json({ ok: true, conversation: updated?.[0] || null });
+      }
+
+      case 'set_priority': {
+        // Triage (Slice 9): low / normal / urgent, admin-set.
+        const conversationId = String(body.conversation_id || '');
+        const priority = String(body.priority || '');
+        if (!conversationId) return res.status(400).json({ error: 'Missing conversation_id' });
+        if (!['low', 'normal', 'urgent'].includes(priority)) return res.status(400).json({ error: 'Invalid priority' });
+        const { data: updated, error } = await admin
+          .from('support_conversations').update({ priority }).eq('id', conversationId).select('*');
+        if (error) throw error;
+        if (!updated || !updated[0]) return res.status(404).json({ error: 'Conversation not found' });
+        const { error: evErr } = await admin.from('support_events').insert({
+          conversation_id: conversationId, admin_email: callerEmail, action: 'priority_changed', meta: { priority },
+        });
+        if (evErr) console.error('support: priority event failed', conversationId, evErr.message);
+        return res.status(200).json({ ok: true, conversation: updated[0] });
+      }
+
+      case 'set_tags': {
+        // Pattern-spotting labels (§9). Whole-array replace; sanitized hard.
+        const conversationId = String(body.conversation_id || '');
+        if (!conversationId) return res.status(400).json({ error: 'Missing conversation_id' });
+        const tags = (Array.isArray(body.tags) ? body.tags : [])
+          .map((t) => String(t).toLowerCase().trim().replace(/\s+/g, '-').slice(0, 30))
+          .filter(Boolean)
+          .filter((t, i, a) => a.indexOf(t) === i)
+          .slice(0, 10);
+        const { data: updated, error } = await admin
+          .from('support_conversations').update({ tags: tags.length ? tags : null }).eq('id', conversationId).select('*');
+        if (error) throw error;
+        if (!updated || !updated[0]) return res.status(404).json({ error: 'Conversation not found' });
+        const { error: evErr } = await admin.from('support_events').insert({
+          conversation_id: conversationId, admin_email: callerEmail, action: 'tagged', meta: { tags },
+        });
+        if (evErr) console.error('support: tag event failed', conversationId, evErr.message);
+        return res.status(200).json({ ok: true, conversation: updated[0] });
+      }
+
+      case 'add_note': {
+        // Internal note (§9): admin-only commentary stored on the thread.
+        // is_internal_note=true rows are EXCLUDED from the user's RLS lane
+        // (supabase/support_chat.sql) — they never reach the user, and we
+        // deliberately don't bump last_message_at/unread_user (a note isn't
+        // user-visible activity).
+        const conversationId = String(body.conversation_id || '');
+        const text = typeof body.body === 'string' ? body.body.trim() : '';
+        if (!conversationId) return res.status(400).json({ error: 'Missing conversation_id' });
+        if (!text) return res.status(400).json({ error: 'Note text required' });
+        const { data: msgRows, error } = await admin
+          .from('support_messages')
+          .insert({ conversation_id: conversationId, sender: 'admin', sender_email: callerEmail, body: text, is_internal_note: true })
+          .select('*');
+        if (error) throw error;
+        const { error: evErr } = await admin.from('support_events').insert({
+          conversation_id: conversationId, admin_email: callerEmail, action: 'note_added', meta: { message_id: msgRows?.[0]?.id || null },
+        });
+        if (evErr) console.error('support: note event failed', conversationId, evErr.message);
+        return res.status(200).json({ ok: true, message: msgRows?.[0] || null });
       }
 
       case 'reassign':
