@@ -457,7 +457,10 @@ export default function AdminSupportSection({ initialConversationId, onInitialCo
             ['resolved', 'archived', 'snoozed'].includes(openConvo.status) && { label: 'Reopen', onClick: () => doAction('set_status', { status: 'open' }) },
             openConvo.status === 'resolved' && { label: 'Archive', onClick: () => doAction('set_status', { status: 'archived' }) },
             !!openConvo.assigned_admin && { label: 'Release', onClick: () => doAction('release') },
-            !!openConvo.assigned_admin && { label: reassignOpen ? 'Cancel reassign' : 'Reassign', onClick: () => { setReassignOpen((v) => !v); setReassignTo(''); } },
+            // Available whenever it's not already yours — covers claiming an
+            // unassigned thread this way too, not just handing off an
+            // already-claimed one.
+            openConvo.assigned_admin !== callerEmail && { label: reassignOpen ? 'Cancel reassign' : 'Reassign', onClick: () => { setReassignOpen((v) => !v); setReassignTo(''); } },
           ].filter(Boolean).map((b) => (
             <button key={b.label} type="button" onClick={b.onClick} disabled={actionBusy} className="btn-pop hit-slop"
               style={{ minHeight: 32, padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text, opacity: actionBusy ? 0.6 : 1 }}>
@@ -557,9 +560,11 @@ export default function AdminSupportSection({ initialConversationId, onInitialCo
         )}
 
         {reassignOpen && (() => {
-          // Quick-pick roster: every OTHER admin (not yourself, not whoever's
-          // already got it — reassigning to the current owner is a no-op).
-          const others = admins.filter((a) => a.email !== callerEmail && a.email !== openConvo.assigned_admin);
+          // Quick-pick roster: every admin except whoever already has it
+          // (reassigning to the current owner is a no-op) — includes
+          // yourself, since claiming an unassigned/someone-else's thread
+          // this way is faster than replying just to trigger auto-claim.
+          const others = admins.filter((a) => a.email !== openConvo.assigned_admin);
           return (
             <div role="group" aria-label="Hand to" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 10 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>Hand to</span>
@@ -568,7 +573,7 @@ export default function AdminSupportSection({ initialConversationId, onInitialCo
                   onClick={() => doAction('reassign', { admin_email: a.email })}
                   className="btn-pop hit-slop"
                   style={{ minHeight: 32, padding: '6px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text, opacity: actionBusy ? 0.6 : 1 }}>
-                  {a.name || a.email}
+                  {a.email === callerEmail ? 'You' : (a.name || a.email)}
                 </button>
               )) : (
                 // Roster still loading, failed to load, or there's genuinely
