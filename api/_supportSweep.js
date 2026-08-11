@@ -8,7 +8,7 @@
 //     it's triggered by GitHub Actions rather than Vercel's own cron).
 // Kept in one place so the two paths can't drift into different behavior.
 
-import { buildSupportAlertContent, editDiscordAlert, mentionOrName } from './_discord.js';
+import { buildSupportAlertContent, postDiscordAlert, mentionOrName } from './_discord.js';
 import { sweep } from '../src/lib/supportLifecycle.js';
 
 export async function runSweep(admin, conversations, nowMs = Date.now()) {
@@ -29,8 +29,11 @@ export async function runSweep(admin, conversations, nowMs = Date.now()) {
     // — the resolved→archived branch never uses this event name, so this
     // check alone tells the two apart) pings whoever it's assigned to.
     // Unassigned threads stay quiet — nobody to notify, and re-pinging the
-    // whole channel for every expired snooze would be noisy.
-    if (event === 'reopened' && assigned_admin && row?.discord_message_id) {
+    // whole channel for every expired snooze would be noisy. POSTS A FRESH
+    // MESSAGE rather than editing the old alert — real-world testing
+    // (2026-08-11) showed editing a message to add a mention does NOT
+    // reliably fire a notification/sound, only a genuinely new message does.
+    if (event === 'reopened' && assigned_admin) {
       const webhook = process.env.DISCORD_SUPPORT_WEBHOOK_URL;
       if (webhook) {
         try {
@@ -46,10 +49,16 @@ export async function runSweep(admin, conversations, nowMs = Date.now()) {
             typeLabel, subject, submitter: ownerName, conversationId: id,
             snoozeWoke: mentionOrName(adminRow?.discord_user_id, assigned_admin),
           });
-          const edited = await editDiscordAlert(webhook, row.discord_message_id, content);
-          if (!edited) console.error('support: discord snooze-wake edit failed', id);
+          const newMessageId = await postDiscordAlert(webhook, content);
+          if (newMessageId) {
+            const { error: msgIdErr } = await admin
+              .from('support_conversations').update({ discord_message_id: newMessageId }).eq('id', id);
+            if (msgIdErr) console.error('support: discord_message_id update failed', id, msgIdErr.message);
+          } else {
+            console.error('support: discord snooze-wake post failed', id);
+          }
         } catch (e) {
-          console.error('support: discord snooze-wake edit threw', id, e?.message);
+          console.error('support: discord snooze-wake alert threw', id, e?.message);
         }
       }
     }

@@ -502,6 +502,29 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, message: msgRows?.[0] || null });
       }
 
+      case 'list_admins': {
+        // Powers the Reassign quick-pick (Users & Invites has the FULL admin
+        // management UI — add/remove — this is read-only, just for handing a
+        // thread to someone by name instead of typing their email). Name
+        // comes from their own Google profile when available.
+        const { data: admins, error } = await admin
+          .from('admins').select('email').order('email', { ascending: true });
+        if (error) throw error;
+        let byEmail = {};
+        try {
+          const { data: usersPage } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+          for (const u of usersPage?.users || []) {
+            const meta = u.user_metadata || {};
+            const email = (u.email || '').toLowerCase();
+            if (email) byEmail[email] = meta.full_name || meta.name || null;
+          }
+        } catch (e) {
+          console.error('support: list_admins name enrichment failed', e?.message);
+        }
+        const enriched = (admins || []).map((a) => ({ email: a.email, name: byEmail[a.email] || null }));
+        return res.status(200).json({ ok: true, admins: enriched });
+      }
+
       case 'reassign':
       case 'release': {
         // Ownership moves (§9.5): hand a thread to the other founder, or put
@@ -533,15 +556,15 @@ export default async function handler(req, res) {
         });
         if (evErr) console.error('support: ownership event log failed', conversationId, evErr.message);
 
-        // Discord: reassign EDITS the alert in place (a <@user> mention
-        // reliably re-notifies on edit, and it's a lower-volume, tidier
-        // case — no need to reopen the whole channel's eyes on it). Release
-        // POSTS A FRESH MESSAGE instead: the entire point is to make sure
-        // people notice it's back in the pool, and it's not clear @here in
-        // an EDITED message reliably renotifies the way a freshly-sent one
-        // does — reliability wins over channel tidiness here. Best-effort
-        // either way, never blocks the ownership move itself.
-        if (convo.discord_message_id || action === 'release') {
+        // Discord: BOTH reassign and release POST A FRESH MESSAGE rather than
+        // editing the existing alert. Originally reassign edited in place
+        // (a <@user> mention "should" re-notify on edit per Discord's docs)
+        // but real-world testing (2026-08-11) showed no notification/sound
+        // actually fires on an edited mention — only a genuinely NEW message
+        // reliably pings. Since the whole point of both actions is making
+        // sure a person notices, reliability wins over the channel getting a
+        // little noisier. Best-effort — never blocks the ownership move.
+        {
           const webhook = process.env.DISCORD_SUPPORT_WEBHOOK_URL;
           if (webhook) {
             try {
@@ -557,20 +580,15 @@ export default async function handler(req, res) {
                   ? { reassignedTo: mentionOrName(targetDiscordId, toEmail) }
                   : { released: true }),
               });
-              if (action === 'reassign') {
-                const edited = await editDiscordAlert(webhook, convo.discord_message_id, content);
-                if (!edited) console.error('support: discord reassign edit failed', conversationId);
+              const newMessageId = await postDiscordAlert(webhook, content);
+              if (newMessageId) {
+                // Future edits (e.g. a claim reply) should target THIS
+                // message, not the now-stale original.
+                const { error: msgIdErr } = await admin
+                  .from('support_conversations').update({ discord_message_id: newMessageId }).eq('id', conversationId);
+                if (msgIdErr) console.error('support: discord_message_id update failed', conversationId, msgIdErr.message);
               } else {
-                const newMessageId = await postDiscordAlert(webhook, content);
-                if (newMessageId) {
-                  // Future edits (a later claim/reassign) should target THIS
-                  // message, not the now-stale original.
-                  const { error: msgIdErr } = await admin
-                    .from('support_conversations').update({ discord_message_id: newMessageId }).eq('id', conversationId);
-                  if (msgIdErr) console.error('support: discord_message_id update failed', conversationId, msgIdErr.message);
-                } else {
-                  console.error('support: discord release post failed', conversationId);
-                }
+                console.error('support: discord ownership-move post failed', conversationId, action);
               }
             } catch (e) {
               console.error('support: discord ownership-move alert threw', conversationId, e?.message);

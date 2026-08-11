@@ -358,6 +358,16 @@ export default function AdminSupportSection({ initialConversationId, onInitialCo
   const [actionBusy, setActionBusy] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [reassignTo, setReassignTo] = useState('');
+  const [admins, setAdmins] = useState([]); // {email, name}[] — Reassign quick-pick roster
+
+  // Fetched once on mount, not re-fetched per-open — the admin roster
+  // changes rarely enough that staleness for the session isn't a concern,
+  // and it keeps clicking Reassign instant rather than a network round trip.
+  useEffect(() => {
+    let alive = true;
+    supportAdminCall('list_admins').then((res) => { if (alive && res?.ok) setAdmins(res.admins || []); });
+    return () => { alive = false; };
+  }, []);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [snoozeCustom, setSnoozeCustom] = useState(''); // datetime-local value, '' = presets only
 
@@ -546,25 +556,44 @@ export default function AdminSupportSection({ initialConversationId, onInitialCo
           </details>
         )}
 
-        {reassignOpen && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-            <label htmlFor={`${fieldId}-reassign`} style={{ fontSize: 12, fontWeight: 600, color: C.text }}>Hand to</label>
-            <input
-              id={`${fieldId}-reassign`}
-              type="email"
-              value={reassignTo}
-              onChange={(e) => setReassignTo(e.target.value)}
-              placeholder="other admin's email"
-              style={{ flex: 1, minHeight: 36, padding: '7px 11px', fontSize: 12.5, borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface, color: C.text, boxSizing: 'border-box', outline: 'none' }}
-            />
-            <button type="button" disabled={!reassignTo.trim() || actionBusy}
-              onClick={() => doAction('reassign', { admin_email: reassignTo.trim() })}
-              className="btn-pop"
-              style={{ minHeight: 36, padding: '7px 14px', borderRadius: 9, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text, opacity: (!reassignTo.trim() || actionBusy) ? 0.5 : 1 }}>
-              Hand off
-            </button>
-          </div>
-        )}
+        {reassignOpen && (() => {
+          // Quick-pick roster: every OTHER admin (not yourself, not whoever's
+          // already got it — reassigning to the current owner is a no-op).
+          const others = admins.filter((a) => a.email !== callerEmail && a.email !== openConvo.assigned_admin);
+          return (
+            <div role="group" aria-label="Hand to" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 10 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>Hand to</span>
+              {others.length > 0 ? others.map((a) => (
+                <button key={a.email} type="button" disabled={actionBusy}
+                  onClick={() => doAction('reassign', { admin_email: a.email })}
+                  className="btn-pop hit-slop"
+                  style={{ minHeight: 32, padding: '6px 12px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text, opacity: actionBusy ? 0.6 : 1 }}>
+                  {a.name || a.email}
+                </button>
+              )) : (
+                // Roster still loading, failed to load, or there's genuinely
+                // no one else — an email fallback so this never dead-ends.
+                <>
+                  <input
+                    id={`${fieldId}-reassign`}
+                    type="email"
+                    value={reassignTo}
+                    onChange={(e) => setReassignTo(e.target.value)}
+                    placeholder="other admin's email"
+                    aria-label="Other admin's email"
+                    style={{ minHeight: 32, padding: '6px 10px', fontSize: 12.5, borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface, color: C.text, boxSizing: 'border-box', outline: 'none' }}
+                  />
+                  <button type="button" disabled={!reassignTo.trim() || actionBusy}
+                    onClick={() => doAction('reassign', { admin_email: reassignTo.trim() })}
+                    className="btn-pop"
+                    style={{ minHeight: 32, padding: '6px 12px', borderRadius: 9, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: `1px solid ${C.border}`, background: 'transparent', color: C.text, opacity: (!reassignTo.trim() || actionBusy) ? 0.5 : 1 }}>
+                    Hand off
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })()}
 
         <div ref={listRef} className="themed-scroll"
           style={{ maxHeight: 420, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, padding: '4px 2px 10px' }}>

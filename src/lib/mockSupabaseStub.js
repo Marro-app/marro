@@ -363,6 +363,15 @@ function mockApi(kind, action, params, store) {
     emitRealtime('support_conversations', 'UPDATE', convo);
     return { ok: true, conversation: { ...convo, user_email: MOCK_EMAIL, user_name: 'Test Student' } };
   }
+  if (action === 'list_admins') {
+    // Fake roster so the Reassign quick-pick has more than one person to
+    // show — the mock is single-user, MOCK_EMAIL is "you."
+    return { ok: true, admins: [
+      { email: MOCK_EMAIL, name: 'Test Student' },
+      { email: 'en3402@gmail.com', name: 'Ethan Nguyen' },
+      { email: 'jawadhijazi7@gmail.com', name: 'Mo Hijazi' },
+    ] };
+  }
   if (action === 'reassign' || action === 'release') {
     const convo = convos.find((c) => c.id === params?.conversation_id);
     if (!convo) return { ok: false, error: 'Conversation not found' };
