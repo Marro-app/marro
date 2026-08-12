@@ -54,10 +54,10 @@ export async function fetchMessages(conversationId) {
 
 // Open a new thread with its first message (atomic, server-side). Returns the
 // new conversation id.
-export async function startConversation({ type, body, techContext = null }) {
+export async function startConversation({ type, body, techContext = null, attachments = null }) {
   const sb = await getSupabase();
   const { data, error } = await sb.rpc('support_start_conversation', {
-    p_type: type, p_body: body, p_tech_context: techContext,
+    p_type: type, p_body: body, p_tech_context: techContext, p_attachments: attachments,
   });
   if (error) throw error;
   return data;
@@ -65,10 +65,10 @@ export async function startConversation({ type, body, techContext = null }) {
 
 // Append a user message to one of the caller's own threads. Returns the new
 // message id. Auto-reopen of a resolved/archived thread happens server-side.
-export async function postMessage({ conversationId, body }) {
+export async function postMessage({ conversationId, body, attachments = null }) {
   const sb = await getSupabase();
   const { data, error } = await sb.rpc('support_post_user_message', {
-    p_conversation_id: conversationId, p_body: body, p_attachments: null,
+    p_conversation_id: conversationId, p_body: body, p_attachments: attachments,
   });
   if (error) throw error;
   return data;

@@ -133,7 +133,7 @@ function supportRpc(name, params, store) {
         .filter((c) => c.user_id === MOCK_USER_ID && c.type === 'question' && ['new', 'open', 'waiting_user'].includes(c.status))
         .sort((a, b) => new Date(b.last_message_at) - new Date(a.last_message_at))[0];
       if (active) {
-        const m = { id: mockId(), conversation_id: active.id, sender: 'user', sender_email: null, body, attachments: null, is_internal_note: false, created_at: now(), read_at: null };
+        const m = { id: mockId(), conversation_id: active.id, sender: 'user', sender_email: null, body, attachments: params?.p_attachments ?? null, is_internal_note: false, created_at: now(), read_at: null };
         msgs.push(m);
         active.last_message_at = now();
         active.unread_admin += 1;
@@ -151,7 +151,7 @@ function supportRpc(name, params, store) {
       created_at: now(), last_message_at: now(), claimed_at: null, first_response_at: null,
       resolved_at: null, resolved_by: null, archived_at: null, snooze_until: null,
     });
-    const first = { id: mockId(), conversation_id: id, sender: 'user', sender_email: null, body, attachments: null, is_internal_note: false, created_at: now(), read_at: null };
+    const first = { id: mockId(), conversation_id: id, sender: 'user', sender_email: null, body, attachments: params?.p_attachments ?? null, is_internal_note: false, created_at: now(), read_at: null };
     msgs.push(first);
     emitRealtime('support_conversations', 'INSERT', convos[convos.length - 1]);
     emitRealtime('support_messages', 'INSERT', first);
@@ -392,6 +392,21 @@ export function createMockSupabaseStub() {
     // Realtime emulation (Slice 4): same channel API shape as supabase-js.
     channel: () => makeChannel(),
     removeChannel: (ch) => { rtChannels.delete(ch); },
+    // Storage emulation (Slice 10): uploads live as object URLs in-memory; a
+    // "signed URL" is just that object URL. Enough for the attach → render
+    // loop to run visually on ?mock=1 with zero backend.
+    storage: {
+      from: () => ({
+        upload: async (path, blob) => {
+          (store.__files || (store.__files = new Map())).set(path, URL.createObjectURL(blob));
+          return { data: { path }, error: null };
+        },
+        createSignedUrl: async (path) => {
+          const url = store.__files?.get(path);
+          return url ? { data: { signedUrl: url }, error: null } : { data: null, error: { message: 'not found' } };
+        },
+      }),
+    },
     rpc: async (name, params) => {
       if (name === 'is_email_allowed') return { data: true, error: null }; // dev-harness user always passes the invite gate, localhost-only
       // Admin-flagged since Slice 3 so the Admin tab (and its Support inbox)

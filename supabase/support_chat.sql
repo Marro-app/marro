@@ -164,8 +164,11 @@ create policy "admin selects all messages" on public.support_messages
 -- 3a. support_start_conversation — open a new thread with its first message,
 --     atomically. Subject is auto-derived from the message (users don't type a
 --     separate subject). Returns the new conversation id.
+-- (Slice 10) 4-arg signature — p_attachments rides on the first message. The
+-- old 3-arg overload is dropped so rpc() name resolution stays unambiguous.
+drop function if exists public.support_start_conversation(text, text, jsonb);
 create or replace function public.support_start_conversation(
-  p_type text, p_body text, p_tech_context jsonb default null)
+  p_type text, p_body text, p_tech_context jsonb default null, p_attachments jsonb default null)
 returns uuid
 language plpgsql security definer set search_path = public
 as $$
@@ -197,8 +200,8 @@ begin
      order by last_message_at desc
      limit 1;
     if v_active is not null then
-      insert into public.support_messages (conversation_id, sender, body)
-        values (v_active, 'user', btrim(p_body));
+      insert into public.support_messages (conversation_id, sender, body, attachments)
+        values (v_active, 'user', btrim(p_body), p_attachments);
       update public.support_conversations
          set last_message_at = now(), unread_admin = unread_admin + 1
        where id = v_active;
@@ -210,14 +213,14 @@ begin
     values (v_uid, p_type, left(btrim(p_body), 80), p_tech_context, 'new', 1, now())
     returning id into v_id;
 
-  insert into public.support_messages (conversation_id, sender, body)
-    values (v_id, 'user', btrim(p_body));
+  insert into public.support_messages (conversation_id, sender, body, attachments)
+    values (v_id, 'user', btrim(p_body), p_attachments);
 
   return v_id;
 end;
 $$;
-revoke all on function public.support_start_conversation(text, text, jsonb) from public, anon;
-grant execute on function public.support_start_conversation(text, text, jsonb) to authenticated;
+revoke all on function public.support_start_conversation(text, text, jsonb, jsonb) from public, anon;
+grant execute on function public.support_start_conversation(text, text, jsonb, jsonb) to authenticated;
 
 -- 3b. support_post_user_message — add a user message to one of the caller's own
 --     threads. Bumps unread_admin + last_message_at. Auto-reopens a

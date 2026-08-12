@@ -40,7 +40,12 @@
 > priority chips + tags + internal notes (amber/dashed, excluded from the user RLS lane — verified)
 > + identity sidebar line (name/school/joined; the DEEPER profile drill-down stays deferred until the
 > §4 Terms language ships) + bug tech-context (`src/lib/consoleBuffer.js` ring buffer, installed in
-> main.jsx; technical-only, Vitest). No new SQL. **▶ NEXT: Slice 10** (screenshot + annotate).
+> main.jsx; technical-only, Vitest). No new SQL. · ✅ Slice 10 (screenshot) — branch `feat/support-slice-10-screenshot`:
+> private `support-attachments` Storage bucket (**run `supabase/support_attachments.sql`** — it also
+> re-creates `support_start_conversation` with a `p_attachments` param), lazy `ScreenshotStudio`
+> (getDisplayMedia capture primary, upload fallback — the html2canvas middle path was deliberately
+> skipped; annotate: box/arrow/draw/text/BLUR + undo), attach flow on the bug form + chat composer,
+> signed-URL rendering both sides. **▶ NEXT: Slice 11** (CSAT + reply-when-gone email).
 >
 > **Per-slice template:** Goal · Depends on · Backend/DB · API · Frontend · Tests · **Done when** · Risk.
 > **Workflow (every slice):** branch → push → Vercel preview → optional `/code-review` → self-merge

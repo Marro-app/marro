@@ -73,7 +73,37 @@
   installed at boot in `main.jsx`) + environment snapshot attached ONLY on bug submissions —
   technical-only, no financial data, rendered as a collapsible "Debug info" `<details>` in the thread.
   New `support_events` verbs: `priority_changed`, `tagged`, `note_added`. No new SQL.
-- **Next: Slice 10** (screenshot + annotate) → then 11…14.
+- **Slice 10** (screenshot + annotate) — ✅ built on branch `feat/support-slice-10-screenshot`.
+  **Prod SQL to run: `supabase/support_attachments.sql`** — creates the PRIVATE `support-attachments`
+  bucket (storage RLS: users insert only into their own `<uid>/` folder; owner-or-admin read) AND
+  re-creates `support_start_conversation` with a 4th `p_attachments` param (drops the old 3-arg
+  overload; `support_chat.sql` updated to match). Lazy-loaded `ScreenshotStudio.jsx` (own chunk —
+  verified absent from the main bundle): PRIMARY = `getDisplayMedia` one-frame capture (tracks
+  stopped immediately); FALLBACK = plain image upload (also the non-visual path and the mobile
+  path). **Deviation from plan §8: the html2canvas render-from-code middle path was skipped** —
+  heavy dep, mangles glass/canvas; upload covers it (revisit only if mobile demand shows up).
+  Annotation: highlight box / arrow / freehand / text / BLUR-pixelate (the user's own redaction
+  control) + undo (12 deep). Attach affordance on the bug form AND the question composer; refs
+  stored as `[{path,type,w,h}]` on the message; rendering resolves 1h signed URLs (AttachmentImg,
+  shared by both sides). 5 MB cap client-side. **Extended during the Slice 10 review pass (Aug 11,
+  branch `review-slice-10`/PR #82):** annotations rearchitected from raster canvas drawing to an
+  object model (`shapes` array of `{id,type,color,...geometry}`, full redraw every change) — adds
+  a **Select** tool (per-type hit-testing + Delete button/key) and a **Move** tool (click+drag,
+  live redraw); undo now snapshots the shape array instead of `ImageData`. Blur/redact is
+  non-destructive under this model (pixelation recomputed from base image + shapes-so-far every
+  redraw, so it can be moved/deleted before attaching). Attachment refs gained optional
+  `name`/`caption` (two inputs before "Attach this image") →
+  `[{path,type,w,h,name,caption}]`; `AttachmentImg` renders `name` in alt text and `caption` as a
+  small line, inherited by the admin thread automatically (same shared component). **Same-day
+  follow-up (user feedback, "think about what Google Drawings allows"):** a selected shape now
+  gets real HTML overlay handles — 8 resize handles on box/blur (drag anchors the opposite
+  corner/edge), 2 draggable endpoint dots on arrow (reshape one end independent of the other), and
+  an on-canvas ✕ delete badge — on top of the existing toolbar Delete button/key. Drag tracking
+  moved from the canvas element to `window` so a handle drag doesn't drop if the pointer slips
+  outside the canvas mid-gesture. New `.handle-slop` CSS class (smaller hit-slop than the app's
+  usual 44×44 `.hit-slop`, deliberate — see `UI_AUDIT_LOG.md` 2026-08-11 "cont." entry for the
+  scoped a11y rationale).
+- **Next: Slice 11** (CSAT + reply-when-gone email) → then 12…14.
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file
 is idempotent — re-running it is safe.
