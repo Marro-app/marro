@@ -458,12 +458,12 @@ export default function SupportPanel({ onClose }) {
   }, [activeQuestion, sending]);
 
   // Screenshot studio result → upload now, attach ref to the next send.
-  const onStudioDone = useCallback(async ({ blob, width, height }) => {
+  const onStudioDone = useCallback(async ({ blob, width, height, name, caption }) => {
     setStudioOpen(false);
     setAttachBusy(true);
     setError(null);
     try {
-      const ref = await uploadAttachment(blob, { width, height });
+      const ref = await uploadAttachment(blob, { width, height, name, caption });
       setAttachment(ref);
     } catch (e) {
       setError(e?.message || "Couldn't attach the image.");

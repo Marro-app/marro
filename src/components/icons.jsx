@@ -82,6 +82,8 @@ const ICONS = {
   shirt:    () => <path d="M7 4.5L4 7.4l1.8 1.8 1.1-.9v7.2h6.2V8.3l1.1.9L16 7.4l-3-2.9a3 3 0 0 1-6 0Z"/>,
   game:     () => <><rect x="3.8" y="7" width="12.4" height="6.4" rx="3.2"/><path d="M7 9.4v2M6 10.4h2"/><circle cx="12.4" cy="11.2" r="0.55" fill="currentColor" stroke="none"/><circle cx="13.8" cy="9.6" r="0.55" fill="currentColor" stroke="none"/></>,
   // Screenshot annotation toolbar (Slice 10) — same 20×20/1.4/round-cap language
+  toolSelect: () => <path d="M3.3 3.3L9.2 17.5L11.3 11.3L17.5 9.2Z" fill="currentColor" stroke="none"/>,
+  toolMove:  () => <><rect x="5" y="9.4" width="10" height="7.2" rx="2.4"/><path d="M7.4 9.4V5.8M10 9.4V4.8M12.6 9.4V5.8"/></>,
   toolBox:   () => <path d="M4 8V5.5a1 1 0 0 1 1-1H8M12 4.5h3a1 1 0 0 1 1 1V8M16 12v2.5a1 1 0 0 1-1 1H12M8 15.5H5a1 1 0 0 1-1-1V12"/>,
   toolArrow: () => <path d="M5 15L15 5M9 5h6v6"/>,
   toolDraw:  () => <path d="M13.8 3.6l2.6 2.6-9 9-3.4.8.8-3.4Z"/>,

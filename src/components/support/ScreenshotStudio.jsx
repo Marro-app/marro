@@ -13,23 +13,31 @@ import { Icon } from '../icons.jsx';
 //      (The plan's render-from-code middle path is deferred: html2canvas
 //      mangles the app's glass/canvas surfaces and adds a heavy dep — upload
 //      covers denied/unsupported capture, incl. all mobile browsers.)
-// Annotation on a <canvas>: highlight box · arrow · freehand · text · BLUR
-// (pixelate — the user's own redaction control, §4/§8) + undo. Every tool is
-// a real labeled button; the whole flow is skippable in favor of upload.
 //
-// Returns via onDone({ blob, width, height }) — the caller uploads.
+// Annotations are an OBJECT MODEL, not raster pixels: `shapes` is an array of
+// {id, type, color, ...geometry}, and the canvas is fully redrawn (base image
+// + every shape, in order) on every change. That's what makes Select (click a
+// shape → highlight it → Delete) and Move (click+drag to reposition) possible
+// — a shape is addressable data, not baked-in pixels. Blur/redact stays
+// non-destructive under this model too: its pixelation is recomputed from the
+// base image + shapes-so-far every redraw, so a redaction can be moved or
+// deleted before "Attach this image" like any other shape. Undo snapshots the
+// shape array (12 deep) rather than ImageData.
+//
+// Returns via onDone({ blob, width, height, name, caption }) — the caller uploads.
 
 const TOOLS = [
+  { key: 'select', label: 'Select', icon: 'toolSelect' },
+  { key: 'move', label: 'Move', icon: 'toolMove' },
   { key: 'box', label: 'Highlight box', icon: 'toolBox' },
   { key: 'arrow', label: 'Arrow', icon: 'toolArrow' },
   { key: 'draw', label: 'Draw', icon: 'toolDraw' },
   { key: 'text', label: 'Text', icon: 'toolText' },
   { key: 'blur', label: 'Blur / redact', icon: 'toolBlur' },
 ];
-// Swatches only set the color for what's drawn NEXT — recoloring something
-// already on the canvas needs the same per-shape object model as drag/delete
-// (deferred, see FUTURE_WORK.md), since strokes are raster pixels, not
-// editable objects.
+// Swatches only set the color for what's drawn NEXT — recoloring an existing
+// shape isn't wired up yet (selection + move + delete were the ask for this
+// pass; recolor-on-select is a natural follow-up now that shapes are objects).
 const COLORS = [
   { key: 'red', hex: '#E5484D' },
   { key: 'blue', hex: '#3B82F6' },
@@ -41,6 +49,7 @@ const MAX_DIM = 1600;   // downscale captures so uploads stay small
 const UNDO_DEPTH = 12;
 const TEXT_INPUT_FONT = '13px system-ui, sans-serif';
 const TEXT_INPUT_MIN = 44, TEXT_INPUT_MAX = 280;
+const NAME_MAX = 80, CAPTION_MAX = 200;
 let measureCtx = null;
 // Input starts pill-small and grows with what's typed, rather than a fixed
 // wide box sitting mostly empty — measured against the same font the input
@@ -50,6 +59,136 @@ function measureTextInputWidth(text) {
   measureCtx.font = TEXT_INPUT_FONT;
   const textWidth = measureCtx.measureText(text || 'Type…').width;
   return Math.min(TEXT_INPUT_MAX, Math.max(TEXT_INPUT_MIN, textWidth + 32));
+}
+
+// ── shape geometry helpers (module-level: pure, no component state) ────────
+function normRect(x1, y1, x2, y2) {
+  return { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) };
+}
+function translateShape(s, dx, dy) {
+  if (s.type === 'box' || s.type === 'blur' || s.type === 'text') return { ...s, x: s.x + dx, y: s.y + dy };
+  if (s.type === 'arrow') return { ...s, x1: s.x1 + dx, y1: s.y1 + dy, x2: s.x2 + dx, y2: s.y2 + dy };
+  if (s.type === 'draw') return { ...s, points: s.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) };
+  return s;
+}
+function shapeBBox(s, ctx) {
+  if (s.type === 'box' || s.type === 'blur') return { x: s.x, y: s.y, w: s.w, h: s.h };
+  if (s.type === 'arrow') return normRect(s.x1, s.y1, s.x2, s.y2);
+  if (s.type === 'draw') {
+    const xs = s.points.map((p) => p.x), ys = s.points.map((p) => p.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+  if (s.type === 'text') {
+    ctx.font = `700 ${s.size}px system-ui, sans-serif`;
+    const w = ctx.measureText(s.value).width;
+    return { x: s.x, y: s.y - s.size, w, h: s.size * 1.25 };
+  }
+  return { x: 0, y: 0, w: 0, h: 0 };
+}
+function distToSegment(p, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+  const t = lenSq ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq)) : 0;
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+// Topmost-first hit test. box/blur/text = bounding-box containment; arrow =
+// distance to the line segment; draw = distance to the nearest path segment.
+function hitTestShapes(shapes, p, ctx, tolerance) {
+  for (let i = shapes.length - 1; i >= 0; i--) {
+    const s = shapes[i];
+    if (s.type === 'box' || s.type === 'blur' || s.type === 'text') {
+      const b = shapeBBox(s, ctx);
+      const pad = s.type === 'text' ? 3 : tolerance;
+      if (p.x >= b.x - pad && p.x <= b.x + b.w + pad && p.y >= b.y - pad && p.y <= b.y + b.h + pad) return s.id;
+    } else if (s.type === 'arrow') {
+      if (distToSegment(p, { x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }) <= tolerance) return s.id;
+    } else if (s.type === 'draw') {
+      if (s.points.length === 1) {
+        if (Math.hypot(p.x - s.points[0].x, p.y - s.points[0].y) <= tolerance) return s.id;
+      } else {
+        for (let j = 1; j < s.points.length; j++) {
+          if (distToSegment(p, s.points[j - 1], s.points[j]) <= tolerance) return s.id;
+        }
+      }
+    }
+  }
+  return null;
+}
+const getLineWidth = (canvas) => Math.max(3, canvas.width / 400);
+
+function drawArrow(ctx, x1, y1, x2, y2) {
+  const head = Math.max(12, ctx.lineWidth * 4);
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - head * Math.cos(angle - Math.PI / 6), y2 - head * Math.sin(angle - Math.PI / 6));
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - head * Math.cos(angle + Math.PI / 6), y2 - head * Math.sin(angle + Math.PI / 6));
+  ctx.stroke();
+}
+// Draw the region tiny, then scale it back up — classic mosaic redaction.
+// Reads FROM the canvas itself, so it picks up the base image plus whatever
+// shapes were already drawn earlier in this same redraw pass.
+function pixelate(ctx, canvas, x, y, w, h) {
+  const cx = Math.max(0, Math.round(x));
+  const cy = Math.max(0, Math.round(y));
+  const cw = Math.max(0, Math.min(Math.round(w), canvas.width - cx));
+  const ch = Math.max(0, Math.min(Math.round(h), canvas.height - cy));
+  if (cw < 4 || ch < 4) return;
+  const block = 12;
+  const tiny = document.createElement('canvas');
+  tiny.width = Math.max(1, Math.round(cw / block));
+  tiny.height = Math.max(1, Math.round(ch / block));
+  const tctx = tiny.getContext('2d');
+  tctx.imageSmoothingEnabled = false;
+  tctx.drawImage(canvas, cx, cy, cw, ch, 0, 0, tiny.width, tiny.height);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(tiny, 0, 0, tiny.width, tiny.height, cx, cy, cw, ch);
+  ctx.imageSmoothingEnabled = true;
+}
+function drawShape(ctx, canvas, s, isDraft) {
+  if (s.type === 'blur') {
+    if (isDraft) {
+      // Cheap dashed preview while dragging — the real (expensive) pixelation
+      // only happens once the region is committed to `shapes`.
+      ctx.save(); ctx.setLineDash([6, 4]); ctx.strokeStyle = C.text; ctx.lineWidth = getLineWidth(canvas);
+      ctx.strokeRect(s.x, s.y, s.w, s.h); ctx.restore();
+    } else {
+      pixelate(ctx, canvas, s.x, s.y, s.w, s.h);
+    }
+    return;
+  }
+  ctx.strokeStyle = s.color; ctx.fillStyle = s.color;
+  ctx.lineWidth = getLineWidth(canvas);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (s.type === 'box') {
+    ctx.strokeRect(s.x, s.y, s.w, s.h);
+  } else if (s.type === 'arrow') {
+    drawArrow(ctx, s.x1, s.y1, s.x2, s.y2);
+  } else if (s.type === 'draw') {
+    if (s.points.length < 2) return;
+    ctx.beginPath(); ctx.moveTo(s.points[0].x, s.points[0].y);
+    for (let i = 1; i < s.points.length; i++) ctx.lineTo(s.points[i].x, s.points[i].y);
+    ctx.stroke();
+  } else if (s.type === 'text') {
+    ctx.font = `700 ${s.size}px system-ui, sans-serif`;
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth = Math.max(3, s.size / 6);
+    ctx.strokeText(s.value, s.x, s.y);
+    ctx.fillStyle = s.color;
+    ctx.fillText(s.value, s.x, s.y);
+  }
+}
+function drawSelectionOutline(ctx, bbox) {
+  const pad = 4;
+  ctx.save();
+  ctx.setLineDash([5, 4]);
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = C.sel;
+  ctx.strokeRect(bbox.x - pad, bbox.y - pad, bbox.w + pad * 2, bbox.h + pad * 2);
+  ctx.restore();
 }
 
 export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onCaptureEnd }) {
@@ -63,12 +202,22 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
   // up in the shot, same reasoning as the parent's `capturing` state.
   const [hiddenForCapture, setHiddenForCapture] = useState(false);
   const [textEntry, setTextEntry] = useState(null); // {x, y, value} while typing
+  const [shapes, setShapes] = useState([]);         // committed annotation objects
+  const [selectedId, setSelectedId] = useState(null);
+  const [draftShape, setDraftShape] = useState(null); // in-progress box/arrow/draw/blur, not yet committed
+  const [name, setName] = useState('');
+  const [caption, setCaption] = useState('');
   const canvasRef = useRef(null);
-  const undoStack = useRef([]);
-  const dragRef = useRef(null);
-  const baseSnapshot = useRef(null); // pre-drag pixels for live preview
+  const baseImgRef = useRef(null); // the loaded base image — every redraw starts here
+  const undoStack = useRef([]);    // stack of past `shapes` arrays
+  const dragRef = useRef(null);    // {mode:'draw'} | {mode:'move', id, last}
+  const idSeq = useRef(1);
   const fileRef = useRef(null);
   const captureSupported = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
+
+  // Switching tools clears any selection so a stale highlight doesn't linger
+  // while the user starts drawing something new.
+  useEffect(() => { setSelectedId(null); }, [tool]);
 
   // ── load an image (from capture or file) onto the canvas ──────────────────
   const loadImage = useCallback((source) => {
@@ -79,8 +228,11 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
       const h = Math.round(img.height * scale);
       const canvas = canvasRef.current;
       canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      baseImgRef.current = img;
       undoStack.current = [];
+      setShapes([]);
+      setSelectedId(null);
+      setDraftShape(null);
       setStage('edit');
       if (source.revoke) URL.revokeObjectURL(img.src);
     };
@@ -130,15 +282,39 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
     loadImage({ url: URL.createObjectURL(f), revoke: true });
   }, [loadImage]);
 
+  // ── redraw: base image + every shape, in order, every time anything changes.
+  // This is what makes blur non-destructive (its pixelation is recomputed
+  // from the base + shapes-so-far each pass) and selection cheap (just a
+  // dashed outline drawn on top, no separate overlay canvas needed).
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const baseImg = baseImgRef.current;
+    if (!canvas || !baseImg) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(baseImg, 0, 0, canvas.width, canvas.height);
+    for (const s of shapes) drawShape(ctx, canvas, s, false);
+    if (draftShape) drawShape(ctx, canvas, draftShape, true);
+    if (selectedId != null) {
+      const sel = shapes.find((s) => s.id === selectedId);
+      if (sel) drawSelectionOutline(ctx, shapeBBox(sel, ctx));
+    }
+  }, [shapes, draftShape, selectedId, stage]);
+
   // ── annotation ─────────────────────────────────────────────────────────────
   const pushUndo = () => {
-    const c = canvasRef.current;
-    undoStack.current.push(c.getContext('2d').getImageData(0, 0, c.width, c.height));
+    undoStack.current.push(shapes);
     if (undoStack.current.length > UNDO_DEPTH) undoStack.current.shift();
   };
   const undo = () => {
     const snap = undoStack.current.pop();
-    if (snap) canvasRef.current.getContext('2d').putImageData(snap, 0, 0);
+    if (snap) { setShapes(snap); setSelectedId(null); setDraftShape(null); }
+  };
+  const deleteSelected = () => {
+    if (selectedId == null) return;
+    pushUndo();
+    setShapes((prev) => prev.filter((s) => s.id !== selectedId));
+    setSelectedId(null);
   };
 
   const canvasPoint = (e) => {
@@ -148,97 +324,88 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
     return { x: cx * (canvasRef.current.width / rect.width), y: cy * (canvasRef.current.height / rect.height) };
   };
 
-  const strokeStyle = () => {
-    const ctx = canvasRef.current.getContext('2d');
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = Math.max(3, canvasRef.current.width / 400);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    return ctx;
-  };
-
-  const drawArrow = (ctx, x1, y1, x2, y2) => {
-    const head = Math.max(12, ctx.lineWidth * 4);
-    const angle = Math.atan2(y2 - y1, x2 - x1);
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x2, y2);
-    ctx.lineTo(x2 - head * Math.cos(angle - Math.PI / 6), y2 - head * Math.sin(angle - Math.PI / 6));
-    ctx.moveTo(x2, y2);
-    ctx.lineTo(x2 - head * Math.cos(angle + Math.PI / 6), y2 - head * Math.sin(angle + Math.PI / 6));
-    ctx.stroke();
-  };
-
-  const pixelate = (ctx, x, y, w, h) => {
-    if (w < 4 || h < 4) return;
-    const block = 12;
-    // Draw the region tiny, then scale it back up — classic mosaic redaction.
-    const tiny = document.createElement('canvas');
-    tiny.width = Math.max(1, Math.round(w / block));
-    tiny.height = Math.max(1, Math.round(h / block));
-    const tctx = tiny.getContext('2d');
-    tctx.imageSmoothingEnabled = false;
-    tctx.drawImage(canvasRef.current, x, y, w, h, 0, 0, tiny.width, tiny.height);
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(tiny, 0, 0, tiny.width, tiny.height, x, y, w, h);
-    ctx.imageSmoothingEnabled = true;
-  };
-
   const onPointerDown = (e) => {
     if (stage !== 'edit' || textEntry) return;
     e.preventDefault();
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
     const p = canvasPoint(e);
+
     if (tool === 'text') { setTextEntry({ x: p.x, y: p.y, value: '' }); return; }
-    pushUndo();
-    const c = canvasRef.current;
-    baseSnapshot.current = c.getContext('2d').getImageData(0, 0, c.width, c.height);
-    dragRef.current = { start: p, last: p };
-    if (tool === 'draw') { const ctx = strokeStyle(); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
+
+    if (tool === 'select') {
+      setSelectedId(hitTestShapes(shapes, p, ctx, getLineWidth(canvas) + 8));
+      return;
+    }
+    if (tool === 'move') {
+      const hitId = hitTestShapes(shapes, p, ctx, getLineWidth(canvas) + 8);
+      if (hitId == null) { setSelectedId(null); return; }
+      pushUndo();
+      setSelectedId(hitId);
+      dragRef.current = { mode: 'move', id: hitId, last: p };
+      return;
+    }
+
+    const id = idSeq.current++;
+    let shape;
+    if (tool === 'box') shape = { id, type: 'box', color, x: p.x, y: p.y, w: 0, h: 0 };
+    else if (tool === 'arrow') shape = { id, type: 'arrow', color, x1: p.x, y1: p.y, x2: p.x, y2: p.y };
+    else if (tool === 'draw') shape = { id, type: 'draw', color, points: [p] };
+    else if (tool === 'blur') shape = { id, type: 'blur', x: p.x, y: p.y, w: 0, h: 0 };
+    else return;
+    dragRef.current = { mode: 'draw', start: p };
+    setDraftShape(shape);
   };
   const onPointerMove = (e) => {
     if (!dragRef.current) return;
     e.preventDefault();
     const p = canvasPoint(e);
-    const { start } = dragRef.current;
-    const ctx = strokeStyle();
-    if (tool === 'draw') {
-      ctx.lineTo(p.x, p.y); ctx.stroke();
-    } else {
-      // live preview: restore pre-drag pixels, then draw the current shape
-      ctx.putImageData(baseSnapshot.current, 0, 0);
-      strokeStyle();
-      if (tool === 'box') ctx.strokeRect(Math.min(start.x, p.x), Math.min(start.y, p.y), Math.abs(p.x - start.x), Math.abs(p.y - start.y));
-      if (tool === 'arrow') drawArrow(ctx, start.x, start.y, p.x, p.y);
-      if (tool === 'blur') { ctx.save(); ctx.setLineDash([6, 4]); ctx.strokeRect(Math.min(start.x, p.x), Math.min(start.y, p.y), Math.abs(p.x - start.x), Math.abs(p.y - start.y)); ctx.restore(); }
+
+    if (dragRef.current.mode === 'move') {
+      const { id, last } = dragRef.current;
+      const dx = p.x - last.x, dy = p.y - last.y;
+      setShapes((prev) => prev.map((s) => (s.id === id ? translateShape(s, dx, dy) : s)));
+      dragRef.current.last = p;
+      return;
     }
-    dragRef.current.last = p;
+
+    const { start } = dragRef.current;
+    setDraftShape((s) => {
+      if (!s) return s;
+      if (s.type === 'box' || s.type === 'blur') return { ...s, ...normRect(start.x, start.y, p.x, p.y) };
+      if (s.type === 'arrow') return { ...s, x2: p.x, y2: p.y };
+      if (s.type === 'draw') return { ...s, points: [...s.points, p] };
+      return s;
+    });
   };
   const onPointerUp = () => {
     if (!dragRef.current) return;
-    const { start, last } = dragRef.current;
+    const mode = dragRef.current.mode;
     dragRef.current = null;
-    const ctx = strokeStyle();
-    if (tool === 'blur') {
-      // replace the dashed preview with the actual pixelation
-      ctx.putImageData(baseSnapshot.current, 0, 0);
-      pixelate(ctx, Math.min(start.x, last.x), Math.min(start.y, last.y), Math.abs(last.x - start.x), Math.abs(last.y - start.y));
+    if (mode === 'move') return; // shapes already updated live; undo snapshot taken at drag start
+
+    if (draftShape) {
+      const s = draftShape;
+      const valid =
+        (s.type === 'box' && s.w > 2 && s.h > 2) ||
+        (s.type === 'blur' && s.w > 4 && s.h > 4) ||
+        (s.type === 'arrow' && (Math.abs(s.x2 - s.x1) > 2 || Math.abs(s.y2 - s.y1) > 2)) ||
+        (s.type === 'draw' && s.points.length > 1);
+      if (valid) {
+        pushUndo();
+        setShapes((prev) => [...prev, s]);
+      }
+      setDraftShape(null);
     }
-    baseSnapshot.current = null;
   };
 
   const commitText = () => {
     if (!textEntry) return;
     const value = textEntry.value.trim();
     if (value) {
-      pushUndo();
-      const ctx = strokeStyle();
       const size = Math.max(18, Math.round(canvasRef.current.width / 45));
-      ctx.font = `700 ${size}px system-ui, sans-serif`;
-      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-      ctx.lineWidth = Math.max(3, size / 6);
-      ctx.strokeText(value, textEntry.x, textEntry.y);
-      ctx.fillText(value, textEntry.x, textEntry.y);
+      pushUndo();
+      setShapes((prev) => [...prev, { id: idSeq.current++, type: 'text', color, x: textEntry.x, y: textEntry.y, value, size }]);
     }
     setTextEntry(null);
   };
@@ -249,20 +416,31 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
     c.toBlob((blob) => {
       setBusy(false);
       if (!blob) { setError("Couldn't export the image."); return; }
-      onDone({ blob, width: c.width, height: c.height });
+      onDone({ blob, width: c.width, height: c.height, name: name.trim() || null, caption: caption.trim() || null });
     }, 'image/png', 0.92);
   };
 
-  // Esc backs out (text entry first, then the studio itself).
+  // Esc backs out (text entry first, then the studio itself). Delete/Backspace
+  // removes the selected shape — guarded against firing while a real text
+  // field has focus (the studio's own annotation-text input, or Name/Summary).
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      if (textEntry) setTextEntry(null); else onCancel();
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        if (textEntry) setTextEntry(null); else onCancel();
+        return;
+      }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const active = document.activeElement;
+        if (textEntry || (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA'))) return;
+        if (selectedId == null) return;
+        e.preventDefault();
+        deleteSelected();
+      }
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
-  }, [textEntry, onCancel]);
+  }, [textEntry, onCancel, selectedId, shapes]);
 
   const btnStyle = (active) => ({
     minHeight: 36, padding: '7px 12px', borderRadius: 9, fontSize: 12, fontWeight: active ? 700 : 500,
@@ -331,6 +509,10 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
                 <Icon name="toolUndo" size={15} />
                 Undo
               </button>
+              <button type="button" onClick={deleteSelected} disabled={selectedId == null} className="btn-pop hit-slop"
+                style={{ ...btnStyle(false), opacity: selectedId == null ? 0.45 : 1, cursor: selectedId == null ? 'default' : 'pointer' }}>
+                Delete
+              </button>
               <div role="group" aria-label="Annotation color" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 4 }}>
                 {COLORS.map((c) => (
                   <button key={c.key} type="button" aria-label={`Color: ${c.key}`} aria-pressed={color === c.hex} onClick={() => setColor(c.hex)}
@@ -345,7 +527,7 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
                 ref={canvasRef}
                 onMouseDown={onPointerDown} onMouseMove={onPointerMove} onMouseUp={onPointerUp} onMouseLeave={onPointerUp}
                 onTouchStart={onPointerDown} onTouchMove={onPointerMove} onTouchEnd={onPointerUp}
-                style={{ display: 'block', width: '100%', height: 'auto', touchAction: 'none', cursor: 'crosshair' }}
+                style={{ display: 'block', width: '100%', height: 'auto', touchAction: 'none', cursor: tool === 'select' ? 'default' : tool === 'move' ? 'grab' : 'crosshair' }}
               />
               {textEntry && (() => {
                 // textEntry.{x,y} are in CANVAS pixel space (canvasPoint()'s
@@ -382,7 +564,21 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
               })()}
             </div>
             <div style={{ fontSize: 11.5, color: C.textMid }}>
-              Tip: the <strong>Blur / redact</strong> tool hides anything you don&apos;t want us to see — drag it over private numbers before attaching.
+              Tip: the <strong>Blur / redact</strong> tool hides anything you don&apos;t want us to see — drag it over private numbers before attaching. Use <strong>Select</strong> to pick an annotation and delete it, or <strong>Move</strong> to drag it.
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11.5, color: C.textMid }}>
+                Name (optional)
+                <input type="text" value={name} maxLength={NAME_MAX} onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Budget tab"
+                  style={{ padding: '8px 10px', borderRadius: 9, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontSize: 13 }} />
+              </label>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11.5, color: C.textMid }}>
+                Summary (optional)
+                <input type="text" value={caption} maxLength={CAPTION_MAX} onChange={(e) => setCaption(e.target.value)}
+                  placeholder="What's wrong here?"
+                  style={{ padding: '8px 10px', borderRadius: 9, border: `1px solid ${C.border}`, background: C.bg, color: C.text, fontSize: 13 }} />
+              </label>
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => { setStage('pick'); setError(null); }} className="btn-pop"

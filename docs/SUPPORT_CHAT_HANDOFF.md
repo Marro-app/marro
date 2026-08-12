@@ -85,7 +85,16 @@
   Annotation: highlight box / arrow / freehand / text / BLUR-pixelate (the user's own redaction
   control) + undo (12 deep). Attach affordance on the bug form AND the question composer; refs
   stored as `[{path,type,w,h}]` on the message; rendering resolves 1h signed URLs (AttachmentImg,
-  shared by both sides). 5 MB cap client-side.
+  shared by both sides). 5 MB cap client-side. **Extended during the Slice 10 review pass (Aug 11,
+  branch `review-slice-10`/PR #82):** annotations rearchitected from raster canvas drawing to an
+  object model (`shapes` array of `{id,type,color,...geometry}`, full redraw every change) — adds
+  a **Select** tool (per-type hit-testing + Delete button/key) and a **Move** tool (click+drag,
+  live redraw); undo now snapshots the shape array instead of `ImageData`. Blur/redact is
+  non-destructive under this model (pixelation recomputed from base image + shapes-so-far every
+  redraw, so it can be moved/deleted before attaching). Attachment refs gained optional
+  `name`/`caption` (two inputs before "Attach this image") →
+  `[{path,type,w,h,name,caption}]`; `AttachmentImg` renders `name` in alt text and `caption` as a
+  small line, inherited by the admin thread automatically (same shared component).
 - **Next: Slice 11** (CSAT + reply-when-gone email) → then 12…14.
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file
