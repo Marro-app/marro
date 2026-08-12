@@ -657,12 +657,14 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
                 if (!sel) return null;
                 const bbox = shapeBBox(sel, ctx);
                 const handleBtnStyle = (cursor) => ({
-                  position: 'absolute', width: 12, height: 12, transform: 'translate(-50%, -50%)',
-                  borderRadius: 3, background: C.sel, border: `1.5px solid ${C.bg}`, padding: 0, cursor,
+                  position: 'absolute', width: 12, height: 12, transform: 'translate(-50%, -50%)', zIndex: 1,
+                  borderRadius: 3, background: C.teal, border: `2px solid ${C.bg}`, padding: 0, cursor,
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
                 });
                 const dotBtnStyle = () => ({
-                  position: 'absolute', width: 13, height: 13, transform: 'translate(-50%, -50%)',
-                  borderRadius: '50%', background: C.sel, border: `1.5px solid ${C.bg}`, padding: 0, cursor: 'move',
+                  position: 'absolute', width: 13, height: 13, transform: 'translate(-50%, -50%)', zIndex: 1,
+                  borderRadius: '50%', background: C.teal, border: `2px solid ${C.bg}`, padding: 0, cursor: 'move',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
                 });
                 let handles = null;
                 if (sel.type === 'box' || sel.type === 'blur') {
@@ -688,24 +690,26 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
                     </>
                   );
                 }
-                // Nudged outward from the bbox's top-right corner so it never
-                // sits exactly on top of the 'ne' resize handle.
+                // Nudged well outside the bbox's top-right corner — far enough
+                // that it reads as its own floating control rather than a 9th
+                // handle crowding the 'ne' resize dot right at that corner.
                 const corner = toDisplay(bbox.x + bbox.w, bbox.y);
                 return (
                   <>
                     {handles}
                     <button type="button" aria-label="Delete this annotation" className="hit-slop" onClick={deleteSelected}
-                      style={{ position: 'absolute', left: corner.left + 10, top: corner.top - 10, transform: 'translate(-50%, -50%)',
-                        width: 22, height: 22, borderRadius: 11, border: `1.5px solid ${C.bg}`, background: C.danger, color: '#fff',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, cursor: 'pointer' }}>
-                      <Icon name="close" size={11} color="#fff" />
+                      style={{ position: 'absolute', left: corner.left + 16, top: corner.top - 16, transform: 'translate(-50%, -50%)', zIndex: 2,
+                        width: 24, height: 24, borderRadius: '50%', border: `2px solid ${C.bg}`, background: C.danger, color: '#fff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, cursor: 'pointer',
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.35)' }}>
+                      <Icon name="close" size={13} color="#fff" strokeWidth={1.8} />
                     </button>
                   </>
                 );
               })()}
             </div>
             <div style={{ fontSize: 11.5, color: C.textMid }}>
-              Tip: the <strong>Blur / redact</strong> tool hides anything you don&apos;t want us to see — drag it over private numbers before attaching. Use <strong>Select</strong> or <strong>Move</strong> to pick an annotation — drag its blue dots to resize or reshape it, drag its body to reposition it, or tap the <strong>✕</strong> to delete it.
+              Tip: the <strong>Blur / redact</strong> tool hides anything you don&apos;t want us to see — drag it over private numbers before attaching. Use <strong>Select</strong> or <strong>Move</strong> to pick an annotation — drag its handles to resize or reshape it, drag its body to reposition it, or tap the <strong>✕</strong> to delete it.
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11.5, color: C.textMid }}>
