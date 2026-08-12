@@ -94,7 +94,15 @@
   redraw, so it can be moved/deleted before attaching). Attachment refs gained optional
   `name`/`caption` (two inputs before "Attach this image") →
   `[{path,type,w,h,name,caption}]`; `AttachmentImg` renders `name` in alt text and `caption` as a
-  small line, inherited by the admin thread automatically (same shared component).
+  small line, inherited by the admin thread automatically (same shared component). **Same-day
+  follow-up (user feedback, "think about what Google Drawings allows"):** a selected shape now
+  gets real HTML overlay handles — 8 resize handles on box/blur (drag anchors the opposite
+  corner/edge), 2 draggable endpoint dots on arrow (reshape one end independent of the other), and
+  an on-canvas ✕ delete badge — on top of the existing toolbar Delete button/key. Drag tracking
+  moved from the canvas element to `window` so a handle drag doesn't drop if the pointer slips
+  outside the canvas mid-gesture. New `.handle-slop` CSS class (smaller hit-slop than the app's
+  usual 44×44 `.hit-slop`, deliberate — see `UI_AUDIT_LOG.md` 2026-08-11 "cont." entry for the
+  scoped a11y rationale).
 - **Next: Slice 11** (CSAT + reply-when-gone email) → then 12…14.
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file

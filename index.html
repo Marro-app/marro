@@ -249,6 +249,16 @@
      control to a 44px hit box. Use only on standalone buttons, never inline links. */
   .hit-slop { position: relative; }
   .hit-slop::after { content: ""; position: absolute; inset: -11px; }
+  /* Precision drag handles (screenshot annotator resize/reshape dots): a
+     SMALLER hit-slop than .hit-slop's 44px is deliberate here — these sit
+     tightly clustered around a selection (up to 8 within one bbox), and a
+     full 44px box per handle would overlap them into one indistinguishable
+     blob. Continuous drag targets are a recognized exception to the 44px
+     discrete-tap guideline in every graphics editor (Figma, Illustrator,
+     Google Drawings included); the modest +5px keeps them reachable without
+     erasing the precision a resize/reshape gesture needs. */
+  .handle-slop { position: relative; }
+  .handle-slop::after { content: ""; position: absolute; inset: -5px; }
   @media (hover: hover) and (pointer: fine) {
     .xbtn:hover:not(:disabled) { background: var(--input-bg); color: var(--text); transform: scale(1.08); }
     .xbtn-danger:hover:not(:disabled) { color: var(--xbtn-danger, currentColor); }

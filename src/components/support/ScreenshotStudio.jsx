@@ -24,6 +24,16 @@ import { Icon } from '../icons.jsx';
 // deleted before "Attach this image" like any other shape. Undo snapshots the
 // shape array (12 deep) rather than ImageData.
 //
+// A selected shape gets real HTML overlay controls (positioned over the
+// canvas, same coordinate-transform trick as the text-entry input below):
+// drag handles to resize a box/blur, drag either endpoint dot to reshape an
+// arrow, and a small ✕ badge to delete it — on top of the toolbar's Delete
+// button/key. This is the same manipulation vocabulary as Google
+// Drawings/Figma/PowerPoint: click to select, drag the body to move, drag a
+// handle to resize/reshape. Drag continuation (mousemove/up) is bound at the
+// WINDOW level, not just the canvas, so a handle drag started slightly
+// outside the canvas bounds (common near the edges) doesn't get dropped.
+//
 // Returns via onDone({ blob, width, height, name, caption }) — the caller uploads.
 
 const TOOLS = [
@@ -116,6 +126,33 @@ function hitTestShapes(shapes, p, ctx, tolerance) {
   return null;
 }
 const getLineWidth = (canvas) => Math.max(3, canvas.width / 400);
+
+// Resize handles for box/blur — 4 corners + 4 edge midpoints, same set every
+// graphics editor (Figma, Illustrator, Google Drawings) shows on a selected
+// rectangle. `dx`/`dy` are 0/0.5/1 fractions of the bbox for positioning.
+const RECT_HANDLES = [
+  { key: 'nw', dx: 0, dy: 0, cursor: 'nwse-resize', label: 'top-left' },
+  { key: 'n', dx: 0.5, dy: 0, cursor: 'ns-resize', label: 'top' },
+  { key: 'ne', dx: 1, dy: 0, cursor: 'nesw-resize', label: 'top-right' },
+  { key: 'e', dx: 1, dy: 0.5, cursor: 'ew-resize', label: 'right' },
+  { key: 'se', dx: 1, dy: 1, cursor: 'nwse-resize', label: 'bottom-right' },
+  { key: 's', dx: 0.5, dy: 1, cursor: 'ns-resize', label: 'bottom' },
+  { key: 'sw', dx: 0, dy: 1, cursor: 'nesw-resize', label: 'bottom-left' },
+  { key: 'w', dx: 0, dy: 0.5, cursor: 'ew-resize', label: 'left' },
+];
+// Resize a rect from its ORIGINAL geometry (snapshotted at drag start) + the
+// handle being dragged, so opposite edges/corners stay anchored no matter how
+// far the pointer moves. Two-letter handles ('nw') move both axes; one-letter
+// edge handles ('n') move only that axis. normRect lets the user drag a
+// handle past the opposite edge and flip the rect, same as most editors.
+function resizeRect(orig, handle, p) {
+  let x = orig.x, y = orig.y, x2 = orig.x + orig.w, y2 = orig.y + orig.h;
+  if (handle.includes('w')) x = p.x;
+  if (handle.includes('e')) x2 = p.x;
+  if (handle.includes('n')) y = p.y;
+  if (handle.includes('s')) y2 = p.y;
+  return normRect(x, y, x2, y2);
+}
 
 function drawArrow(ctx, x1, y1, x2, y2) {
   const head = Math.max(12, ctx.lineWidth * 4);
@@ -210,7 +247,7 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
   const canvasRef = useRef(null);
   const baseImgRef = useRef(null); // the loaded base image — every redraw starts here
   const undoStack = useRef([]);    // stack of past `shapes` arrays
-  const dragRef = useRef(null);    // {mode:'draw'} | {mode:'move', id, last}
+  const dragRef = useRef(null);    // {mode:'draw'} | {mode:'move', id, last} | {mode:'resize', id, handle, orig}
   const idSeq = useRef(1);
   const fileRef = useRef(null);
   const captureSupported = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
@@ -356,6 +393,18 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
     dragRef.current = { mode: 'draw', start: p };
     setDraftShape(shape);
   };
+  // Starts a resize (box/blur handle) or reshape (arrow endpoint) drag. Called
+  // from the HTML overlay handles below, not from the canvas — a separate
+  // entry point from onPointerDown since these fire on their own <button>
+  // elements sitting on top of the canvas, in either Select or Move tool.
+  const startResize = (id, handle, e) => {
+    e.preventDefault(); e.stopPropagation();
+    const shape = shapes.find((s) => s.id === id);
+    if (!shape) return;
+    pushUndo();
+    setSelectedId(id);
+    dragRef.current = { mode: 'resize', id, handle, orig: shape };
+  };
   const onPointerMove = (e) => {
     if (!dragRef.current) return;
     e.preventDefault();
@@ -366,6 +415,15 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
       const dx = p.x - last.x, dy = p.y - last.y;
       setShapes((prev) => prev.map((s) => (s.id === id ? translateShape(s, dx, dy) : s)));
       dragRef.current.last = p;
+      return;
+    }
+    if (dragRef.current.mode === 'resize') {
+      const { id, handle, orig } = dragRef.current;
+      setShapes((prev) => prev.map((s) => {
+        if (s.id !== id) return s;
+        if (s.type === 'arrow') return handle === 'start' ? { ...s, x1: p.x, y1: p.y } : { ...s, x2: p.x, y2: p.y };
+        return { ...s, ...resizeRect(orig, handle, p) };
+      }));
       return;
     }
 
@@ -382,7 +440,7 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
     if (!dragRef.current) return;
     const mode = dragRef.current.mode;
     dragRef.current = null;
-    if (mode === 'move') return; // shapes already updated live; undo snapshot taken at drag start
+    if (mode === 'move' || mode === 'resize') return; // shapes already updated live; undo snapshot taken at drag start
 
     if (draftShape) {
       const s = draftShape;
@@ -397,6 +455,48 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
       }
       setDraftShape(null);
     }
+  };
+
+  // Drag continuation (move/resize/draw) is bound at the WINDOW level, not
+  // just the canvas — a resize handle sits right at the edge of the
+  // selection, and a fast drag can easily slip the pointer outside the
+  // canvas (or even outside the whole dialog) for a frame or two. Bound once
+  // for the component's lifetime; reads the latest handlers via a ref so it
+  // doesn't need to re-subscribe on every render.
+  const latestHandlers = useRef();
+  latestHandlers.current = { onPointerMove, onPointerUp };
+  useEffect(() => {
+    const move = (e) => latestHandlers.current.onPointerMove(e);
+    const up = (e) => latestHandlers.current.onPointerUp(e);
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    window.addEventListener('touchmove', move, { passive: false });
+    window.addEventListener('touchend', up);
+    return () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      window.removeEventListener('touchmove', move);
+      window.removeEventListener('touchend', up);
+    };
+  }, []);
+
+  // Canvas pixel space → this dialog's CSS/display space (same math the
+  // text-entry overlay below needs) — canvas and any overlay control share
+  // the same positioned ancestor (the wrapping div), so the canvas's own
+  // offset within it plus the canvas→display scale places an overlay control
+  // exactly on top of the canvas point it represents.
+  const toDisplay = (cx, cy) => {
+    const canvas = canvasRef.current;
+    const container = canvas?.parentElement;
+    if (!canvas || !container) return { left: cx, top: cy };
+    const canvasRect = canvas.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const scaleX = canvasRect.width / canvas.width;
+    const scaleY = canvasRect.height / canvas.height;
+    return {
+      left: (canvasRect.left - containerRect.left) + cx * scaleX,
+      top: (canvasRect.top - containerRect.top) + cy * scaleY,
+    };
   };
 
   const commitText = () => {
@@ -525,30 +625,17 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
             <div style={{ position: 'relative', overflow: 'auto', borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface, maxHeight: '55vh' }} className="themed-scroll">
               <canvas
                 ref={canvasRef}
-                onMouseDown={onPointerDown} onMouseMove={onPointerMove} onMouseUp={onPointerUp} onMouseLeave={onPointerUp}
-                onTouchStart={onPointerDown} onTouchMove={onPointerMove} onTouchEnd={onPointerUp}
+                onMouseDown={onPointerDown}
+                onTouchStart={onPointerDown}
                 style={{ display: 'block', width: '100%', height: 'auto', touchAction: 'none', cursor: tool === 'select' ? 'default' : tool === 'move' ? 'grab' : 'crosshair' }}
               />
               {textEntry && (() => {
                 // textEntry.{x,y} are in CANVAS pixel space (canvasPoint()'s
                 // scale-corrected coords, used later to draw the real text in
-                // commitText()) — this overlay input needs the same point in
-                // CSS/display space instead. Both the canvas and this input
-                // share the same positioned ancestor (the wrapping div), so
-                // the canvas's own offset within it (normally just its
-                // border) plus the canvas→display scale gets the input to
-                // sit exactly where the user clicked, not a fixed corner.
-                const canvas = canvasRef.current;
-                const container = canvas?.parentElement;
-                let left = textEntry.x, top = textEntry.y;
-                if (canvas && container) {
-                  const canvasRect = canvas.getBoundingClientRect();
-                  const containerRect = container.getBoundingClientRect();
-                  const scaleX = canvasRect.width / canvas.width;
-                  const scaleY = canvasRect.height / canvas.height;
-                  left = (canvasRect.left - containerRect.left) + textEntry.x * scaleX;
-                  top = (canvasRect.top - containerRect.top) + textEntry.y * scaleY;
-                }
+                // commitText()) — toDisplay() converts to this overlay
+                // input's CSS/display space so it sits exactly where the
+                // user clicked, not a fixed corner.
+                const { left, top } = toDisplay(textEntry.x, textEntry.y);
                 return (
                   <input
                     autoFocus
@@ -562,9 +649,63 @@ export default function ScreenshotStudio({ onDone, onCancel, onCaptureStart, onC
                   />
                 );
               })()}
+              {selectedId != null && !textEntry && (() => {
+                const canvas = canvasRef.current;
+                if (!canvas) return null;
+                const ctx = canvas.getContext('2d');
+                const sel = shapes.find((s) => s.id === selectedId);
+                if (!sel) return null;
+                const bbox = shapeBBox(sel, ctx);
+                const handleBtnStyle = (cursor) => ({
+                  position: 'absolute', width: 12, height: 12, transform: 'translate(-50%, -50%)',
+                  borderRadius: 3, background: C.sel, border: `1.5px solid ${C.bg}`, padding: 0, cursor,
+                });
+                const dotBtnStyle = () => ({
+                  position: 'absolute', width: 13, height: 13, transform: 'translate(-50%, -50%)',
+                  borderRadius: '50%', background: C.sel, border: `1.5px solid ${C.bg}`, padding: 0, cursor: 'move',
+                });
+                let handles = null;
+                if (sel.type === 'box' || sel.type === 'blur') {
+                  handles = RECT_HANDLES.map((h) => {
+                    const p = toDisplay(bbox.x + h.dx * bbox.w, bbox.y + h.dy * bbox.h);
+                    return (
+                      <button key={h.key} type="button" aria-label={`Resize from ${h.label}`} className="handle-slop"
+                        onMouseDown={(e) => startResize(sel.id, h.key, e)} onTouchStart={(e) => startResize(sel.id, h.key, e)}
+                        style={{ ...handleBtnStyle(h.cursor), left: p.left, top: p.top }} />
+                    );
+                  });
+                } else if (sel.type === 'arrow') {
+                  const s1 = toDisplay(sel.x1, sel.y1);
+                  const s2 = toDisplay(sel.x2, sel.y2);
+                  handles = (
+                    <>
+                      <button type="button" aria-label="Adjust arrow start point" className="handle-slop"
+                        onMouseDown={(e) => startResize(sel.id, 'start', e)} onTouchStart={(e) => startResize(sel.id, 'start', e)}
+                        style={{ ...dotBtnStyle(), left: s1.left, top: s1.top }} />
+                      <button type="button" aria-label="Adjust arrow end point" className="handle-slop"
+                        onMouseDown={(e) => startResize(sel.id, 'end', e)} onTouchStart={(e) => startResize(sel.id, 'end', e)}
+                        style={{ ...dotBtnStyle(), left: s2.left, top: s2.top }} />
+                    </>
+                  );
+                }
+                // Nudged outward from the bbox's top-right corner so it never
+                // sits exactly on top of the 'ne' resize handle.
+                const corner = toDisplay(bbox.x + bbox.w, bbox.y);
+                return (
+                  <>
+                    {handles}
+                    <button type="button" aria-label="Delete this annotation" className="hit-slop" onClick={deleteSelected}
+                      style={{ position: 'absolute', left: corner.left + 10, top: corner.top - 10, transform: 'translate(-50%, -50%)',
+                        width: 22, height: 22, borderRadius: 11, border: `1.5px solid ${C.bg}`, background: C.danger, color: '#fff',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, cursor: 'pointer' }}>
+                      <Icon name="close" size={11} color="#fff" />
+                    </button>
+                  </>
+                );
+              })()}
             </div>
             <div style={{ fontSize: 11.5, color: C.textMid }}>
-              Tip: the <strong>Blur / redact</strong> tool hides anything you don&apos;t want us to see — drag it over private numbers before attaching. Use <strong>Select</strong> to pick an annotation and delete it, or <strong>Move</strong> to drag it.
+              Tip: the <strong>Blur / redact</strong> tool hides anything you don&apos;t want us to see — drag it over private numbers before attaching. Use <strong>Select</strong> or <strong>Move</strong> to pick an annotation — drag its blue dots to resize or reshape it, drag its body to reposition it, or tap the <strong>✕</strong> to delete it.
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11.5, color: C.textMid }}>
