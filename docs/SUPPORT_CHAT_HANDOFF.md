@@ -9,7 +9,7 @@
 
 ---
 
-## 1. Status snapshot (2026-08-05)
+## 1. Status snapshot (updated 2026-08-11)
 
 - **Slice 0** (admin console → tabs) — ✅ merged to `main`.
 - **Slice 1** (DB foundation: `supabase/support_chat.sql` — tables, RLS, user RPCs) — ✅ merged (PR #61),
@@ -73,8 +73,13 @@
   installed at boot in `main.jsx`) + environment snapshot attached ONLY on bug submissions —
   technical-only, no financial data, rendered as a collapsible "Debug info" `<details>` in the thread.
   New `support_events` verbs: `priority_changed`, `tagged`, `note_added`. No new SQL.
-- **Slice 10** (screenshot + annotate) — ✅ built on branch `feat/support-slice-10-screenshot`.
-  **Prod SQL to run: `supabase/support_attachments.sql`** — creates the PRIVATE `support-attachments`
+- **Slice 10** (screenshot + annotate) — ✅ **merged to `main` (2026-08-11, PR #82, merge commit
+  `e3be7b5`)** — live on joinmarro.com. Built on branch `feat/support-slice-10-screenshot` (PR #70,
+  left open per this repo's convention of not closing superseded build PRs — see #80/#81 for
+  precedent). **Prod SQL confirmed applied** (verified via Management API post-merge, 2026-08-11):
+  `support-attachments` bucket exists, `support_start_conversation` has the 4-arg signature, both
+  storage RLS policies (owner-insert, owner-or-admin read) are live. `supabase/support_attachments.sql`
+  (already applied — kept below for what it does): creates the PRIVATE `support-attachments`
   bucket (storage RLS: users insert only into their own `<uid>/` folder; owner-or-admin read) AND
   re-creates `support_start_conversation` with a 4th `p_attachments` param (drops the old 3-arg
   overload; `support_chat.sql` updated to match). Lazy-loaded `ScreenshotStudio.jsx` (own chunk —
@@ -103,7 +108,14 @@
   outside the canvas mid-gesture. New `.handle-slop` CSS class (smaller hit-slop than the app's
   usual 44×44 `.hit-slop`, deliberate — see `UI_AUDIT_LOG.md` 2026-08-11 "cont." entry for the
   scoped a11y rationale).
-- **Next: Slice 11** (CSAT + reply-when-gone email) → then 12…14.
+- **Next: Slice 11 review** (CSAT + reply-when-gone email) → then 12…14. Already built on
+  `feat/support-slice-11-csat`, open as **PR #71** (unreviewed) — same pattern as every prior slice:
+  branch off it into a `review-slice-11` branch, read the diff + `SUPPORT_CHAT_BUILD.md` §Slice 11
+  spec, test on `?mock=1`, fix/extend as needed, push to a `feat/support-slice-11-review` branch as a
+  fresh PR based on `main`, then merge (repo's branch protection requires `gh pr merge --admin` to
+  bypass a stale required-review rule — CI-green + user's explicit go-ahead is sufficient per
+  `CONTRIBUTING.md`'s no-cross-founder-approval workflow). PRs #72–74 (slices 12–14) are also already
+  built and waiting in the same state.
 
 The DB (all Slice-1 + Slice-2 RPCs) is **already applied to prod**. The `supabase/support_chat.sql` file
 is idempotent — re-running it is safe.
