@@ -7,11 +7,11 @@
 --   into our own backend. This table is that control: an email is allowed in only
 --   if it appears here.
 --
--- STATUS: PREPARED, NOT YET ENFORCED.
---   Do NOT wire the app-side gate (see step 4 below) while the Google OAuth consent
---   screen is still in "Testing" mode — Google's test-user list already gates access,
---   and enforcing this on top risks locking yourself out. Run sections 1–3 whenever
---   (creating the table is harmless), but only enable section 4's app gate at launch.
+-- STATUS: LIVE since the Google OAuth consent screen left Testing mode
+-- (2026-07-05, see docs/PRODUCT_DECISIONS.md). The app-side gate (§4,
+-- is_email_allowed() checked in src/App.jsx before any data loads) is
+-- enforced today for every fresh sign-in — this is not a "prepared, not yet
+-- wired" table anymore.
 --
 -- HOW TO RUN: paste into Supabase Studio → SQL Editor → Run. Idempotent.
 -- ───────────────────────────────────────────────────────────────────────────

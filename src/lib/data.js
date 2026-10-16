@@ -3,6 +3,42 @@ import { isMockModeActive } from './mockSession.js';
 export const SUPABASE_URL      = "https://rjowpekykqlounnaegwn.supabase.co";
 export const SUPABASE_ANON_KEY = "sb_publishable_Kp89EOIm88PDospinCz-eA_wDs09kjq"; // publishable key — safe in client (RLS-gated)
 
+// ── "Stay signed in on this device" (remember me) ────────────────────────────
+// A plain preference flag (not session data, safe in localStorage regardless
+// of the choice it records) read synchronously at client-creation time to pick
+// where the session token itself gets stored: localStorage (survives browser
+// restarts — the default, matches the app's original always-persistent
+// behavior) or sessionStorage (cleared when the browser/tab closes, for
+// shared/borrowed-computer sign-ins). Must be set BEFORE the first
+// `getSupabase()` call of a fresh sign-in — see AuthModal.jsx/
+// EmailPasswordForm.jsx — since the client (and its storage choice) is
+// memoized for the rest of the tab's life once created.
+const REMEMBER_ME_KEY = "marro_remember_me";
+export function setRememberMePreference(remember){
+  try { localStorage.setItem(REMEMBER_ME_KEY, remember ? "1" : "0"); } catch { /* best-effort only */ }
+}
+function rememberMePreference(){
+  try { return localStorage.getItem(REMEMBER_ME_KEY) !== "0"; } catch { return true; } // default: remember
+}
+
+// ── Idle-timeout sign-out handoff ─────────────────────────────────────────────
+// Set by App.jsx's idle-timeout hook right before it calls signOut(); consumed
+// once by landingShared.jsx's Nav so it can auto-open the sign-in modal with an
+// explanatory notice instead of just silently dumping the user back on the
+// landing page. sessionStorage (not localStorage) — this is a one-shot signal
+// for the current tab, not a persistent preference.
+const IDLE_SIGNOUT_KEY = "marro_idle_signout";
+export function markIdleSignout(){
+  try { sessionStorage.setItem(IDLE_SIGNOUT_KEY, "1"); } catch { /* best-effort only */ }
+}
+export function consumeIdleSignoutFlag(){
+  try {
+    if (sessionStorage.getItem(IDLE_SIGNOUT_KEY) !== "1") return false;
+    sessionStorage.removeItem(IDLE_SIGNOUT_KEY);
+    return true;
+  } catch { return false; }
+}
+
 // ── Lazy Supabase client ──────────────────────────────────────────────────────
 // supabase-js is ~150-200KB and was previously imported at module-eval time here,
 // which pulled it into the main bundle for EVERY visitor — including a first-time,
@@ -27,8 +63,9 @@ export function getSupabase(){
       _sbPromise = import('./mockSupabaseStub.js').then(({createMockSupabaseStub}) => createMockSupabaseStub());
       return _sbPromise;
     }
+    const remember = rememberMePreference();
     _sbPromise = import('@supabase/supabase-js').then(({createClient}) =>
-      createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {auth:{flowType:"pkce"}})
+      createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {auth:{flowType:"pkce", storage: remember ? window.localStorage : window.sessionStorage}})
     );
   }
   return _sbPromise;
@@ -53,8 +90,11 @@ export function needsEagerSupabase(){
   // (see isMockModeActive) → compiled out of any production build.
   if(import.meta.env.DEV && isMockModeActive()) return true;
   try{
-    if(localStorage.getItem(SESSION_STORAGE_KEY)) return true;
-  }catch{ /* localStorage unavailable — fall through to URL check */ }
+    // Checked in both spots since a "don't remember me" sign-in (see
+    // setRememberMePreference above) stores the session in sessionStorage
+    // instead of localStorage.
+    if(localStorage.getItem(SESSION_STORAGE_KEY) || sessionStorage.getItem(SESSION_STORAGE_KEY)) return true;
+  }catch{ /* storage unavailable — fall through to URL check */ }
   const hash = window.location.hash || "";
   const search = window.location.search || "";
   if(/access_token|error|type=/.test(hash)) return true;

@@ -1,7 +1,8 @@
 import React, { useId, useRef, useState } from 'react';
-import { getSupabase } from '../lib/data.js';
+import { getSupabase, setRememberMePreference } from '../lib/data.js';
 import { passwordMeetsAll } from '../lib/passwordRules.js';
 import { PasswordRequirements } from './PasswordRequirements.jsx';
+import { Turnstile } from './Turnstile.jsx';
 
 // Email + password sign-in/sign-up form fields — rendered inside AuthModal.jsx
 // (see that file for the modal shell: tabs live one level up there so the
@@ -62,7 +63,7 @@ function PasswordField({ id, label, value, onChange, autoComplete, error, disabl
 // it can also drive the modal's heading text) — this component only renders
 // the fields, validation, and submit/resend logic for whichever mode is
 // active.
-export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassword, initialEmail, onSwitchToSignup, signupBlocked = false, onSignupConsent }){
+export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassword, initialEmail, onSwitchToSignup, onSwitchToSignin, signupBlocked = false, onSignupConsent, rememberMe = true }){
   const uid = useId();
   const [email, setEmail] = useState(initialEmail || '');
   const [password, setPassword] = useState('');
@@ -72,6 +73,20 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
   const [notice, setNotice] = useState(null); // neutral, non-error confirmations
   const [needsConfirm, setNeedsConfirm] = useState(false); // unconfirmed-email state
   const [resending, setResending] = useState(false);
+  // Set once a signup succeeds and actually sent a fresh confirmation email —
+  // keeps a "Didn't get it? Resend" action visible right away instead of only
+  // surfacing after a LATER failed sign-in attempt (see needsConfirm above).
+  // Not set on the already-registered path (existingAccount below), since no
+  // new email was sent there.
+  const [justSignedUp, setJustSignedUp] = useState(false);
+  // Supabase signs up an already-registered (confirmed) email with no error
+  // and no new identity — same neutral response either way, server-side, to
+  // avoid leaking which emails are registered. We only distinguish it here to
+  // point the person at "sign in instead" rather than leave them thinking a
+  // fresh confirmation email is on its way when none was sent.
+  const [existingAccount, setExistingAccount] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState('');
+  const turnstileRef = useRef(null);
   // Failed-credentials rescue: Supabase deliberately returns the same error
   // for "no such account" and "wrong password" (prevents email enumeration),
   // so we can't auto-switch a new user to sign-up — instead, offer the switch
@@ -120,6 +135,8 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
     setNotice(null);
     setNeedsConfirm(false);
     setShowSignupNudge(false);
+    setJustSignedUp(false);
+    setExistingAccount(false);
 
     if (validationError){
       setError(validationError);
@@ -133,9 +150,15 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
 
     setPending(true);
     try {
+      setRememberMePreference(rememberMe);
       const sb = await getSupabase();
       if (mode === 'signin'){
-        const { error: signInErr } = await sb.auth.signInWithPassword({ email, password });
+        const { error: signInErr } = await sb.auth.signInWithPassword({
+          email, password,
+          options: captchaToken ? { captchaToken } : undefined,
+        });
+        turnstileRef.current?.reset();
+        setCaptchaToken('');
         if (signInErr){
           const f = friendlyError(signInErr);
           if (f.kind === 'unconfirmed') setNeedsConfirm(true);
@@ -162,17 +185,26 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
         // survives the email-confirmation round-trip and is persisted on the
         // next authenticated boot (see lib/consent.js).
         onSignupConsent?.();
-        const { error: signUpErr } = await sb.auth.signUp({
+        const { data: signUpData, error: signUpErr } = await sb.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: location.origin + location.pathname },
+          options: { emailRedirectTo: location.origin + location.pathname, ...(captchaToken ? { captchaToken } : null) },
         });
+        turnstileRef.current?.reset();
+        setCaptchaToken('');
         if (signUpErr){
           setError(friendlyError(signUpErr).text);
+        } else if (signUpData?.user && Array.isArray(signUpData.user.identities) && signUpData.user.identities.length === 0){
+          // Supabase's tell for "this email already has a confirmed account" —
+          // it returns success with no error and no new identity, and sends no
+          // email, so a generic "check your email" here would leave the person
+          // waiting on nothing. Point them at sign-in instead.
+          setExistingAccount(true);
         } else {
-          // Same neutral message whether or not the email was already
-          // registered — Supabase already obfuscates that server-side.
+          // Same neutral message for a genuinely new signup — Supabase itself
+          // obfuscates the unconfirmed-vs-new-email case server-side.
           setNotice('Check your email to confirm your account.');
+          setJustSignedUp(true);
         }
       }
     } catch {
@@ -285,9 +317,34 @@ export function EmailPasswordFields({ mode, offline, autoFocusRef, onForgotPassw
         </div>
       )}
 
-      {notice && <div role="status" className="lp-epnotice">{notice}</div>}
+      {existingAccount && (
+        <div role="alert" className="lp-eperr">
+          Looks like you already have an account with this email.{' '}
+          {onSwitchToSignin ? (
+            <button type="button" className="txt-act lp-epresend" onClick={() => onSwitchToSignin(email)}>
+              Sign in instead
+            </button>
+          ) : 'Try signing in instead.'}
+        </div>
+      )}
+
+      {notice && (
+        <div role="status" className="lp-epnotice">
+          {notice}
+          {justSignedUp && (
+            <>
+              {' '}
+              <button type="button" className="txt-act lp-epresend" onClick={handleResend} disabled={offline || resending}>
+                {resending ? 'Sending…' : "Didn't get it? Resend"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {offline && <div role="status" className="lp-note" style={{ color: '#DDA528' }}>You&apos;re offline. Reconnect to continue.</div>}
+
+      <Turnstile ref={turnstileRef} onVerify={setCaptchaToken} />
 
       <button
         type="submit"

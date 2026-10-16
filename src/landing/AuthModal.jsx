@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { getSupabase, stashPendingInviteCode } from '../lib/data.js';
+import { getSupabase, stashPendingInviteCode, setRememberMePreference } from '../lib/data.js';
 import { stashPendingConsent } from '../lib/consent.js';
 import { GoogleGlyph } from '../components/icons.jsx';
 import { EmailPasswordFields } from './EmailPasswordForm.jsx';
@@ -30,9 +30,15 @@ import { RequestResetForm } from './RequestResetForm.jsx';
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function AuthModal({ open, initialMode = 'signin', offline, onClose, triggerRef }){
+export function AuthModal({ open, initialMode = 'signin', offline, onClose, triggerRef, notice }){
   const [mode, setMode] = useState(initialMode);
   const [googlePending, setGooglePending] = useState(false);
+  // "Stay signed in on this device" — defaults on (matches the app's original
+  // always-persistent behavior); unchecking stores the session in
+  // sessionStorage instead of localStorage, so it clears when the browser/tab
+  // closes. Read by both the Google button and EmailPasswordFields at the
+  // moment they actually create a session — see lib/data.js.
+  const [rememberMe, setRememberMe] = useState(true);
   // Clickwrap consent (signup only): the minor/age attestation must be checked
   // before an account can be created, and it gates BOTH the email "Create
   // account" submit and the "Continue with Google" button. See lib/consent.js.
@@ -117,6 +123,7 @@ export function AuthModal({ open, initialMode = 'signin', offline, onClose, trig
     // signup tab (the Log in tab is for users who already agreed at signup).
     if (mode === 'signup') stashPendingConsent({ guardianAttested: agreed });
     setGooglePending(true);
+    setRememberMePreference(rememberMe);
     const sb = await getSupabase();
     sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } });
     // Intentionally leave `googlePending` true — the browser is about to
@@ -147,6 +154,10 @@ export function AuthModal({ open, initialMode = 'signin', offline, onClose, trig
           </button>
 
           <h2 id={headingId} className="lp-authheading">{heading}</h2>
+
+          {notice && mode !== 'reset-request' && (
+            <div role="status" className="lp-epnotice">{notice}</div>
+          )}
 
           {mode === 'reset-request' ? (
             <RequestResetForm
@@ -196,8 +207,10 @@ export function AuthModal({ open, initialMode = 'signin', offline, onClose, trig
                 onForgotPassword={() => setMode('reset-request')}
                 initialEmail={prefillEmail}
                 onSwitchToSignup={(email) => { setPrefillEmail(email || ''); setMode('signup'); }}
+                onSwitchToSignin={(email) => { setPrefillEmail(email || ''); setMode('signin'); }}
                 signupBlocked={signupBlocked}
                 onSignupConsent={() => stashPendingConsent({ guardianAttested: agreed })}
+                rememberMe={rememberMe}
                 key={mode}
               />
 
@@ -213,6 +226,16 @@ export function AuthModal({ open, initialMode = 'signin', offline, onClose, trig
                 <GoogleGlyph size={17} />
                 {googlePending ? 'Connecting…' : 'Continue with Google'}
               </button>
+
+              <label className="lp-consent">
+                <input
+                  type="checkbox"
+                  className="lp-consent-box"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                />
+                <span>Stay signed in on this device</span>
+              </label>
 
               <p className="lp-consent-note">
                 By continuing, you agree to Marro&rsquo;s{' '}
