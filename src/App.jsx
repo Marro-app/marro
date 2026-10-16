@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useId } from 'react';
 import { C, applyTheme, THEMES } from './lib/theme.js';
-import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed, isAdmin, logEvent, exportUserData, exportUserDataExcel, deleteAccount, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY } from './lib/data.js';
+import { getSupabase, needsEagerSupabase, stateFetch, stateWrite, isEmailAllowed, isAdmin, logEvent, exportUserData, exportUserDataExcel, deleteAccount, diffStates, findConflicts, applyChanges, MONEY_KEYS, fmtConflictVal, conflictLabel, SYNC_BASE_KEY, markIdleSignout } from './lib/data.js';
+import { useIdleTimeout } from './lib/idleTimeout.js';
 import { recordConsentIfPending } from './lib/consent.js';
 import { appStorage } from './lib/mockStorage.js';
 import { setAnalyticsContext } from './lib/analytics.js';
@@ -269,6 +270,20 @@ export function App() {
     })();
     return ()=>unsub && unsub();
   },[]);
+
+  // Auto sign-out after 30 idle minutes (shared/borrowed-computer safety —
+  // see docs/PRODUCT_DECISIONS.md). Only runs while actually signed in;
+  // markIdleSignout() flags the handoff so Nav (landingShared.jsx) can greet
+  // the person back with an explanatory notice instead of a silent drop to
+  // the landing page.
+  const { warning: idleWarning, stayActive: stayActiveIdle } = useIdleTimeout({
+    enabled: !!session,
+    onTimeout: async () => {
+      markIdleSignout();
+      const sb = await getSupabase();
+      sb.auth.signOut();
+    },
+  });
 
   // Load — gated on auth. Runs once a session is known; bails while restoring or
   // when signed out (LoginScreen handles that via the render gate).
@@ -1465,6 +1480,16 @@ export function App() {
 
       {/* ── Support & feedback launcher — floating, any signed-in user (Slice 2) ── */}
       <SupportLauncher/>
+
+      {/* ── Idle-timeout warning — ~60s before the 30-min auto sign-out ── */}
+      {idleWarning && (
+        <Banner type="warn">
+          <strong>You&apos;ll be signed out soon due to inactivity.</strong>{' '}
+          <button type="button" className="txt-act" onClick={stayActiveIdle} style={{border:"none",background:"transparent",font:"inherit",fontWeight:600,color:"inherit",textDecoration:"underline",cursor:"pointer",padding:0}}>
+            Stay signed in
+          </button>
+        </Banner>
+      )}
 
       {/* ── Offline banner ── */}
       {syncStatus==="offline" && (

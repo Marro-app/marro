@@ -1,5 +1,6 @@
-import React, { useId, useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { getSupabase } from '../lib/data.js';
+import { Turnstile } from './Turnstile.jsx';
 
 // "Forgot your password?" request screen — rendered inside AuthModal.jsx when
 // mode === 'reset-request' (see AuthModal.jsx for the mode switch). Just an
@@ -19,6 +20,8 @@ export function RequestResetForm({ offline, autoFocusRef, onBack }){
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
   const [sent, setSent] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState('');
+  const turnstileRef = useRef(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -32,7 +35,12 @@ export function RequestResetForm({ offline, autoFocusRef, onBack }){
     try {
       const sb = await getSupabase();
       const redirectTo = `${location.origin}${location.pathname}?reset=1`;
-      const { error: resetErr } = await sb.auth.resetPasswordForEmail(email, { redirectTo });
+      const { error: resetErr } = await sb.auth.resetPasswordForEmail(email, {
+        redirectTo,
+        ...(captchaToken ? { captchaToken } : null),
+      });
+      turnstileRef.current?.reset();
+      setCaptchaToken('');
       if (resetErr && resetErr.status !== 429 && !/rate limit|too many/i.test(resetErr.message || '')){
         // Only surface an error for genuine failures (offline, 5xx) — never
         // differentiate "no such account" from success.
@@ -81,6 +89,8 @@ export function RequestResetForm({ offline, autoFocusRef, onBack }){
 
           {error && <div role="alert" className="lp-eperr">{error}</div>}
           {offline && <div role="status" className="lp-note" style={{ color: '#DDA528' }}>You&apos;re offline. Reconnect to continue.</div>}
+
+          <Turnstile ref={turnstileRef} onVerify={setCaptchaToken} />
 
           <button
             type="submit"

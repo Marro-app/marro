@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AuthModal } from './AuthModal.jsx';
+import { consumeIdleSignoutFlag } from '../lib/data.js';
 
 // Shared, motion-free pieces used by both StaticLanding (mobile /
 // prefers-reduced-motion, rendered eagerly) and StagedLanding (desktop
@@ -23,12 +24,12 @@ export function BlobLayer(){
 // modal element to render plus an `open(mode)` callback that also stashes
 // which element triggered it, so focus returns there on close.
 function useAuthModal(offline){
-  const [state, setState] = useState({ open: false, mode: 'signin' });
+  const [state, setState] = useState({ open: false, mode: 'signin', notice: null });
   const triggerRef = useRef(null);
 
-  const open = (mode) => (e) => {
+  const open = (mode, notice) => (e) => {
     triggerRef.current = e?.currentTarget || null;
-    setState({ open: true, mode });
+    setState({ open: true, mode, notice: notice || null });
   };
   const close = () => setState((s) => ({ ...s, open: false }));
 
@@ -40,6 +41,7 @@ function useAuthModal(offline){
       offline={offline}
       onClose={close}
       triggerRef={triggerRef}
+      notice={state.notice}
     />
   );
 
@@ -62,8 +64,11 @@ export function Nav({ offline, onHoverCore }){
   useEffect(() => {
     try {
       const params = new URLSearchParams(location.search);
-      if (params.get('invite')) open(params.get('from') === 'waitlist' ? 'signin' : 'signup')();
+      if (params.get('invite')) { open(params.get('from') === 'waitlist' ? 'signin' : 'signup')(); return; }
     } catch { /* URL parsing best-effort only */ }
+    if (consumeIdleSignoutFlag()){
+      open('signin', 'You were signed out after a period of inactivity. Sign back in to continue.')();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

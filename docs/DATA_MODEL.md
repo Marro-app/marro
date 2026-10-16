@@ -208,10 +208,16 @@ Shows when `yr.monthly.exams > 0` AND any Step goal has `saved < targetAmount &&
 
 ## Auth + Sync architecture (CRITICAL — read before touching sync)
 
-### Auth (Phase 2.5b)
-- supabase-js v2 UMD via CDN; client `const sb` (the UMD global is `supabase` — don't shadow it). URL + **publishable** key hardcoded in `index.html` (safe; RLS-gated). PKCE flow.
-- Hard login gate. `session` state: `undefined`=restoring → Loading; `null`=signed out → `LoginScreen`; object → app. `getSession()` on boot + `onAuthStateChange`; `SIGNED_OUT` clears `marro_v8`/`marro_v8_base`/`marro_uid`.
-- `applyTheme(dataset!=="light")` runs at module load so pre-login screens (LoginScreen) theme correctly before app data loads.
+### Auth (Phase 2.5b, extended in the auth-hardening pass — see PRODUCT_DECISIONS.md)
+- `@supabase/supabase-js` v2 as an npm package, lazy-imported via `getSupabase()` (`src/lib/data.js`) so a cold logged-out visit never downloads it — **not** the old UMD-via-CDN script. URL + **publishable** key hardcoded there (safe; RLS-gated). PKCE flow.
+- Three sign-in paths, one shared dialog (`src/landing/AuthModal.jsx`, tabs for Log in/Sign up): Google OAuth (`signInWithOAuth`), email+password (`EmailPasswordForm.jsx`, `signInWithPassword`/`signUp`, password rules in `lib/passwordRules.js` mirroring the Supabase dashboard setting), and password reset (`RequestResetForm.jsx` → standalone `ResetPasswordScreen.jsx`). The old `LoginScreen.jsx` is dead code, kept but unrendered.
+- Hard login gate. `session` state: `undefined`=restoring → Loading; `null`=signed out → `LandingPage`/`AuthModal`; object → app. `getSession()` on boot + `onAuthStateChange`; `SIGNED_OUT` clears `marro_v8`/`marro_v8_base`/`marro_uid`.
+- `applyTheme(dataset!=="light")` runs at module load so pre-login screens theme correctly before app data loads.
+- **Idle timeout** (`src/lib/idleTimeout.js`, wired in `App.jsx`): 30 min of no activity signs the user out automatically (warns ~60s before via a dismissible banner). Signals the landing page to show a "signed out due to inactivity" notice via a one-shot sessionStorage flag (`markIdleSignout`/`consumeIdleSignoutFlag` in `lib/data.js`).
+- **Remember me**: an AuthModal checkbox ("Stay signed in on this device", default on) picks the storage backend at the moment `getSupabase()` first creates the client — `localStorage` (persists across browser restarts) if checked, `sessionStorage` (cleared on browser/tab close) if not. Preference read via `setRememberMePreference`/read internally in `lib/data.js`; `needsEagerSupabase()` checks both storage locations.
+- **CAPTCHA scaffolding** (`src/landing/Turnstile.jsx`): invisible-mode Cloudflare Turnstile widget on sign-in/sign-up/reset, dormant unless `VITE_TURNSTILE_SITE_KEY` is set. Not yet enforced server-side — see the file's header comment for the two-step activation (real site key here + CAPTCHA toggle in the Supabase dashboard).
+- **"Already have an account"**: `signUp()` returning `identities: []` (Supabase's tell for an already-registered, confirmed email) shows a "sign in instead" nudge rather than the neutral "check your email" notice.
+- **Duplicate-account prevention** (`supabase/email_normalization.sql`): a Supabase "Before User Created" Auth Hook (`hook_reject_duplicate_normalized_email`, Postgres function, runs for every new signup — password and Google OAuth) rejects account creation if the email normalizes (strip `+tag`; strip dots on Gmail/Workspace domains only) to match an existing account. Closes a sub-addressing loophole (`you+1@x.com`/`you+2@x.com`/... all land in one real inbox but would otherwise be distinct Marro accounts). Fails open on any internal error — never blocks a signup over a bug in this logic.
 
 ### Supabase tables (RLS: each user reads/writes only their own row, `auth.uid() = user_id`)
 - `app_state(user_id uuid PK, state jsonb, updated_at)` — the whole state blob, one row/user.
@@ -249,4 +255,4 @@ RPCs (grant execute → authenticated): `is_admin()→bool` (console visibility 
 - `stateWrite(json)` → upsert `{user_id, state}` → boolean. Same string-in/string-out contract the old `gistFetch`/`gistWrite` had, so `save`/`checkAndPull`/`resolveConflict` only needed a name swap. (Old `api/sync.js` Gist proxy deleted.)
 
 ### Service worker (`sw.js`)
-Cache `marro-v8`. Never caches `index.html` (navigations always network) — OAuth redirects safe. Caches `/manifest.json`, `/icon.svg`, fonts; network-first/cache-fallback otherwise (covers the supabase-js CDN script for offline). Registration: `updateViaCache:'none'`, `reg.update()` on load, auto-reload on `controllerchange`.
+Cache `marro-v8`. Never caches `index.html` (navigations always network) — OAuth redirects safe. Caches `/manifest.json`, `/icon.svg`, fonts; network-first/cache-fallback otherwise (supabase-js now ships as a bundled npm chunk, precached like any other app chunk — no CDN script involved). Registration: `updateViaCache:'none'`, `reg.update()` on load, auto-reload on `controllerchange`.
