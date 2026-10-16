@@ -3,31 +3,48 @@
 # ───────────────────────────────────────────────────────────────────────────
 # WHY THIS EXISTS
 #   Marro's Supabase project (free tier, ref rjowpekykqlounnaegwn) auto-pauses
-#   after 7 days with no activity. It has already paused once in production,
-#   which kills auth + all user data for the live app at joinmarro.com. This
-#   workflow makes a real REST request against the project on a schedule so
-#   Supabase always sees recent activity and never reaches the 7-day pause
-#   window.
+#   after 7 days with no activity. This workflow makes real requests against
+#   the project on a schedule so Supabase always sees recent activity and
+#   never reaches the pause window.
 #
-# THIS IS A BAND-AID, NOT A FIX
-#   - It can fail silently: GitHub Actions doesn't email on scheduled-run
-#     failures the way it does for other triggers in every configuration —
-#     check the Actions tab periodically (or watch this workflow) to confirm
-#     it's still green.
-#   - GitHub disables scheduled workflows automatically after 60 days with no
-#     repository activity at all — an idle repo can un-arm this without warning.
-#   - GitHub's scheduled triggers are best-effort and can be delayed, which is
-#     why this runs every 3 days (well under the 7-day pause window) for margin.
-#   - REMOVE this workflow once the founders upgrade the project to Supabase
-#     Pro (Pro projects don't auto-pause) — it will no longer be needed.
+# INCIDENT LOG — READ BEFORE CHANGING THIS FILE
+#   The project paused in production anyway on ~2026-09-02, despite this
+#   workflow running every 3 days without a gap the whole time (see git
+#   blame / docs/PRODUCT_DECISIONS.md, 2026-10-16 entry, for the full
+#   writeup). Best available explanation: the original ping — a GET against
+#   `allowed_emails`, which RLS denies for the anon key before it touches any
+#   real row — apparently didn't register as "real" activity to Supabase's
+#   pause-timer heuristic, even though it returned HTTP 200. Since there's no
+#   way to confirm this from the outside, this version pings TWO different
+#   Supabase subsystems (PostgREST + the Auth/GoTrue service) instead of one,
+#   on the theory that at least one is weighted as genuine usage. This is
+#   still a best-effort guess, not a verified fix — see "THE REAL FIX" below.
+#
+#   SEPARATELY, and on top of the above: GitHub auto-disabled this entire
+#   workflow around 2026-10-13 because the repository had gone 60 days
+#   without a single push (last push was 2026-08-12) — completely unrelated
+#   to whether the workflow itself was succeeding. A disabled workflow does
+#   not run AT ALL (no failure emails either — it just silently stops), which
+#   is how the pause went unnoticed for weeks. The "Keep the repo itself
+#   alive" step below exists specifically to prevent this from recurring: it
+#   commits a trivial timestamp update on every successful run, which counts
+#   as repo activity and resets GitHub's 60-day countdown on its own.
+#
+# THE REAL FIX
+#   Upgrade the project to Supabase Pro (Pro projects don't auto-pause,
+#   period — no more guessing what counts as "activity"). This workflow is a
+#   stopgap for as long as the project stays on the free tier; remove it once
+#   upgraded.
 #
 # WHAT IT PINGS
-#   A lightweight GET against the `allowed_emails` table via PostgREST. RLS
-#   denies read access to the anon/publishable key (see supabase/allowed_emails.sql),
-#   so the response body is always an empty array — that's expected and fine.
-#   The query still executes against the database, which is what counts as
-#   activity for the pause timer. What matters here is the HTTP status: a 200
-#   means the request reached and was processed by the project.
+#   1. PostgREST: a lightweight GET against `allowed_emails` (RLS-denied for
+#      anon, so always an empty array — that's expected). Confirms the
+#      REST/database layer is up.
+#   2. Auth: GoTrue's own `/auth/v1/health` liveness endpoint. Confirms the
+#      auth service is up — this is the service real users actually hit on
+#      every sign-in, so it's arguably the more meaningful of the two pings.
+#   Either one returning a non-2xx fails the job (project likely paused or
+#   unreachable either way).
 #
 # CREDENTIALS
 #   SUPABASE_URL and SUPABASE_ANON_KEY below are the same publishable values
@@ -44,6 +61,9 @@ on:
     - cron: "0 6 */3 * *"
   workflow_dispatch: {}
 
+permissions:
+  contents: write # needed for the repo-liveness commit step below
+
 env:
   # Publishable (anon) key — public by design, safe to commit. See comment above.
   SUPABASE_URL: https://rjowpekykqlounnaegwn.supabase.co
@@ -53,19 +73,50 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase REST API to reset the inactivity/pause timer
+      - name: Ping Supabase REST API (PostgREST) to reset the inactivity/pause timer
         run: |
-          status=$(curl -s -o /tmp/keepalive_response.json -w "%{http_code}" \
+          status=$(curl -s -o /tmp/keepalive_rest_response.json -w "%{http_code}" \
             "$SUPABASE_URL/rest/v1/allowed_emails?select=email&limit=1" \
             -H "apikey: $SUPABASE_ANON_KEY" \
             -H "Authorization: Bearer $SUPABASE_ANON_KEY")
 
-          echo "HTTP status: $status"
-          cat /tmp/keepalive_response.json
+          echo "REST HTTP status: $status"
+          cat /tmp/keepalive_rest_response.json
 
           if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-            echo "::error::Supabase keepalive ping failed with HTTP $status — project may be paused or unreachable. Check the Supabase dashboard."
+            echo "::error::Supabase REST keepalive ping failed with HTTP $status — project may be paused or unreachable. Check the Supabase dashboard."
             exit 1
           fi
 
-          echo "Keepalive ping succeeded (HTTP $status)."
+          echo "REST keepalive ping succeeded (HTTP $status)."
+
+      - name: Ping Supabase Auth (GoTrue) health endpoint
+        run: |
+          status=$(curl -s -o /tmp/keepalive_auth_response.json -w "%{http_code}" \
+            "$SUPABASE_URL/auth/v1/health" \
+            -H "apikey: $SUPABASE_ANON_KEY")
+
+          echo "Auth HTTP status: $status"
+          cat /tmp/keepalive_auth_response.json
+
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "::error::Supabase Auth keepalive ping failed with HTTP $status — project may be paused or unreachable. Check the Supabase dashboard."
+            exit 1
+          fi
+
+          echo "Auth keepalive ping succeeded (HTTP $status)."
+
+      - name: Keep the repo itself alive (prevents GitHub's 60-day scheduled-workflow auto-disable)
+        run: |
+          mkdir -p .github
+          echo "Last successful keepalive ping: $(date -u +"%Y-%m-%dT%H:%M:%SZ")" > .github/keepalive-last-run.txt
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/keepalive-last-run.txt
+          if git diff --cached --quiet; then
+            echo "No change to commit (ran within the same second as last time, harmless)."
+          else
+            git commit -m "chore: keepalive ping $(date -u +%Y-%m-%d)"
+            git push
+          fi
